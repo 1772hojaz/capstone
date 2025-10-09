@@ -68,33 +68,31 @@ Screenshots
 
 The following screenshots are included in `docs/assets/`:
 
-![Screenshot 1](docs/assets/Screenshot%20from%202025-10-07%2023-00-39.png)
+![Screenshot 1](docs/assets/Screenshot%20from%202025-10-09%2022-59-21.png)
 
-![Screenshot 2](docs/assets/Screenshot%20from%202025-10-07%2023-00-48.png)
+![Screenshot 2](docs/assets/Screenshot%20from%202025-10-09%2022-59-55.png)
 
-![Screenshot 3](docs/assets/Screenshot%20from%202025-10-07%2023-00-53.png)
+![Screenshot 3](docs/assets/Screenshot%20from%202025-10-09%2023-00-06.png)
 
-![Screenshot 4](docs/assets/Screenshot%20from%202025-10-07%2023-00-58.png)
+![Screenshot 4](docs/assets/Screenshot%20from%202025-10-09%2023-00-24.png)
 
-![Screenshot 5](docs/assets/Screenshot%20from%202025-10-07%2023-01-15.png)
+![Screenshot 5](docs/assets/Screenshot%20from%202025-10-09%2023-00-32.png)
 
-![Screenshot 6](docs/assets/Screenshot%20from%202025-10-07%2023-01-23.png)
+![Screenshot 6](docs/assets/Screenshot%20from%202025-10-09%2023-00-44.png)
 
-![Screenshot 7](docs/assets/Screenshot%20from%202025-10-07%2023-01-30.png)
+![Screenshot 7](docs/assets/Screenshot%20from%202025-10-09%2023-01-06.png)
 
-![Screenshot 8](docs/assets/Screenshot%20from%202025-10-07%2023-01-34.png)
+![Screenshot 8](docs/assets/Screenshot%20from%202025-10-09%2023-01-33.png)
 
-![Screenshot 9](docs/assets/Screenshot%20from%202025-10-07%2023-01-45.png)
+![Screenshot 9](docs/assets/Screenshot%20from%202025-10-09%2023-01-41.png)
 
-![Screenshot 10](docs/assets/Screenshot%20from%202025-10-07%2023-01-53.png)
+![Screenshot 10](docs/assets/Screenshot%20from%202025-10-09%2023-01-48.png)
 
-![Screenshot 11](docs/assets/Screenshot%20from%202025-10-07%2023-01-59.png)
+![Screenshot 11](docs/assets/Screenshot%20from%202025-10-09%2023-01-52.png)
 
-![Screenshot 12](docs/assets/Screenshot%20from%202025-10-07%2023-02-04.png)
+![Screenshot 12](docs/assets/Screenshot%20from%202025-10-09%2023-01-58.png)
 
-![Screenshot 13](docs/assets/Screenshot%20from%202025-10-07%2023-02-11.png)
-
-![Screenshot 14](docs/assets/Screenshot%20from%202025-10-07%2023-02-15.png)
+![Screenshot 13](docs/assets/Screenshot%20from%202025-10-09%2023-02-03.png)
 
 Deployment plan
 ---------------
