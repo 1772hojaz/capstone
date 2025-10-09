@@ -55,6 +55,9 @@ Frontend (React)
 
 Designs
 -------
+FIGMA
+
+https://www.figma.com/community/file/1558219458205810998 
 
 Included design artifacts and screenshots (stored in `docs/assets/`):
 
