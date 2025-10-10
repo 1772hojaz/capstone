@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Search, MapPin, ShoppingCart, User, Zap } from 'lucide-react';
+import { Search, MapPin, ShoppingCart, User } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 export default function CreateGroup() {
@@ -99,7 +99,7 @@ export default function CreateGroup() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* Header */}
-      <header className="bg-white border-b border-gray-200">
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
         <div className="px-3 sm:px-6 py-4 flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-8">
           {/* Logo */}
           <button 
@@ -178,25 +178,8 @@ export default function CreateGroup() {
         </div>
       </header>
 
-      {/* ML System Status Banner - Clear feedback */}
-      <div className="bg-blue-50 border-b border-blue-200 px-3 sm:px-6 py-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-0">
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" aria-label="System status: healthy"></div>
-            <Zap className="w-5 h-5 text-blue-600" />
-            <span className="text-sm font-medium text-blue-900">ML Recommendation System Active</span>
-          </div>
-        </div>
-        <button 
-          className="text-sm text-blue-600 hover:text-blue-800 hover:underline transition"
-          aria-label="View ML system details"
-        >
-          View Details
-        </button>
-      </div>
-
       {/* Tabs */}
-      <div className="bg-white border-b border-gray-200">
+      <div className="bg-white border-b border-gray-200 sticky top-[73px] z-40">
         <div className="px-3 sm:px-6">
           <nav className="flex gap-4 sm:gap-8">
             <button
