@@ -6,6 +6,8 @@ export default function GroupList() {
   const navigate = useNavigate();
   const [selectedGroup, setSelectedGroup] = useState<any>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedJoinedGroup, setSelectedJoinedGroup] = useState<any>(null);
+  const [isJoinedGroupModalOpen, setIsJoinedGroupModalOpen] = useState(false);
 
   const activeGroups = [
     {
@@ -78,6 +80,17 @@ export default function GroupList() {
   const closeModal = () => {
     setIsModalOpen(false);
     setSelectedGroup(null);
+  };
+
+  const handleGroupIconClick = (group: any, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent navigation to chat
+    setSelectedJoinedGroup(group);
+    setIsJoinedGroupModalOpen(true);
+  };
+
+  const closeJoinedGroupModal = () => {
+    setIsJoinedGroupModalOpen(false);
+    setSelectedJoinedGroup(null);
   };
 
   const joinedGroups = [
@@ -283,13 +296,13 @@ export default function GroupList() {
               <div className="p-4 sm:p-6 border-b border-gray-200">
                 <div>
                   <table className="w-full">
-                  <thead className="bg-gray-50 border-b border-gray-200">
+                  <thead className="bg-gray-50 border-b border-gray-200 sticky top-[73px] z-10">
                     <tr>
-                      <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase">Group Name</th>
-                      <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                      <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase">Progress</th>
-                      <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase">Due Date</th>
-                      <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                      <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50">Group Name</th>
+                      <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50">Status</th>
+                      <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50">Progress</th>
+                      <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50">Due Date</th>
+                      <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
@@ -337,7 +350,10 @@ export default function GroupList() {
                     onClick={() => navigate(`/group-chat/${group.id}`)}
                     className="bg-gray-50 rounded-lg border border-gray-200 p-4 hover:bg-gray-100 hover:shadow-sm transition flex items-start gap-4 cursor-pointer"
                   >
-                    <div className="w-12 h-12 bg-gradient-to-br from-gray-100 to-gray-200 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <div 
+                      onClick={(e) => handleGroupIconClick(group, e)}
+                      className="w-12 h-12 bg-gradient-to-br from-gray-100 to-gray-200 rounded-lg flex items-center justify-center flex-shrink-0 hover:from-blue-100 hover:to-blue-200 transition-all cursor-pointer"
+                    >
                       <span className="text-2xl">{group.icon}</span>
                     </div>
                     <div className="flex-1 min-w-0">
@@ -509,6 +525,74 @@ export default function GroupList() {
                 </button>
                 <button
                   onClick={closeModal}
+                  className="px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition font-medium"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Modal for Joined Group Icon Details */}
+      {isJoinedGroupModalOpen && selectedJoinedGroup && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          onClick={closeJoinedGroupModal}
+        >
+          <div 
+            className="bg-white rounded-lg shadow-xl max-w-md w-full overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Large Icon Display */}
+            <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-12 flex items-center justify-center">
+              <div className="w-32 h-32 bg-gradient-to-br from-blue-100 to-blue-200 rounded-2xl flex items-center justify-center shadow-lg">
+                <span className="text-8xl">{selectedJoinedGroup.icon}</span>
+              </div>
+            </div>
+
+            {/* Group Details */}
+            <div className="p-6 space-y-4">
+              <div>
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <h2 className="text-xl font-bold text-gray-900">{selectedJoinedGroup.name}</h2>
+                  {selectedJoinedGroup.hasNotification && selectedJoinedGroup.unreadCount > 0 && (
+                    <div className="bg-blue-600 text-white text-sm font-bold rounded-full min-w-[24px] h-6 flex items-center justify-center px-2 flex-shrink-0">
+                      {selectedJoinedGroup.unreadCount > 99 ? '99+' : selectedJoinedGroup.unreadCount}
+                    </div>
+                  )}
+                </div>
+                <p className="text-gray-600 text-sm">{selectedJoinedGroup.description}</p>
+              </div>
+
+              {/* Additional Info */}
+              <div className="bg-gray-50 rounded-lg p-4 space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Group ID:</span>
+                  <span className="font-semibold text-gray-900">#{selectedJoinedGroup.id}</span>
+                </div>
+                {selectedJoinedGroup.unreadCount > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Unread Messages:</span>
+                    <span className="font-semibold text-blue-600">{selectedJoinedGroup.unreadCount}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => {
+                    closeJoinedGroupModal();
+                    navigate(`/group-chat/${selectedJoinedGroup.id}`);
+                  }}
+                  className="flex-1 bg-blue-600 text-white py-3 px-6 rounded-lg hover:bg-blue-700 transition font-medium"
+                >
+                  Open Group Chat
+                </button>
+                <button
+                  onClick={closeJoinedGroupModal}
                   className="px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition font-medium"
                 >
                   Close
