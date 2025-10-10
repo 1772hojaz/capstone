@@ -227,15 +227,15 @@ export default function GroupList() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-8">
           {/* Left Column - Your Group Activities */}
           <div>
-            <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-4 sm:mb-6">Your Group Activities</h2>
-
-            {/* My Active Groups - Responsive Table */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-4 sm:mb-6">
-              <div className="p-4 sm:p-6 border-b border-gray-200">
-                <h3 className="text-base sm:text-lg font-semibold text-gray-900">My Active Groups</h3>
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 max-h-[600px] overflow-y-auto">
+              <div className="p-4 sm:p-6 border-b border-gray-200 sticky top-0 bg-white z-10">
+                <h2 className="text-xl sm:text-2xl font-bold text-gray-900">My Active Groups</h2>
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[600px]">
+              
+              {/* My Active Groups - Responsive Table */}
+              <div className="p-4 sm:p-6 border-b border-gray-200">
+                <div>
+                  <table className="w-full">
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
                       <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase">Group Name</th>
@@ -272,27 +272,6 @@ export default function GroupList() {
                     ))}
                   </tbody>
                 </table>
-              </div>
-            </div>
-
-            {/* Past Groups */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-              <div className="p-6 border-b border-gray-200">
-                <h3 className="text-lg font-semibold text-gray-900">Past Groups</h3>
-                <p className="text-sm text-gray-600 mt-1">Summary of your completed group buys.</p>
-              </div>
-              <div className="p-6 space-y-3">
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Completed Groups:</span>
-                  <span className="font-semibold text-gray-900">32</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Total Savings:</span>
-                  <span className="font-semibold text-gray-900">$1,250.00</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Success Rate:</span>
-                  <span className="font-semibold text-gray-900">92%</span>
                 </div>
               </div>
             </div>
@@ -300,29 +279,56 @@ export default function GroupList() {
 
           {/* Right Column - My Joined Groups */}
           <div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-6">My Joined Groups</h2>
-
-            <div className="space-y-3">
-              {joinedGroups.map((group) => (
-                <div 
-                  key={group.id} 
-                  onClick={() => navigate(`/group-chat/${group.id}`)}
-                  className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 hover:shadow-md transition flex items-start gap-4 cursor-pointer"
-                >
-                  <div className="w-12 h-12 bg-gradient-to-br from-gray-100 to-gray-200 rounded-lg flex items-center justify-center flex-shrink-0">
-                    <span className="text-2xl">{group.icon}</span>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-2">
-                      <h3 className="text-sm font-semibold text-gray-900">{group.name}</h3>
-                      {group.hasNotification && (
-                        <div className="w-2 h-2 bg-blue-600 rounded-full flex-shrink-0 mt-1"></div>
-                      )}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 max-h-[600px] overflow-y-auto">
+              <div className="p-4 sm:p-6 border-b border-gray-200 sticky top-0 bg-white z-10">
+                <h2 className="text-xl sm:text-2xl font-bold text-gray-900">My Joined Groups</h2>
+              </div>
+              <div className="p-4 sm:p-6 space-y-3">
+                {joinedGroups.map((group) => (
+                  <div 
+                    key={group.id} 
+                    onClick={() => navigate(`/group-chat/${group.id}`)}
+                    className="bg-gray-50 rounded-lg border border-gray-200 p-4 hover:bg-gray-100 hover:shadow-sm transition flex items-start gap-4 cursor-pointer"
+                  >
+                    <div className="w-12 h-12 bg-gradient-to-br from-gray-100 to-gray-200 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <span className="text-2xl">{group.icon}</span>
                     </div>
-                    <p className="text-xs text-gray-600 mt-1 line-clamp-1">{group.description}</p>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-2">
+                        <h3 className="text-sm font-semibold text-gray-900">{group.name}</h3>
+                        {group.hasNotification && (
+                          <div className="w-2 h-2 bg-blue-600 rounded-full flex-shrink-0 mt-1"></div>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-600 mt-1 line-clamp-1">{group.description}</p>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Past Groups - Full Width Below */}
+        <div className="mt-4 sm:mt-8">
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+            <div className="p-4 sm:p-6 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900">Past Groups</h3>
+              <p className="text-sm text-gray-600 mt-1">Summary of your completed group buys.</p>
+            </div>
+            <div className="p-4 sm:p-6 space-y-3">
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">Completed Groups:</span>
+                <span className="font-semibold text-gray-900">32</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">Total Savings:</span>
+                <span className="font-semibold text-gray-900">$1,250.00</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">Success Rate:</span>
+                <span className="font-semibold text-gray-900">92%</span>
+              </div>
             </div>
           </div>
         </div>
