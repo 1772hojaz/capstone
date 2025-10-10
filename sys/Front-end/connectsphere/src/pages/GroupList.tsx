@@ -1,8 +1,11 @@
-import { Search, MapPin, ShoppingCart, User } from 'lucide-react';
+import { Search, MapPin, ShoppingCart, User, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useState } from 'react';
 
 export default function GroupList() {
   const navigate = useNavigate();
+  const [selectedGroup, setSelectedGroup] = useState<any>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   const activeGroups = [
     {
@@ -11,6 +14,11 @@ export default function GroupList() {
       status: 'Active',
       progress: '8/10',
       dueDate: '2024-01-15',
+      description: 'High-quality Brazilian coffee beans sourced from sustainable farms. Perfect for espresso and drip coffee.',
+      price: '$45.00',
+      members: 8,
+      targetMembers: 10,
+      savings: '$12.00 per member',
     },
     {
       id: 2,
@@ -18,6 +26,11 @@ export default function GroupList() {
       status: 'Pending',
       progress: '5/20',
       dueDate: '2024-07-20',
+      description: 'RGB LED light strips with smart home integration. Control via app or voice commands.',
+      price: '$28.99',
+      members: 5,
+      targetMembers: 20,
+      savings: '$8.00 per member',
     },
     {
       id: 3,
@@ -25,6 +38,11 @@ export default function GroupList() {
       status: 'Completed',
       progress: '10/10',
       dueDate: '2024-07-01',
+      description: 'Multi-port USB-C hub with HDMI, USB 3.0, and power delivery. Ideal for laptops and tablets.',
+      price: '$35.00',
+      members: 10,
+      targetMembers: 10,
+      savings: '$15.00 per member',
     },
     {
       id: 4,
@@ -32,6 +50,11 @@ export default function GroupList() {
       status: 'Active',
       progress: '12/15',
       dueDate: '2024-01-18',
+      description: 'Assorted organic snacks including nuts, dried fruits, and healthy bars. Perfect for office or home.',
+      price: '$32.50',
+      members: 12,
+      targetMembers: 15,
+      savings: '$10.50 per member',
     },
     {
       id: 5,
@@ -39,8 +62,23 @@ export default function GroupList() {
       status: 'Pending',
       progress: '1/25',
       dueDate: '2024-08-30',
+      description: 'Premium wireless headphones with active noise cancellation and 30-hour battery life.',
+      price: '$149.99',
+      members: 1,
+      targetMembers: 25,
+      savings: '$50.00 per member',
     },
   ];
+
+  const handleViewDetails = (group: any) => {
+    setSelectedGroup(group);
+    setIsModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setSelectedGroup(null);
+  };
 
   const joinedGroups = [
     {
@@ -227,7 +265,7 @@ export default function GroupList() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-8">
           {/* Left Column - Your Group Activities */}
           <div>
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 max-h-[600px] overflow-y-auto">
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 max-h-[600px] overflow-y-auto overflow-x-hidden scrollable-container">
               <div className="p-4 sm:p-6 border-b border-gray-200 sticky top-0 bg-white z-10">
                 <h2 className="text-xl sm:text-2xl font-bold text-gray-900">My Active Groups</h2>
               </div>
@@ -262,7 +300,7 @@ export default function GroupList() {
                         <td className="px-3 sm:px-6 py-3 sm:py-4 text-sm text-gray-700">{group.dueDate}</td>
                         <td className="px-3 sm:px-6 py-3 sm:py-4">
                           <button 
-                            onClick={() => navigate(`/group-chat/${group.id}`)}
+                            onClick={() => handleViewDetails(group)}
                             className="text-sm text-blue-600 hover:text-blue-800 font-medium"
                           >
                             View Details
@@ -279,7 +317,7 @@ export default function GroupList() {
 
           {/* Right Column - My Joined Groups */}
           <div>
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 max-h-[600px] overflow-y-auto">
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 max-h-[600px] overflow-y-auto scrollable-container">
               <div className="p-4 sm:p-6 border-b border-gray-200 sticky top-0 bg-white z-10">
                 <h2 className="text-xl sm:text-2xl font-bold text-gray-900">My Joined Groups</h2>
               </div>
@@ -366,6 +404,109 @@ export default function GroupList() {
           </div>
         </div>
       </footer>
+
+      {/* Modal for Group Details */}
+      {isModalOpen && selectedGroup && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          onClick={closeModal}
+        >
+          <div 
+            className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="sticky top-0 bg-white border-b border-gray-200 p-6 flex items-start justify-between">
+              <div className="flex-1">
+                <h2 className="text-2xl font-bold text-gray-900">{selectedGroup.name}</h2>
+                <div className="mt-2">
+                  <span className={`inline-flex px-3 py-1 text-sm font-medium rounded-full ${
+                    selectedGroup.status === 'Active' ? 'bg-green-100 text-green-700' :
+                    selectedGroup.status === 'Completed' ? 'bg-blue-100 text-blue-700' :
+                    'bg-yellow-100 text-yellow-700'
+                  }`}>
+                    {selectedGroup.status}
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={closeModal}
+                className="ml-4 text-gray-400 hover:text-gray-600 transition"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-6">
+              {/* Description */}
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">Description</h3>
+                <p className="text-gray-700">{selectedGroup.description}</p>
+              </div>
+
+              {/* Group Details Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-sm text-gray-600 mb-1">Price per Person</p>
+                  <p className="text-xl font-bold text-gray-900">{selectedGroup.price}</p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-sm text-gray-600 mb-1">Estimated Savings</p>
+                  <p className="text-xl font-bold text-green-600">{selectedGroup.savings}</p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-sm text-gray-600 mb-1">Progress</p>
+                  <p className="text-xl font-bold text-gray-900">{selectedGroup.progress}</p>
+                  <div className="mt-2 bg-gray-200 rounded-full h-2">
+                    <div 
+                      className="bg-blue-600 h-2 rounded-full transition-all"
+                      style={{ width: `${(selectedGroup.members / selectedGroup.targetMembers) * 100}%` }}
+                    ></div>
+                  </div>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-sm text-gray-600 mb-1">Due Date</p>
+                  <p className="text-xl font-bold text-gray-900">{selectedGroup.dueDate}</p>
+                </div>
+              </div>
+
+              {/* Members Info */}
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-3">Group Members</h3>
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-blue-800">Current Members</p>
+                      <p className="text-2xl font-bold text-blue-900">{selectedGroup.members} / {selectedGroup.targetMembers}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm text-blue-800">Spots Remaining</p>
+                      <p className="text-2xl font-bold text-blue-900">{selectedGroup.targetMembers - selectedGroup.members}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => navigate(`/group-chat/${selectedGroup.id}`)}
+                  className="flex-1 bg-blue-600 text-white py-3 px-6 rounded-lg hover:bg-blue-700 transition font-medium"
+                >
+                  Go to Group Chat
+                </button>
+                <button
+                  onClick={closeModal}
+                  className="px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition font-medium"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
