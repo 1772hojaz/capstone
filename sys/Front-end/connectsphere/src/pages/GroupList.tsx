@@ -87,6 +87,7 @@ export default function GroupList() {
       description: 'Rich, Good morning. Nice. We are all in.',
       icon: '☕',
       hasNotification: true,
+      unreadCount: 3,
     },
     {
       id: 2,
@@ -94,6 +95,7 @@ export default function GroupList() {
       description: 'Alice Requested to check the delivery status.',
       icon: '💡',
       hasNotification: false,
+      unreadCount: 0,
     },
     {
       id: 3,
@@ -101,6 +103,7 @@ export default function GroupList() {
       description: 'Group Deal Completed! Your order has been.',
       icon: '🔌',
       hasNotification: false,
+      unreadCount: 0,
     },
     {
       id: 4,
@@ -108,6 +111,7 @@ export default function GroupList() {
       description: 'You! You invited a new friend, almost.',
       icon: '🍿',
       hasNotification: true,
+      unreadCount: 7,
     },
     {
       id: 5,
@@ -115,6 +119,7 @@ export default function GroupList() {
       description: 'Admin: Unfortunately, this group buy did not.',
       icon: '🎧',
       hasNotification: false,
+      unreadCount: 0,
     },
     {
       id: 6,
@@ -122,6 +127,7 @@ export default function GroupList() {
       description: 'New deal for a similar product has.',
       icon: '🪑',
       hasNotification: true,
+      unreadCount: 12,
     },
     {
       id: 7,
@@ -129,6 +135,7 @@ export default function GroupList() {
       description: 'Awesome! 2x bigger! 4th creator has joined.',
       icon: '🖱️',
       hasNotification: false,
+      unreadCount: 0,
     },
     {
       id: 8,
@@ -136,6 +143,7 @@ export default function GroupList() {
       description: 'Botanic: The next delivery is reported by ord.',
       icon: '🌱',
       hasNotification: false,
+      unreadCount: 0,
     },
     {
       id: 9,
@@ -143,6 +151,7 @@ export default function GroupList() {
       description: 'FitnessGuru: Just used them, great quality!',
       icon: '🏋️',
       hasNotification: false,
+      unreadCount: 0,
     },
   ];
 
@@ -334,8 +343,10 @@ export default function GroupList() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-2">
                         <h3 className="text-sm font-semibold text-gray-900">{group.name}</h3>
-                        {group.hasNotification && (
-                          <div className="w-2 h-2 bg-blue-600 rounded-full flex-shrink-0 mt-1"></div>
+                        {group.hasNotification && group.unreadCount > 0 && (
+                          <div className="bg-blue-600 text-white text-xs font-bold rounded-full min-w-[20px] h-5 flex items-center justify-center px-1.5 flex-shrink-0">
+                            {group.unreadCount > 99 ? '99+' : group.unreadCount}
+                          </div>
                         )}
                       </div>
                       <p className="text-xs text-gray-600 mt-1 line-clamp-1">{group.description}</p>
