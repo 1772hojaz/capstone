@@ -34,7 +34,7 @@ export default function ProfilePage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+        <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* Header */}
       <header className="bg-white border-b border-gray-200">
         <div className="px-3 sm:px-6 py-4 flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-8">
@@ -85,29 +85,29 @@ export default function ProfilePage() {
           </nav>
 
           {/* Right Side */}
-          <div className="flex items-center gap-4 flex-shrink-0">
-            <div className="relative">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-4 flex-shrink-0">
+            <div className="relative hidden sm:block">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 type="text"
                 placeholder="Search groups..."
-                className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent w-48"
+                className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent w-40 lg:w-48"
               />
             </div>
-            <div className="flex items-center gap-2 text-sm text-gray-700">
+            <div className="flex items-center gap-2 text-xs sm:text-sm text-gray-700">
               <MapPin className="w-4 h-4" />
               <span>Harare</span>
             </div>
-            <button className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition flex items-center gap-2">
+            <button className="px-3 sm:px-4 py-2 bg-blue-600 text-white text-xs sm:text-sm rounded-lg hover:bg-blue-700 transition flex items-center gap-2 whitespace-nowrap">
               <ShoppingCart className="w-4 h-4" />
               USD (3)
             </button>
-            <button className="px-4 py-2 text-sm text-gray-700 hover:text-gray-900">
+            <button className="px-3 sm:px-4 py-2 text-xs sm:text-sm text-gray-700 hover:text-gray-900 whitespace-nowrap">
               ZIG (3)
             </button>
             <button 
               onClick={() => navigate('/login')}
-              className="px-4 py-2 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600 transition"
+              className="px-3 sm:px-4 py-2 bg-red-500 text-white text-xs sm:text-sm rounded-lg hover:bg-red-600 transition whitespace-nowrap"
             >
               Logout
             </button>
@@ -116,7 +116,7 @@ export default function ProfilePage() {
       </header>
 
       {/* ML System Status Banner */}
-      <div className="bg-blue-50 border-b border-blue-200 px-6 py-3 flex items-center justify-between">
+      <div className="bg-blue-50 border-b border-blue-200 px-3 sm:px-6 py-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-0">
         <div className="flex items-center gap-2">
           <svg className="w-5 h-5 text-blue-600" viewBox="0 0 24 24" fill="currentColor">
             <path d="M13 10V3L4 14h7v7l9-11h-7z"/>
@@ -128,8 +128,8 @@ export default function ProfilePage() {
 
       {/* Tabs */}
       <div className="bg-white border-b border-gray-200">
-        <div className="px-6">
-          <nav className="flex gap-8">
+        <div className="px-3 sm:px-6">
+          <nav className="flex gap-4 sm:gap-8">
             <button
               onClick={() => navigate('/trader')}
               className="py-4 text-sm font-medium border-b-2 border-transparent text-gray-600 hover:text-gray-900 transition"
@@ -159,7 +159,7 @@ export default function ProfilePage() {
       </div>
 
       {/* Main Content */}
-      <main className="flex-1 px-6 py-8">
+      <main className="flex-1 px-3 sm:px-6 py-4 sm:py-8">
         <div className="max-w-5xl mx-auto">
           {/* Profile Header */}
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8 mb-6">

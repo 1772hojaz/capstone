@@ -110,80 +110,79 @@ export default function GroupList() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      {/* Header - Responsive */}
+      {/* Header */}
       <header className="bg-white border-b border-gray-200">
-        <div className="px-3 sm:px-6 py-3 sm:py-4 flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-8">
+        <div className="px-3 sm:px-6 py-4 flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-8">
           {/* Logo */}
           <button 
             onClick={() => navigate('/trader')}
             className="flex items-center gap-2 hover:opacity-80 transition flex-shrink-0"
           >
-            <svg className="w-6 h-6 sm:w-8 sm:h-8 text-blue-600" viewBox="0 0 24 24" fill="currentColor">
+            <svg className="w-8 h-8 text-blue-600" viewBox="0 0 24 24" fill="currentColor">
               <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
             </svg>
-            <span className="text-lg sm:text-xl font-semibold text-gray-800">ConnectSphere</span>
+            <span className="text-xl font-semibold text-gray-800">ConnectSphere</span>
           </button>
 
-          {/* Top Navigation - Hidden on mobile, scroll on tablet, normal on desktop */}
-          <nav className="hidden md:flex items-center gap-3 lg:gap-6 flex-1 overflow-x-auto">
+          {/* Top Navigation */}
+          <nav className="hidden md:flex items-center gap-6 flex-1">
             <button 
               onClick={() => navigate('/profile')}
-              className="flex items-center gap-2 text-sm text-gray-700 hover:text-gray-900 whitespace-nowrap"
+              className="flex items-center gap-2 text-sm text-gray-700 hover:text-gray-900"
             >
               <User className="w-4 h-4" />
-              <span className="hidden lg:inline">Profile</span>
+              Profile
             </button>
             <button 
               onClick={() => navigate('/trader')}
-              className="text-sm text-gray-700 hover:text-gray-900 whitespace-nowrap"
+              className="text-sm text-gray-700 hover:text-gray-900"
             >
               Recommended
             </button>
             <button 
               onClick={() => navigate('/groups')}
-              className="text-sm font-medium text-blue-600 whitespace-nowrap"
+              className="text-sm font-medium text-blue-600"
             >
               My Groups
             </button>
             <button 
               onClick={() => navigate('/all-groups')}
-              className="text-sm text-gray-700 hover:text-gray-900 whitespace-nowrap"
+              className="text-sm text-gray-700 hover:text-gray-900"
             >
               All Groups
             </button>
             <button 
               onClick={() => navigate('/create-group')}
-              className="text-sm text-gray-700 hover:text-gray-900 whitespace-nowrap"
+              className="text-sm text-gray-700 hover:text-gray-900"
             >
               Create Group
             </button>
           </nav>
 
-          {/* Right Side - Responsive */}
-          <div className="flex items-center gap-2 sm:gap-4 flex-wrap sm:flex-nowrap w-full sm:w-auto">
-            <div className="relative flex-1 sm:flex-initial">
+          {/* Right Side */}
+          <div className="flex flex-wrap items-center gap-2 sm:gap-4 flex-shrink-0">
+            <div className="relative hidden sm:block">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search..."
-                className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent w-full sm:w-32 md:w-48"
+                placeholder="Search groups..."
+                className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent w-40 lg:w-48"
               />
             </div>
-            <div className="hidden sm:flex items-center gap-2 text-sm text-gray-700">
+            <div className="flex items-center gap-2 text-xs sm:text-sm text-gray-700">
               <MapPin className="w-4 h-4" />
-              <span className="hidden lg:inline">Harare</span>
+              <span>Harare</span>
             </div>
-            <button className="px-3 sm:px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition flex items-center gap-2 whitespace-nowrap">
+            <button className="px-3 sm:px-4 py-2 bg-blue-600 text-white text-xs sm:text-sm rounded-lg hover:bg-blue-700 transition flex items-center gap-2 whitespace-nowrap">
               <ShoppingCart className="w-4 h-4" />
-              <span className="hidden sm:inline">USD (3)</span>
-              <span className="sm:hidden">(3)</span>
+              USD (3)
             </button>
-            <button className="hidden md:block px-4 py-2 text-sm text-gray-700 hover:text-gray-900 whitespace-nowrap">
+            <button className="px-3 sm:px-4 py-2 text-xs sm:text-sm text-gray-700 hover:text-gray-900 whitespace-nowrap">
               ZIG (3)
             </button>
             <button 
               onClick={() => navigate('/login')}
-              className="px-3 sm:px-4 py-2 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600 transition whitespace-nowrap"
+              className="px-3 sm:px-4 py-2 bg-red-500 text-white text-xs sm:text-sm rounded-lg hover:bg-red-600 transition whitespace-nowrap"
             >
               Logout
             </button>
