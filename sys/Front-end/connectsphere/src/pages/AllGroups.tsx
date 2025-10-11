@@ -1,8 +1,10 @@
-import { Search, MapPin, ShoppingCart, User, Users } from 'lucide-react';
+import { Search, MapPin, User, Users } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useState } from 'react';
 
 export default function AllGroups() {
   const navigate = useNavigate();
+  const [selectedCurrency, setSelectedCurrency] = useState<'USD' | 'ZIG'>('USD');
 
   const allGroups = [
     {
@@ -168,12 +170,25 @@ export default function AllGroups() {
               <MapPin className="w-4 h-4" />
               <span>Harare</span>
             </div>
-            <button className="px-3 sm:px-4 py-2 bg-blue-600 text-white text-xs sm:text-sm rounded-lg hover:bg-blue-700 transition flex items-center gap-2 whitespace-nowrap">
-              <ShoppingCart className="w-4 h-4" />
-              USD (3)
+            <button 
+              onClick={() => setSelectedCurrency('USD')}
+              className={`px-3 sm:px-4 py-2 text-xs sm:text-sm rounded-lg transition whitespace-nowrap ${
+                selectedCurrency === 'USD' 
+                  ? 'bg-blue-600 text-white hover:bg-blue-700' 
+                  : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
+              }`}
+            >
+              USD
             </button>
-            <button className="px-3 sm:px-4 py-2 text-xs sm:text-sm text-gray-700 hover:text-gray-900 whitespace-nowrap">
-              ZIG (3)
+            <button 
+              onClick={() => setSelectedCurrency('ZIG')}
+              className={`px-3 sm:px-4 py-2 text-xs sm:text-sm rounded-lg transition whitespace-nowrap ${
+                selectedCurrency === 'ZIG' 
+                  ? 'bg-blue-600 text-white hover:bg-blue-700' 
+                  : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
+              }`}
+            >
+              ZIG
             </button>
             <button 
               onClick={() => navigate('/login')}
