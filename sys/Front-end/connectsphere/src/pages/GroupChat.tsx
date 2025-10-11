@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { ArrowLeft, Paperclip, Tag, Send, User, X, Flag, UserX, Mail } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -40,6 +40,8 @@ export default function GroupChat() {
   const [message, setMessage] = useState('');
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isShareProductModalOpen, setIsShareProductModalOpen] = useState(false);
 
   const userProfiles: { [key: number]: UserProfile } = {
     1: {
@@ -141,6 +143,33 @@ export default function GroupChat() {
       // Handle sending message
       setMessage('');
     }
+  };
+
+  const handleFileSelect = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      const fileNames = Array.from(files).map(f => f.name).join(', ');
+      alert(`Selected files: ${fileNames}`);
+      // Here you would typically handle file upload
+    }
+  };
+
+  const handleShareProduct = () => {
+    setIsShareProductModalOpen(true);
+  };
+
+  const closeShareProductModal = () => {
+    setIsShareProductModalOpen(false);
+  };
+
+  const handleShareGroupBuy = (productName: string) => {
+    alert(`Sharing group buy: ${productName}`);
+    closeShareProductModal();
+    // Here you would handle sharing the product to the chat
   };
 
   const groupMembers = [
@@ -568,10 +597,26 @@ export default function GroupChat() {
         {/* Message Input */}
         <div className="bg-white border-t border-gray-200 px-6 py-4 shadow-lg">
           <div className="flex items-center gap-3">
-            <button className="p-2.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all">
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileChange}
+              className="hidden"
+              multiple
+              accept="image/*,video/*,.pdf,.doc,.docx,.txt"
+            />
+            <button 
+              onClick={handleFileSelect}
+              className="p-2.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+              title="Attach files"
+            >
               <Paperclip className="w-5 h-5" />
             </button>
-            <button className="p-2.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all">
+            <button 
+              onClick={handleShareProduct}
+              className="p-2.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+              title="Share group buy product"
+            >
               <Tag className="w-5 h-5" />
             </button>
             <input
@@ -673,6 +718,102 @@ export default function GroupChat() {
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Share Group Buy Product Modal */}
+      {isShareProductModalOpen && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          onClick={closeShareProductModal}
+        >
+          <div 
+            className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="bg-white border-b border-gray-200 p-6 flex items-center justify-between flex-shrink-0 z-10">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">Share Group Buy Product</h2>
+                <p className="text-sm text-gray-600 mt-1">Select a product to share in this chat</p>
+              </div>
+              <button
+                onClick={closeShareProductModal}
+                className="text-gray-400 hover:text-gray-600 transition"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            {/* Product List - Scrollable */}
+            <div className="p-6 space-y-3 overflow-y-auto scrollable-container">
+              {/* Sample products - these would come from your active groups */}
+              {[
+                {
+                  name: 'QuantumView 65" 4K Smart TV',
+                  image: '/api/placeholder/400/300',
+                  discount: '30% OFF',
+                  minBuyers: '5+',
+                  description: 'Experience stunning visuals and smart features.',
+                  price: '$699',
+                },
+                {
+                  name: 'Premium Coffee Beans (Brazil)',
+                  image: '/api/placeholder/400/300',
+                  discount: '25% OFF',
+                  minBuyers: '10+',
+                  description: 'High-quality Brazilian coffee beans.',
+                  price: '$45',
+                },
+                {
+                  name: 'Smart LED Light Strips',
+                  image: '/api/placeholder/400/300',
+                  discount: '20% OFF',
+                  minBuyers: '20+',
+                  description: 'RGB LED strips with smart home integration.',
+                  price: '$28.99',
+                },
+                {
+                  name: 'Noise-Cancelling Headphones',
+                  image: '/api/placeholder/400/300',
+                  discount: '40% OFF',
+                  minBuyers: '25+',
+                  description: 'Premium wireless headphones with ANC.',
+                  price: '$149.99',
+                },
+              ].map((product, index) => (
+                <div
+                  key={index}
+                  className="bg-gray-50 border border-gray-200 rounded-lg p-4 hover:bg-gray-100 transition cursor-pointer"
+                  onClick={() => handleShareGroupBuy(product.name)}
+                >
+                  <div className="flex gap-4">
+                    <div className="relative w-24 h-24 flex-shrink-0">
+                      <div className="w-full h-full bg-gradient-to-br from-yellow-100 to-orange-200 rounded-lg"></div>
+                      <div className="absolute top-1 right-1 flex gap-1">
+                        <span className="px-1.5 py-0.5 bg-blue-600 text-white text-xs font-bold rounded">
+                          {product.minBuyers}
+                        </span>
+                        <span className="px-1.5 py-0.5 bg-red-500 text-white text-xs font-bold rounded">
+                          {product.discount}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-bold text-gray-900 mb-1">{product.name}</h3>
+                      <p className="text-sm text-gray-600 mb-2 line-clamp-1">{product.description}</p>
+                      <div className="flex items-center justify-between">
+                        <p className="text-lg font-bold text-blue-600">{product.price}</p>
+                        <button className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition">
+                          Share to Chat
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
