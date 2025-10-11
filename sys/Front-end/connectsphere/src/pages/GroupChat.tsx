@@ -180,51 +180,55 @@ export default function GroupChat() {
   };
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-screen bg-gradient-to-br from-gray-50 to-gray-100">
       {/* Left Sidebar - Group List */}
-      <div className="w-64 bg-white border-r border-gray-200 flex flex-col">
+      <div className="w-72 bg-white border-r border-gray-200 flex flex-col shadow-lg">
         {/* Logo */}
-        <div className="p-4 border-b border-gray-200">
+        <div className="p-5 border-b border-gray-200 bg-gradient-to-r from-blue-600 to-blue-700">
           <button 
             onClick={() => navigate('/trader')}
-            className="flex items-center gap-2 hover:opacity-80 transition"
+            className="flex items-center gap-2 hover:opacity-90 transition"
           >
-            <svg className="w-8 h-8 text-blue-600" viewBox="0 0 24 24" fill="currentColor">
+            <svg className="w-8 h-8 text-white" viewBox="0 0 24 24" fill="currentColor">
               <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
             </svg>
-            <span className="text-xl font-semibold text-gray-800">ConnectSphere</span>
+            <span className="text-xl font-bold text-white">ConnectSphere</span>
           </button>
         </div>
 
         {/* Group Buys Label */}
-        <div className="px-4 py-3 border-b border-gray-200">
-          <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
-            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+        <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
+          <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+            <svg className="w-5 h-5 text-blue-600" viewBox="0 0 24 24" fill="currentColor">
               <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
             </svg>
-            Group Buys
+            My Group Chats
           </div>
         </div>
 
         {/* Groups List */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto scrollable-container">
           {groupMembers.map((group, index) => (
             <div
               key={index}
-              className={`px-4 py-3 flex items-center justify-between cursor-pointer transition ${
+              className={`px-4 py-3.5 flex items-center justify-between cursor-pointer transition-all ${
                 group.active
-                  ? 'bg-blue-50 border-l-4 border-blue-600'
-                  : 'hover:bg-gray-50 border-l-4 border-transparent'
+                  ? 'bg-blue-50 border-l-4 border-blue-600 shadow-sm'
+                  : 'hover:bg-gray-50 border-l-4 border-transparent hover:border-gray-300'
               }`}
             >
-              <div className="flex items-center gap-2 flex-1 min-w-0">
-                <span className="text-gray-400">#</span>
-                <span className={`text-sm truncate ${group.active ? 'font-medium text-gray-900' : 'text-gray-700'}`}>
+              <div className="flex items-center gap-3 flex-1 min-w-0">
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                  group.active ? 'bg-blue-100' : 'bg-gray-100'
+                }`}>
+                  <span className={`text-lg ${group.active ? 'text-blue-600' : 'text-gray-600'}`}>#</span>
+                </div>
+                <span className={`text-sm truncate ${group.active ? 'font-semibold text-gray-900' : 'text-gray-700'}`}>
                   {group.name}
                 </span>
               </div>
               {group.count !== null && group.count !== undefined && (
-                <span className="ml-2 px-2 py-0.5 bg-blue-600 text-white text-xs font-medium rounded-full">
+                <span className="ml-2 px-2.5 py-1 bg-blue-600 text-white text-xs font-bold rounded-full shadow-sm">
                   {group.count}
                 </span>
               )}
@@ -233,109 +237,127 @@ export default function GroupChat() {
         </div>
 
         {/* Start New Deal Button */}
-        <div className="p-4 border-t border-gray-200">
+        <div className="p-4 border-t border-gray-200 bg-gray-50">
           <button 
             onClick={() => navigate('/create-group')}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg transition"
+            className="w-full flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 rounded-lg transition-all shadow-md hover:shadow-lg"
           >
-            <span className="text-lg">+</span>
+            <span className="text-xl font-bold">+</span>
             Start New Deal
           </button>
         </div>
 
         {/* User Profile */}
-        <div className="p-4 border-t border-gray-200 flex items-center gap-3">
-          <div className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center">
-            <User className="w-5 h-5 text-gray-600" />
+        <div className="p-4 border-t border-gray-200 flex items-center gap-3 bg-white">
+          <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center shadow-sm">
+            <User className="w-5 h-5 text-white" />
           </div>
-          <span className="text-sm font-medium text-gray-900">Sarah P.</span>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-gray-900 truncate">Sarah P.</p>
+            <p className="text-xs text-green-600 flex items-center gap-1">
+              <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+              Online
+            </p>
+          </div>
         </div>
       </div>
 
       {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col bg-white">
         {/* Chat Header */}
-        <div className="bg-white border-b border-gray-200 px-6 py-4">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => navigate('/groups')}
-              className="p-1 hover:bg-gray-100 rounded-lg transition"
-            >
-              <ArrowLeft className="w-5 h-5 text-gray-600" />
-            </button>
-            <div>
-              <h1 className="text-lg font-semibold text-gray-900">Premium Coffee Beans (Brazil)</h1>
-              <p className="text-sm text-gray-500">5 online</p>
+        <div className="bg-white border-b border-gray-200 px-6 py-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => navigate('/groups')}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <ArrowLeft className="w-5 h-5 text-gray-600" />
+              </button>
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full flex items-center justify-center shadow-md">
+                  <span className="text-2xl">☕</span>
+                </div>
+                <div>
+                  <h1 className="text-lg font-bold text-gray-900">Premium Coffee Beans (Brazil)</h1>
+                  <p className="text-sm text-gray-500 flex items-center gap-1">
+                    <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                    5 members online
+                  </p>
+                </div>
+              </div>
             </div>
+            <button 
+              onClick={() => navigate('/profile')}
+              className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-2 border border-gray-300"
+            >
+              <User className="w-4 h-4" />
+              Profile
+            </button>
           </div>
-          <button 
-            onClick={() => navigate('/profile')}
-            className="absolute top-4 right-6 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 rounded-lg transition flex items-center gap-1"
-          >
-            <User className="w-4 h-4" />
-            Profile
-          </button>
         </div>
 
         {/* Messages Area */}
-        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+        <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6 bg-gradient-to-b from-gray-50 to-white scrollable-container">
           {messages.map((msg) => (
             <div key={msg.id} className={`flex ${msg.isCurrentUser ? 'justify-end' : 'justify-start'}`}>
               {!msg.isCurrentUser && (
                 <div className="flex gap-3 max-w-2xl">
-                  <div className="w-10 h-10 bg-gray-300 rounded-full flex items-center justify-center flex-shrink-0">
-                    <span className="text-sm">{msg.avatar}</span>
+                  <div className="w-10 h-10 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full flex items-center justify-center flex-shrink-0 shadow-md">
+                    <span className="text-sm text-white font-semibold">{msg.avatar}</span>
                   </div>
                   <div className="flex-1">
-                    <div className="flex items-baseline gap-2 mb-1">
-                      <span className="text-sm font-semibold text-gray-900">{msg.sender}</span>
-                      {msg.time && <span className="text-xs text-gray-500">{msg.time}</span>}
+                    <div className="flex items-baseline gap-2 mb-1.5">
+                      <span className="text-sm font-bold text-gray-900">{msg.sender}</span>
+                      {msg.time && <span className="text-xs text-gray-400">{msg.time}</span>}
                     </div>
                     
                     {msg.content && !msg.content.includes('Deal status updated') && (
-                      <div className="bg-gray-100 rounded-lg rounded-tl-none px-4 py-2">
-                        <p className="text-sm text-gray-800">{msg.content}</p>
+                      <div className="bg-white border border-gray-200 rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm hover:shadow-md transition-shadow">
+                        <p className="text-sm text-gray-800 leading-relaxed">{msg.content}</p>
                       </div>
                     )}
 
                     {msg.content.includes('Deal status updated') && (
-                      <div className="text-xs text-gray-400 text-center py-2">
-                        {msg.content}
+                      <div className="text-xs text-gray-400 text-center py-3 flex items-center gap-2">
+                        <div className="flex-1 h-px bg-gray-200"></div>
+                        <span>{msg.content}</span>
+                        <div className="flex-1 h-px bg-gray-200"></div>
                       </div>
                     )}
 
                     {msg.productCard && (
-                      <div className="mt-2 bg-white border border-gray-200 rounded-lg overflow-hidden max-w-md">
+                      <div className="mt-3 bg-white border-2 border-gray-200 rounded-xl overflow-hidden max-w-md shadow-lg hover:shadow-xl transition-shadow">
                         <div className="relative">
                           <img
                             src={msg.productCard.image}
                             alt={msg.productCard.name}
                             className="w-full h-48 object-cover bg-gradient-to-br from-yellow-100 to-orange-200"
                           />
-                          <div className="absolute top-2 right-2 flex gap-2">
-                            <span className="px-2 py-1 bg-blue-600 text-white text-xs font-semibold rounded">
+                          <div className="absolute top-3 right-3 flex gap-2">
+                            <span className="px-3 py-1 bg-blue-600 text-white text-xs font-bold rounded-full shadow-md">
                               {msg.productCard.badge}
                             </span>
-                            <span className="px-2 py-1 bg-red-500 text-white text-xs font-semibold rounded">
+                            <span className="px-3 py-1 bg-red-500 text-white text-xs font-bold rounded-full shadow-md">
                               {msg.productCard.discount}
                             </span>
                           </div>
                         </div>
                         <div className="p-4">
-                          <h3 className="font-semibold text-gray-900 mb-2">{msg.productCard.name}</h3>
-                          <p className="text-sm text-gray-600 mb-3">{msg.productCard.description}</p>
-                          <button className="w-full px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition">
-                            View Deal
+                          <h3 className="font-bold text-gray-900 mb-2">{msg.productCard.name}</h3>
+                          <p className="text-sm text-gray-600 mb-4 leading-relaxed">{msg.productCard.description}</p>
+                          <button className="w-full px-4 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white text-sm font-semibold rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all shadow-md hover:shadow-lg">
+                            View Deal Details
                           </button>
                         </div>
                       </div>
                     )}
 
                     {msg.statusBadge && (
-                      <div className={`mt-2 px-3 py-2 rounded-lg text-sm ${
-                        msg.statusBadge.color === 'blue' ? 'bg-blue-600 text-white' :
-                        msg.statusBadge.color === 'red' ? 'bg-red-500 text-white' :
-                        'bg-yellow-500 text-gray-900'
+                      <div className={`mt-3 px-4 py-3 rounded-xl text-sm font-medium shadow-md ${
+                        msg.statusBadge.color === 'blue' ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white' :
+                        msg.statusBadge.color === 'red' ? 'bg-gradient-to-r from-red-500 to-red-600 text-white' :
+                        'bg-gradient-to-r from-yellow-400 to-yellow-500 text-gray-900'
                       }`}>
                         {msg.statusBadge.text}
                       </div>
@@ -346,11 +368,11 @@ export default function GroupChat() {
 
               {msg.isCurrentUser && (
                 <div className="flex gap-3 max-w-2xl items-end">
-                  <div className="bg-blue-600 text-white rounded-lg rounded-br-none px-4 py-2">
-                    <p className="text-sm">{msg.content}</p>
+                  <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-2xl rounded-br-sm px-4 py-3 shadow-md hover:shadow-lg transition-shadow">
+                    <p className="text-sm leading-relaxed">{msg.content}</p>
                   </div>
-                  <div className="w-10 h-10 bg-gray-300 rounded-full flex items-center justify-center flex-shrink-0">
-                    <span className="text-sm">{msg.avatar}</span>
+                  <div className="w-10 h-10 bg-gradient-to-br from-green-400 to-green-600 rounded-full flex items-center justify-center flex-shrink-0 shadow-md">
+                    <span className="text-sm text-white font-semibold">{msg.avatar}</span>
                   </div>
                 </div>
               )}
@@ -359,12 +381,12 @@ export default function GroupChat() {
         </div>
 
         {/* Message Input */}
-        <div className="bg-white border-t border-gray-200 px-6 py-4">
-          <div className="flex items-center gap-2">
-            <button className="p-2 text-gray-500 hover:text-gray-700 transition">
+        <div className="bg-white border-t border-gray-200 px-6 py-4 shadow-lg">
+          <div className="flex items-center gap-3">
+            <button className="p-2.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all">
               <Paperclip className="w-5 h-5" />
             </button>
-            <button className="p-2 text-gray-500 hover:text-gray-700 transition">
+            <button className="p-2.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all">
               <Tag className="w-5 h-5" />
             </button>
             <input
@@ -373,11 +395,11 @@ export default function GroupChat() {
               onChange={(e) => setMessage(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
               placeholder="Discuss products, share deals, or negotiate prices..."
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+              className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-gray-50 focus:bg-white transition-colors"
             />
             <button
               onClick={handleSendMessage}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center gap-2"
+              className="px-5 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl hover:from-blue-700 hover:to-blue-800 transition-all flex items-center gap-2 font-medium shadow-md hover:shadow-lg"
             >
               <Send className="w-4 h-4" />
               Send
