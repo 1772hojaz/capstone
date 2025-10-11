@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Search, MapPin, ShoppingCart, User, Camera, Mail, Phone, MapPin as Location, Calendar, Edit2, Save, X } from 'lucide-react';
+import { User, Camera, Mail, Phone, MapPin as Location, Calendar, Edit2, Save, X, ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 export default function ProfilePage() {
@@ -38,6 +38,14 @@ export default function ProfilePage() {
       {/* Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
         <div className="px-3 sm:px-6 py-4 flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-8">
+          {/* Back Button */}
+          <button
+            onClick={() => navigate(-1)}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-2"
+          >
+            <ArrowLeft className="w-5 h-5 text-gray-600" />
+          </button>
+          
           {/* Logo */}
           <button 
             onClick={() => navigate('/trader')}
@@ -49,62 +57,11 @@ export default function ProfilePage() {
             <span className="text-xl font-semibold text-gray-800">ConnectSphere</span>
           </button>
 
-          {/* Top Navigation */}
-          <nav className="hidden md:flex items-center gap-6 flex-1">
-            <button 
-              onClick={() => navigate('/profile')}
-              className="flex items-center gap-2 text-sm font-medium text-blue-600"
-            >
-              <User className="w-4 h-4" />
-              Profile
-            </button>
-            <button 
-              onClick={() => navigate('/trader')}
-              className="text-sm text-gray-700 hover:text-gray-900"
-            >
-              Recommended
-            </button>
-            <button 
-              onClick={() => navigate('/groups')}
-              className="text-sm text-gray-700 hover:text-gray-900"
-            >
-              My Groups
-            </button>
-            <button 
-              onClick={() => navigate('/all-groups')}
-              className="text-sm text-gray-700 hover:text-gray-900"
-            >
-              All Groups
-            </button>
-            <button 
-              onClick={() => navigate('/create-group')}
-              className="text-sm text-gray-700 hover:text-gray-900"
-            >
-              Create Group
-            </button>
-          </nav>
+          {/* Spacer */}
+          <div className="flex-1"></div>
 
-          {/* Right Side */}
-          <div className="flex flex-wrap items-center gap-2 sm:gap-4 flex-shrink-0">
-            <div className="relative hidden sm:block">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search groups..."
-                className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent w-40 lg:w-48"
-              />
-            </div>
-            <div className="flex items-center gap-2 text-xs sm:text-sm text-gray-700">
-              <MapPin className="w-4 h-4" />
-              <span>Harare</span>
-            </div>
-            <button className="px-3 sm:px-4 py-2 bg-blue-600 text-white text-xs sm:text-sm rounded-lg hover:bg-blue-700 transition flex items-center gap-2 whitespace-nowrap">
-              <ShoppingCart className="w-4 h-4" />
-              USD (3)
-            </button>
-            <button className="px-3 sm:px-4 py-2 text-xs sm:text-sm text-gray-700 hover:text-gray-900 whitespace-nowrap">
-              ZIG (3)
-            </button>
+          {/* Right Side - Only Logout */}
+          <div className="flex items-center gap-2 sm:gap-4 flex-shrink-0">
             <button 
               onClick={() => navigate('/login')}
               className="px-3 sm:px-4 py-2 bg-red-500 text-white text-xs sm:text-sm rounded-lg hover:bg-red-600 transition whitespace-nowrap"
@@ -114,38 +71,6 @@ export default function ProfilePage() {
           </div>
         </div>
       </header>
-
-      {/* Tabs */}
-      <div className="bg-white border-b border-gray-200 sticky top-[73px] z-40">
-        <div className="px-3 sm:px-6">
-          <nav className="flex gap-4 sm:gap-8">
-            <button
-              onClick={() => navigate('/trader')}
-              className="py-4 text-sm font-medium border-b-2 border-transparent text-gray-600 hover:text-gray-900 transition"
-            >
-              Recommended
-            </button>
-            <button
-              onClick={() => navigate('/groups')}
-              className="py-4 text-sm font-medium border-b-2 border-transparent text-gray-600 hover:text-gray-900 transition"
-            >
-              My Groups
-            </button>
-            <button
-              onClick={() => navigate('/all-groups')}
-              className="py-4 text-sm font-medium border-b-2 border-transparent text-gray-600 hover:text-gray-900 transition"
-            >
-              All Groups
-            </button>
-            <button 
-              onClick={() => navigate('/create-group')}
-              className="py-4 text-sm font-medium border-b-2 border-transparent text-gray-600 hover:text-gray-900 transition"
-            >
-              Create Group
-            </button>
-          </nav>
-        </div>
-      </div>
 
       {/* Main Content */}
       <main className="flex-1 px-3 sm:px-6 py-4 sm:py-8">
