@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowLeft, Paperclip, Tag, Send, User } from 'lucide-react';
+import { ArrowLeft, Paperclip, Tag, Send, User, X, Flag, UserX, Mail } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 interface Message {
@@ -9,6 +9,7 @@ interface Message {
   content: string;
   time: string;
   isCurrentUser: boolean;
+  userId?: number;
   productCard?: {
     name: string;
     image: string;
@@ -22,9 +23,125 @@ interface Message {
   };
 }
 
+interface UserProfile {
+  id: number;
+  name: string;
+  username: string;
+  avatar: string;
+  email: string;
+  memberSince: string;
+  groupsJoined: number;
+  dealsCompleted: number;
+  bio: string;
+}
+
 export default function GroupChat() {
   const navigate = useNavigate();
   const [message, setMessage] = useState('');
+  const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
+  const [isUserModalOpen, setIsUserModalOpen] = useState(false);
+
+  const userProfiles: { [key: number]: UserProfile } = {
+    1: {
+      id: 1,
+      name: 'Alice Johnson',
+      username: '@alice',
+      avatar: '👤',
+      email: 'alice@example.com',
+      memberSince: 'March 2023',
+      groupsJoined: 28,
+      dealsCompleted: 45,
+      bio: 'Deal hunter and tech enthusiast. Love organizing group buys for electronics.',
+    },
+    2: {
+      id: 2,
+      name: 'Bob Williams',
+      username: '@bob',
+      avatar: '👤',
+      email: 'bob@example.com',
+      memberSince: 'June 2023',
+      groupsJoined: 15,
+      dealsCompleted: 22,
+      bio: 'Always looking for great deals on home appliances.',
+    },
+    3: {
+      id: 3,
+      name: 'Charlie Davis',
+      username: '@charlie',
+      avatar: '👤',
+      email: 'charlie@example.com',
+      memberSince: 'January 2024',
+      groupsJoined: 12,
+      dealsCompleted: 18,
+      bio: 'Bargain shopper and coffee lover.',
+    },
+    4: {
+      id: 4,
+      name: 'Diana Martinez',
+      username: '@diana',
+      avatar: '👤',
+      email: 'diana@example.com',
+      memberSince: 'August 2023',
+      groupsJoined: 20,
+      dealsCompleted: 30,
+      bio: 'Professional shopper. Love finding the best deals.',
+    },
+    5: {
+      id: 5,
+      name: 'Ethan Brown',
+      username: '@ethan',
+      avatar: '👤',
+      email: 'ethan@example.com',
+      memberSince: 'December 2023',
+      groupsJoined: 10,
+      dealsCompleted: 15,
+      bio: 'Tech gadget enthusiast.',
+    },
+    0: {
+      id: 0,
+      name: 'Sarah Parker',
+      username: '@sarahp',
+      avatar: '👤',
+      email: 'sarah.p@example.com',
+      memberSince: 'January 2024',
+      groupsJoined: 32,
+      dealsCompleted: 52,
+      bio: 'Passionate about finding great deals and organizing group buys. Love coffee, tech gadgets, and eco-friendly products.',
+    },
+  };
+
+  const handleUserClick = (userId: number) => {
+    if (userId === 0) {
+      // Current user - navigate to profile page
+      navigate('/profile');
+    } else {
+      // Other users - show modal
+      setSelectedUser(userProfiles[userId]);
+      setIsUserModalOpen(true);
+    }
+  };
+
+  const closeUserModal = () => {
+    setIsUserModalOpen(false);
+    setSelectedUser(null);
+  };
+
+  const handleReportUser = () => {
+    alert(`Report submitted for ${selectedUser?.name}`);
+    closeUserModal();
+  };
+
+  const handleBlockUser = () => {
+    alert(`${selectedUser?.name} has been blocked`);
+    closeUserModal();
+  };
+
+  const handleSendMessage = () => {
+    if (message.trim()) {
+      // Handle sending message
+      setMessage('');
+    }
+  };
 
   const groupMembers = [
     { 
@@ -88,6 +205,7 @@ export default function GroupChat() {
     {
       id: 1,
       sender: 'Alice',
+      userId: 1,
       avatar: '👤',
       content: "Hey everyone! Saw a great deal on the new Smart TV. Thinking of organizing a group buy.",
       time: '10:00 AM',
@@ -96,6 +214,7 @@ export default function GroupChat() {
     {
       id: 2,
       sender: 'You',
+      userId: 0,
       avatar: '👤',
       content: "Oh, I've been waiting for that! How much can we save?",
       time: '',
@@ -104,6 +223,7 @@ export default function GroupChat() {
     {
       id: 3,
       sender: 'Alice',
+      userId: 1,
       avatar: '👤',
       content: "If we get 5 people, it's 30% off. Here's the product:",
       time: '10:04 AM',
@@ -119,6 +239,7 @@ export default function GroupChat() {
     {
       id: 4,
       sender: 'Bob',
+      userId: 2,
       avatar: '👤',
       content: "That's an amazing offer! I'm definitely in.",
       time: '10:15 AM',
@@ -127,6 +248,7 @@ export default function GroupChat() {
     {
       id: 5,
       sender: 'Charlie',
+      userId: 3,
       avatar: '👤',
       content: "Me too! Need a new TV for my living room.",
       time: '10:18 AM',
@@ -135,6 +257,7 @@ export default function GroupChat() {
     {
       id: 6,
       sender: 'Alice',
+      userId: 1,
       avatar: '👤',
       content: 'Deal status updated: October 26, 2023',
       time: '',
@@ -143,6 +266,7 @@ export default function GroupChat() {
     {
       id: 7,
       sender: 'Alice',
+      userId: 1,
       avatar: '👤',
       content: "Great! We need 2 more. I'll update the deal status.",
       time: '10:35 AM',
@@ -155,6 +279,7 @@ export default function GroupChat() {
     {
       id: 8,
       sender: 'You',
+      userId: 0,
       avatar: '👤',
       content: "I'll share it in my network, maybe someone is interested!",
       time: '',
@@ -163,6 +288,7 @@ export default function GroupChat() {
     {
       id: 9,
       sender: 'Diana',
+      userId: 4,
       avatar: '👤',
       content: "Just saw this! I'm in for the TV. Count me.",
       time: '10:40 AM',
@@ -171,6 +297,7 @@ export default function GroupChat() {
     {
       id: 10,
       sender: 'Alice',
+      userId: 1,
       avatar: '👤',
       content: 'Awesome! Just one more to go!',
       time: '10:47 AM',
@@ -183,6 +310,7 @@ export default function GroupChat() {
     {
       id: 11,
       sender: 'Ethan',
+      userId: 5,
       avatar: '👤',
       content: "Is there still space for the TV deal? I'm interested.",
       time: '10:56 AM',
@@ -191,6 +319,7 @@ export default function GroupChat() {
     {
       id: 12,
       sender: 'Alice',
+      userId: 1,
       avatar: '👤',
       content: "Yes, Ethan! You're the 5th! We've reached the minimum!",
       time: '10:57 AM',
@@ -203,6 +332,7 @@ export default function GroupChat() {
     {
       id: 13,
       sender: 'You',
+      userId: 0,
       avatar: '👤',
       content: 'Fantastic news! What are the next steps for payment and shipping?',
       time: '',
@@ -211,6 +341,7 @@ export default function GroupChat() {
     {
       id: 14,
       sender: 'Alice',
+      userId: 1,
       avatar: '👤',
       content: "I'll send out a consolidated order form and payment instructions shortly. Anticipating delivery in 3-7 business days.",
       time: '11:00 AM',
@@ -221,13 +352,6 @@ export default function GroupChat() {
       },
     },
   ];
-
-  const handleSendMessage = () => {
-    if (message.trim()) {
-      // Handle sending message
-      setMessage('');
-    }
-  };
 
   return (
     <div className="flex h-screen bg-gradient-to-br from-gray-50 to-gray-100">
@@ -298,7 +422,10 @@ export default function GroupChat() {
         </div>
 
         {/* User Profile */}
-        <div className="p-4 border-t border-gray-200 flex items-center gap-3 bg-white">
+        <div 
+          onClick={() => handleUserClick(0)}
+          className="p-4 border-t border-gray-200 flex items-center gap-3 bg-white cursor-pointer hover:bg-gray-50 transition-colors"
+        >
           <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center shadow-sm">
             <User className="w-5 h-5 text-white" />
           </div>
@@ -353,12 +480,20 @@ export default function GroupChat() {
             <div key={msg.id} className={`flex ${msg.isCurrentUser ? 'justify-end' : 'justify-start'}`}>
               {!msg.isCurrentUser && (
                 <div className="flex gap-3 max-w-2xl">
-                  <div className="w-10 h-10 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full flex items-center justify-center flex-shrink-0 shadow-md">
+                  <div 
+                    onClick={() => msg.userId !== undefined && handleUserClick(msg.userId)}
+                    className="w-10 h-10 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full flex items-center justify-center flex-shrink-0 shadow-md cursor-pointer hover:shadow-lg transition-shadow"
+                  >
                     <span className="text-sm text-white font-semibold">{msg.avatar}</span>
                   </div>
                   <div className="flex-1">
                     <div className="flex items-baseline gap-2 mb-1.5">
-                      <span className="text-sm font-bold text-gray-900">{msg.sender}</span>
+                      <span 
+                        onClick={() => msg.userId !== undefined && handleUserClick(msg.userId)}
+                        className="text-sm font-bold text-gray-900 cursor-pointer hover:text-blue-600 transition-colors"
+                      >
+                        {msg.sender}
+                      </span>
                       {msg.time && <span className="text-xs text-gray-400">{msg.time}</span>}
                     </div>
                     
@@ -457,6 +592,91 @@ export default function GroupChat() {
           </div>
         </div>
       </div>
+
+      {/* User Profile Modal */}
+      {isUserModalOpen && selectedUser && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          onClick={closeUserModal}
+        >
+          <div 
+            className="bg-white rounded-lg shadow-xl max-w-md w-full overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-blue-600 to-blue-700 p-6 text-white relative">
+              <button
+                onClick={closeUserModal}
+                className="absolute top-4 right-4 text-white hover:bg-white hover:bg-opacity-20 rounded-lg p-1 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+              <div className="flex items-center gap-4">
+                <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-lg">
+                  <User className="w-8 h-8 text-blue-600" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold">{selectedUser.name}</h2>
+                  <p className="text-blue-100">{selectedUser.username}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-4">
+              {/* Bio */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900 mb-2">About</h3>
+                <p className="text-sm text-gray-600">{selectedUser.bio}</p>
+              </div>
+
+              {/* Stats */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-xs text-gray-600">Groups Joined</p>
+                  <p className="text-lg font-bold text-gray-900">{selectedUser.groupsJoined}</p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-xs text-gray-600">Deals Completed</p>
+                  <p className="text-lg font-bold text-gray-900">{selectedUser.dealsCompleted}</p>
+                </div>
+              </div>
+
+              {/* Member Since */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <p className="text-xs text-blue-800">Member since {selectedUser.memberSince}</p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="space-y-2 pt-2">
+                <button
+                  onClick={() => alert(`Send message to ${selectedUser.name}`)}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium"
+                >
+                  <Mail className="w-4 h-4" />
+                  Send Direct Message
+                </button>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={handleReportUser}
+                    className="flex items-center justify-center gap-2 px-4 py-2 border border-orange-300 text-orange-700 rounded-lg hover:bg-orange-50 transition text-sm font-medium"
+                  >
+                    <Flag className="w-4 h-4" />
+                    Report
+                  </button>
+                  <button
+                    onClick={handleBlockUser}
+                    className="flex items-center justify-center gap-2 px-4 py-2 border border-red-300 text-red-700 rounded-lg hover:bg-red-50 transition text-sm font-medium"
+                  >
+                    <UserX className="w-4 h-4" />
+                    Block
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
