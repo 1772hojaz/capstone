@@ -27,11 +27,61 @@ export default function GroupChat() {
   const [message, setMessage] = useState('');
 
   const groupMembers = [
-    { name: 'Electronics Deal Cente', count: 142, active: true },
-    { name: 'Home Appliance Hub', count: 98 },
-    { name: 'Fashion Finds & Sales', count: 127 },
-    { name: 'Outdoor Gear Collective', count: null },
-    { name: 'Bookworm Bargains', count: 83 },
+    { 
+      id: 1,
+      name: 'Premium Coffee Beans (Brazil)', 
+      icon: '☕',
+      count: 3,
+      active: true 
+    },
+    { 
+      id: 2,
+      name: 'Smart LED Light Strips', 
+      icon: '💡',
+      count: null 
+    },
+    { 
+      id: 3,
+      name: 'High-Speed USB-C Hub', 
+      icon: '🔌',
+      count: null 
+    },
+    { 
+      id: 4,
+      name: 'Organic Snack Variety Pack', 
+      icon: '🍿',
+      count: 7 
+    },
+    { 
+      id: 5,
+      name: 'Noise-Cancelling Headphones', 
+      icon: '🎧',
+      count: null 
+    },
+    { 
+      id: 6,
+      name: 'Ergonomic Office Chair', 
+      icon: '🪑',
+      count: 12 
+    },
+    { 
+      id: 7,
+      name: 'Gaming Mouse Pad XL', 
+      icon: '🖱️',
+      count: null 
+    },
+    { 
+      id: 8,
+      name: 'Designer Succulent Planter', 
+      icon: '🌱',
+      count: null 
+    },
+    { 
+      id: 9,
+      name: 'Resistance Band Set', 
+      icon: '🏋️',
+      count: null 
+    },
   ];
 
   const messages: Message[] = [
@@ -219,9 +269,9 @@ export default function GroupChat() {
             >
               <div className="flex items-center gap-3 flex-1 min-w-0">
                 <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                  group.active ? 'bg-blue-100' : 'bg-gray-100'
+                  group.active ? 'bg-gradient-to-br from-orange-400 to-orange-600' : 'bg-gradient-to-br from-gray-100 to-gray-200'
                 }`}>
-                  <span className={`text-lg ${group.active ? 'text-blue-600' : 'text-gray-600'}`}>#</span>
+                  <span className="text-xl">{group.icon}</span>
                 </div>
                 <span className={`text-sm truncate ${group.active ? 'font-semibold text-gray-900' : 'text-gray-700'}`}>
                   {group.name}
@@ -229,7 +279,7 @@ export default function GroupChat() {
               </div>
               {group.count !== null && group.count !== undefined && (
                 <span className="ml-2 px-2.5 py-1 bg-blue-600 text-white text-xs font-bold rounded-full shadow-sm">
-                  {group.count}
+                  {group.count > 99 ? '99+' : group.count}
                 </span>
               )}
             </div>
