@@ -1,4 +1,4 @@
-import SidebarLayout from '../components/SidebarLayout';
+import Layout from '../components/Layout';
 import { Search, UserPlus, Filter, Download, TrendingUp, TrendingDown, MoreVertical } from 'lucide-react';
 
 const UserManagement = () => {
@@ -96,17 +96,7 @@ const UserManagement = () => {
   ];
 
   return (
-    <SidebarLayout>
-      {/* Breadcrumb */}
-      <div className="mb-6">
-        <div className="flex items-center gap-2 text-sm text-gray-600 mb-2">
-          <button className="hover:text-gray-900">Home</button>
-          <span>&gt;</span>
-          <span className="text-gray-900">User Management</span>
-        </div>
-        <h1 className="text-2xl font-bold text-gray-900">User Management</h1>
-      </div>
-
+    <Layout title="User Management">
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
@@ -246,7 +236,7 @@ const UserManagement = () => {
           </button>
         </div>
       </div>
-    </SidebarLayout>
+    </Layout>
   );
 };
 
