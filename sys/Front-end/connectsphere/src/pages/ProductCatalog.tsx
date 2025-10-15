@@ -10,7 +10,7 @@ const ProductCatalog = () => {
       price: 89.99,
       stock: 150,
       status: 'Available',
-      image: '🎧',
+      image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
     },
     {
       id: 2,
@@ -19,7 +19,7 @@ const ProductCatalog = () => {
       price: 199.99,
       stock: 75,
       status: 'Available',
-      image: '⌚',
+      image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
     },
     {
       id: 3,
@@ -28,7 +28,7 @@ const ProductCatalog = () => {
       price: 29.99,
       stock: 0,
       status: 'Out of Stock',
-      image: '🔋',
+      image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
     },
     {
       id: 4,
@@ -37,7 +37,7 @@ const ProductCatalog = () => {
       price: 129.99,
       stock: 45,
       status: 'Available',
-      image: '🔌',
+      image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
     },
     {
       id: 5,
@@ -46,7 +46,7 @@ const ProductCatalog = () => {
       price: 149.99,
       stock: 88,
       status: 'Available',
-      image: '⌨️',
+      image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
     },
     {
       id: 6,
@@ -55,7 +55,7 @@ const ProductCatalog = () => {
       price: 299.99,
       stock: 25,
       status: 'Available',
-      image: '🪑',
+      image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
     },
   ];
 
@@ -136,7 +136,11 @@ const ProductCatalog = () => {
             <div className="p-6">
               {/* Product Image/Icon */}
               <div className="w-full h-32 bg-gradient-to-br from-blue-50 to-indigo-100 rounded-lg flex items-center justify-center mb-4">
-                <span className="text-5xl">{product.image}</span>
+                {product.image.startsWith('http') ? (
+                  <img src={product.image} alt={product.name} className="h-32 object-contain" />
+                ) : (
+                  <span className="text-5xl">{product.image}</span>
+                )}
               </div>
 
               {/* Product Info */}

@@ -99,7 +99,7 @@ export default function GroupList() {
       id: 1,
       name: 'Premium Coffee Beans (Brazil)',
       description: 'Rich, Good morning. Nice. We are all in.',
-      icon: '☕',
+      icon: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
       hasNotification: true,
       unreadCount: 3,
     },
@@ -107,7 +107,7 @@ export default function GroupList() {
       id: 2,
       name: 'Smart LED Light Strips',
       description: 'Alice Requested to check the delivery status.',
-      icon: '💡',
+      icon: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
       hasNotification: false,
       unreadCount: 0,
     },
@@ -115,7 +115,7 @@ export default function GroupList() {
       id: 3,
       name: 'High-Speed USB-C Hub',
       description: 'Group Deal Completed! Your order has been.',
-      icon: '🔌',
+      icon: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
       hasNotification: false,
       unreadCount: 0,
     },
@@ -123,7 +123,7 @@ export default function GroupList() {
       id: 4,
       name: 'Organic Snack Variety Pack',
       description: 'You! You invited a new friend, almost.',
-      icon: '🍿',
+      icon: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
       hasNotification: true,
       unreadCount: 7,
     },
@@ -131,7 +131,7 @@ export default function GroupList() {
       id: 5,
       name: 'Noise-Cancelling Headphones',
       description: 'Admin: Unfortunately, this group buy did not.',
-      icon: '🎧',
+      icon: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
       hasNotification: false,
       unreadCount: 0,
     },
@@ -139,7 +139,7 @@ export default function GroupList() {
       id: 6,
       name: 'Ergonomic Office Chair',
       description: 'New deal for a similar product has.',
-      icon: '🪑',
+      icon: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
       hasNotification: true,
       unreadCount: 12,
     },
@@ -147,7 +147,7 @@ export default function GroupList() {
       id: 7,
       name: 'Gaming Mouse Pad XL',
       description: 'Awesome! 2x bigger! 4th creator has joined.',
-      icon: '🖱️',
+      icon: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
       hasNotification: false,
       unreadCount: 0,
     },
@@ -155,7 +155,7 @@ export default function GroupList() {
       id: 8,
       name: 'Designer Succulent Planter',
       description: 'Botanic: The next delivery is reported by ord.',
-      icon: '🌱',
+      icon: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
       hasNotification: false,
       unreadCount: 0,
     },
@@ -163,7 +163,7 @@ export default function GroupList() {
       id: 9,
       name: 'Resistance Band Set',
       description: 'FitnessGuru: Just used them, great quality!',
-      icon: '🏋️',
+      icon: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
       hasNotification: false,
       unreadCount: 0,
     },
@@ -368,7 +368,11 @@ export default function GroupList() {
                       onClick={(e) => handleGroupIconClick(group, e)}
                       className="w-12 h-12 bg-gradient-to-br from-gray-100 to-gray-200 rounded-lg flex items-center justify-center flex-shrink-0 hover:from-blue-100 hover:to-blue-200 transition-all cursor-pointer"
                     >
-                      <span className="text-2xl">{group.icon}</span>
+                      {group.icon.startsWith('http') ? (
+                        <img src={group.icon} alt={group.name} className="w-12 h-12 object-cover rounded-lg" />
+                      ) : (
+                        <span className="text-2xl">{group.icon}</span>
+                      )}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-2">
@@ -562,7 +566,11 @@ export default function GroupList() {
             {/* Large Icon Display */}
             <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-12 flex items-center justify-center">
               <div className="w-32 h-32 bg-gradient-to-br from-blue-100 to-blue-200 rounded-2xl flex items-center justify-center shadow-lg">
-                <span className="text-8xl">{selectedJoinedGroup.icon}</span>
+                {selectedJoinedGroup.icon.startsWith('http') ? (
+                  <img src={selectedJoinedGroup.icon} alt={selectedJoinedGroup.name} className="w-32 h-32 object-cover rounded-2xl" />
+                ) : (
+                  <span className="text-8xl">{selectedJoinedGroup.icon}</span>
+                )}
               </div>
             </div>
 

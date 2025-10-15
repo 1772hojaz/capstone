@@ -11,7 +11,7 @@ export default function AllGroups() {
       id: 1,
       name: 'Wireless Mechanical Keyboard',
       price: 89.99,
-      image: '⌨️',
+      image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
       description: 'High-performance mechanical keyboard with customizable RGB backlighting and durable switches.',
       participants: 35,
     },
@@ -19,7 +19,7 @@ export default function AllGroups() {
       id: 2,
       name: 'Smart Home Assistant Speaker',
       price: 49.99,
-      image: '🔊',
+      image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
       description: 'Voice-controlled smart speaker with premium sound and integrated AI assistant for home automation.',
       participants: 50,
     },
@@ -27,7 +27,7 @@ export default function AllGroups() {
       id: 3,
       name: 'Portable Espresso Maker',
       price: 34.50,
-      image: '☕',
+      image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
       description: 'Enjoy rich, creamy espresso anywhere with this compact and easy-to-use portable maker. Ideal for travel.',
       participants: 22,
     },
@@ -35,7 +35,7 @@ export default function AllGroups() {
       id: 4,
       name: 'Ergonomic Office Chair',
       price: 199.00,
-      image: '🪑',
+      image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
       description: 'Designed for ultimate comfort and support during long work hours. Features adjustable height and lumbar support.',
       participants: 15,
     },
@@ -43,7 +43,7 @@ export default function AllGroups() {
       id: 5,
       name: 'Premium Coffee Beans (Brazil)',
       price: 24.99,
-      image: '☕',
+      image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
       description: 'Rich, aromatic coffee beans sourced directly from Brazilian farms. Perfect for morning brewing.',
       participants: 8,
     },
@@ -51,7 +51,7 @@ export default function AllGroups() {
       id: 6,
       name: 'Smart LED Light Strips',
       price: 45.00,
-      image: '💡',
+      image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
       description: 'RGB LED strips with app control and voice assistant compatibility. Create the perfect ambiance.',
       participants: 27,
     },
@@ -59,7 +59,7 @@ export default function AllGroups() {
       id: 7,
       name: 'High-Speed USB-C Hub',
       price: 59.99,
-      image: '🔌',
+      image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
       description: 'Multi-port USB-C hub with 4K HDMI output, USB 3.0 ports, and SD card reader for maximum connectivity.',
       participants: 19,
     },
@@ -67,7 +67,7 @@ export default function AllGroups() {
       id: 8,
       name: 'Organic Snack Variety Pack',
       price: 32.50,
-      image: '🍿',
+      image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
       description: 'Assorted organic snacks including nuts, dried fruits, and healthy treats. Perfect for sharing.',
       participants: 42,
     },
@@ -75,7 +75,7 @@ export default function AllGroups() {
       id: 9,
       name: 'Noise-Cancelling Headphones',
       price: 149.99,
-      image: '🎧',
+      image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
       description: 'Premium over-ear headphones with active noise cancellation and 30-hour battery life.',
       participants: 31,
     },
@@ -83,7 +83,7 @@ export default function AllGroups() {
       id: 10,
       name: 'Gaming Mouse Pad XL',
       price: 29.99,
-      image: '🖱️',
+      image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
       description: 'Extra-large gaming mouse pad with smooth surface and anti-slip rubber base.',
       participants: 18,
     },
@@ -91,7 +91,7 @@ export default function AllGroups() {
       id: 11,
       name: 'Designer Succulent Planter',
       price: 39.00,
-      image: '🌱',
+      image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
       description: 'Modern ceramic planter set perfect for small succulents and desk decoration.',
       participants: 12,
     },
@@ -99,7 +99,7 @@ export default function AllGroups() {
       id: 12,
       name: 'Resistance Band Set',
       price: 24.99,
-      image: '🏋️',
+      image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
       description: 'Complete resistance band set with multiple strength levels for home workouts.',
       participants: 25,
     },
@@ -242,7 +242,11 @@ export default function AllGroups() {
               <div key={group.id} className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition">
                 {/* Product Image */}
                 <div className="h-48 bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
-                  <span className="text-6xl">{group.image}</span>
+                  {group.image.startsWith('http') ? (
+                    <img src={group.image} alt={group.name} className="h-32 object-contain" />
+                  ) : (
+                    <span className="text-6xl">{group.image}</span>
+                  )}
                 </div>
 
                 {/* Product Info */}

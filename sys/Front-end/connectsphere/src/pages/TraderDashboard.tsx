@@ -13,7 +13,7 @@ const TraderDashboard = () => {
       id: 1,
       name: 'Wireless Mechanical Keyboard',
       price: 89.99,
-      image: '⌨️',
+      image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
       description: 'High-performance mechanical keyboard with customizable RGB backlighting and durable switches.',
       participants: 35,
       reason: 'Based on your interest in tech accessories',
@@ -23,7 +23,7 @@ const TraderDashboard = () => {
       id: 2,
       name: 'Smart Home Assistant Speaker',
       price: 49.99,
-      image: '🔊',
+      image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
       description: 'Voice-controlled smart speaker with premium sound and integrated AI assistant for home automation.',
       participants: 50,
       reason: 'Popular in Harare · Trending now',
@@ -33,7 +33,7 @@ const TraderDashboard = () => {
       id: 3,
       name: 'Portable Espresso Maker',
       price: 34.50,
-      image: '☕',
+      image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
       description: 'Enjoy rich, creamy espresso anywhere with this compact and easy-to-use portable maker. Ideal for travel.',
       participants: 22,
       reason: 'Similar to items you viewed',
@@ -43,7 +43,7 @@ const TraderDashboard = () => {
       id: 4,
       name: 'Ergonomic Office Chair',
       price: 199.00,
-      image: '🪑',
+      image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
       description: 'Designed for ultimate comfort and support during long work hours. Features adjustable height and lumbar support.',
       participants: 15,
       reason: 'Matches your search history',
@@ -214,7 +214,15 @@ const TraderDashboard = () => {
             >
               {/* Product Image with better visual appeal */}
               <div className="h-48 bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center relative overflow-hidden">
-                <span className="text-6xl group-hover:scale-110 transition-transform duration-200">{product.image}</span>
+                {product.image.startsWith('http') ? (
+                  <img 
+                    src={product.image} 
+                    alt={product.name} 
+                    className="h-32 object-contain group-hover:scale-110 transition-transform duration-200" 
+                  />
+                ) : (
+                  <span className="text-6xl group-hover:scale-110 transition-transform duration-200">{product.image}</span>
+                )}
                 {/* Discount badge for visual appeal */}
                 <div className="absolute top-3 right-3 bg-green-500 text-white text-xs font-bold px-2 py-1 rounded-full shadow-sm">
                   Save 30%

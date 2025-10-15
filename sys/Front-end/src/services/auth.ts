@@ -19,7 +19,9 @@ export interface RegisterRequest {
 export interface AuthResponse {
   access_token: string;
   token_type: string;
-  user: User;
+  user_id: number;
+  is_admin: boolean;
+  location_zone: string;
 }
 
 export interface User {

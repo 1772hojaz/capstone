@@ -20,7 +20,7 @@ export default function CreateGroup() {
       bulk_price: 62.99,
       moq: 10,
       savings_factor: 0.30,
-      image: '🎧',
+      image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
       description: 'Premium wireless headphones with noise cancellation'
     },
     {
@@ -31,7 +31,7 @@ export default function CreateGroup() {
       bulk_price: 149.99,
       moq: 15,
       savings_factor: 0.25,
-      image: '⌚',
+      image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
       description: 'Advanced fitness tracking with heart rate monitor'
     },
     {
@@ -42,7 +42,7 @@ export default function CreateGroup() {
       bulk_price: 20.99,
       moq: 20,
       savings_factor: 0.30,
-      image: '🔋',
+      image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
       description: '10000mAh fast charging power bank'
     },
     {
@@ -53,7 +53,7 @@ export default function CreateGroup() {
       bulk_price: 97.49,
       moq: 8,
       savings_factor: 0.25,
-      image: '🔌',
+      image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
       description: 'Multi-port hub with power delivery'
     },
     {
@@ -64,7 +64,7 @@ export default function CreateGroup() {
       bulk_price: 104.99,
       moq: 12,
       savings_factor: 0.30,
-      image: '⌨️',
+      image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
       description: 'RGB backlit with customizable switches'
     },
     {
@@ -75,7 +75,7 @@ export default function CreateGroup() {
       bulk_price: 224.99,
       moq: 5,
       savings_factor: 0.25,
-      image: '🪑',
+      image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
       description: 'Adjustable lumbar support and armrests'
     },
   ];
@@ -257,7 +257,7 @@ export default function CreateGroup() {
                     <option value="">-- Choose a product from catalog --</option>
                     {availableProducts.map((product) => (
                       <option key={product.id} value={product.id}>
-                        {product.image} {product.name} - ${product.price.toFixed(2)} ({product.category})
+                        {product.name} - ${product.price.toFixed(2)} ({product.category})
                       </option>
                     ))}
                   </select>
@@ -269,7 +269,11 @@ export default function CreateGroup() {
                 {selectedProductData && (
                   <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
                     <div className="flex items-start gap-4">
-                      <div className="text-5xl">{selectedProductData.image}</div>
+                      {selectedProductData.image.startsWith('http') ? (
+                        <img src={selectedProductData.image} alt={selectedProductData.name} className="w-16 h-16 object-contain rounded" />
+                      ) : (
+                        <div className="text-5xl">{selectedProductData.image}</div>
+                      )}
                       <div className="flex-1">
                         <h3 className="font-semibold text-gray-900">{selectedProductData.name}</h3>
                         <p className="text-sm text-blue-600 mt-1 mb-2">📦 {selectedProductData.description}</p>
