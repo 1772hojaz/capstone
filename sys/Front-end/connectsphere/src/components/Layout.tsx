@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { User, Search, Bell, Menu, X, LogOut } from 'lucide-react';
+import { Search, Bell, Menu, X, LogOut } from 'lucide-react';
 
 interface LayoutProps {
   children: ReactNode;
@@ -110,9 +110,6 @@ const Layout = ({ children, title = 'Dashboard' }: LayoutProps) => {
 
                 {/* User & Logout */}
                 <div className="flex items-center gap-2">
-                  <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center ring-2 ring-blue-100 cursor-pointer hover:ring-4 transition-all duration-200">
-                    <User className="w-4 h-4 text-white" />
-                  </div>
                   <button
                     onClick={() => navigate('/login')}
                     className="flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-red-500 to-red-600 text-white text-sm font-medium rounded-lg hover:from-red-600 hover:to-red-700 transition-all duration-200 shadow-sm hover:shadow-md"
@@ -131,11 +128,6 @@ const Layout = ({ children, title = 'Dashboard' }: LayoutProps) => {
                 <Bell className="w-5 h-5" />
                 <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
               </button>
-
-              {/* Mobile User */}
-              <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center ring-2 ring-blue-100">
-                <User className="w-4 h-4 text-white" />
-              </div>
 
               {/* Mobile Menu Button */}
               <button
