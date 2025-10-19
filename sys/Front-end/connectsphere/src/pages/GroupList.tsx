@@ -6,70 +6,80 @@ export default function GroupList() {
   const navigate = useNavigate();
   const [selectedGroup, setSelectedGroup] = useState<any>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedJoinedGroup, setSelectedJoinedGroup] = useState<any>(null);
-  const [isJoinedGroupModalOpen, setIsJoinedGroupModalOpen] = useState(false);
   const [selectedCurrency, setSelectedCurrency] = useState<'USD' | 'ZIG'>('USD');
+  const [showQRCode, setShowQRCode] = useState(false);
+  const [selectedQRGroup, setSelectedQRGroup] = useState<any>(null);
 
   const activeGroups = [
     {
       id: 1,
       name: 'Premium Coffee Beans (Brazil)',
-      status: 'Active',
-      progress: '8/10',
+      status: 'forming',
+      progress: '3/10',
       dueDate: '2024-01-15',
       description: 'High-quality Brazilian coffee beans sourced from sustainable farms. Perfect for espresso and drip coffee.',
       price: '$45.00',
-      members: 8,
+      members: 3,
       targetMembers: 10,
       savings: '$12.00 per member',
+      pickupLocation: 'Harare Central Branch',
+      orderStatus: 'Waiting for more participants'
     },
     {
       id: 2,
       name: 'Smart LED Light Strips',
-      status: 'Pending',
-      progress: '5/20',
+      status: 'active',
+      progress: '8/20',
       dueDate: '2024-07-20',
       description: 'RGB LED light strips with smart home integration. Control via app or voice commands.',
       price: '$28.99',
-      members: 5,
+      members: 8,
       targetMembers: 20,
       savings: '$8.00 per member',
+      pickupLocation: 'Harare Central Branch',
+      orderStatus: 'Group active - more participants welcome'
     },
     {
       id: 3,
       name: 'High-Speed USB-C Hub',
-      status: 'Completed',
-      progress: '10/10',
+      status: 'payment_pending',
+      progress: '12/12',
       dueDate: '2024-07-01',
       description: 'Multi-port USB-C hub with HDMI, USB 3.0, and power delivery. Ideal for laptops and tablets.',
       price: '$35.00',
-      members: 10,
-      targetMembers: 10,
+      members: 12,
+      targetMembers: 12,
       savings: '$15.00 per member',
+      pickupLocation: 'Harare Central Branch',
+      orderStatus: 'Payment required - complete to proceed'
     },
     {
       id: 4,
       name: 'Organic Snack Variety Pack',
-      status: 'Active',
-      progress: '12/15',
+      status: 'processing',
+      progress: '15/15',
       dueDate: '2024-01-18',
       description: 'Assorted organic snacks including nuts, dried fruits, and healthy bars. Perfect for office or home.',
       price: '$32.50',
-      members: 12,
+      members: 15,
       targetMembers: 15,
       savings: '$10.50 per member',
+      pickupLocation: 'Harare Central Branch',
+      orderStatus: 'Order confirmed - being prepared'
     },
     {
       id: 5,
       name: 'Noise-Cancelling Headphones',
-      status: 'Pending',
-      progress: '1/25',
+      status: 'ready_for_pickup',
+      progress: '25/25',
       dueDate: '2024-08-30',
       description: 'Premium wireless headphones with active noise cancellation and 30-hour battery life.',
       price: '$149.99',
-      members: 1,
+      members: 25,
       targetMembers: 25,
       savings: '$50.00 per member',
+      pickupLocation: 'Harare Central Branch',
+      orderStatus: 'Ready for pickup - show QR code at branch'
     },
   ];
 
@@ -83,91 +93,15 @@ export default function GroupList() {
     setSelectedGroup(null);
   };
 
-  const handleGroupIconClick = (group: any, e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevent navigation to chat
-    setSelectedJoinedGroup(group);
-    setIsJoinedGroupModalOpen(true);
+  const handleShowQRCode = (group: any) => {
+    setSelectedQRGroup(group);
+    setShowQRCode(true);
   };
 
-  const closeJoinedGroupModal = () => {
-    setIsJoinedGroupModalOpen(false);
-    setSelectedJoinedGroup(null);
+  const closeQRCodeModal = () => {
+    setShowQRCode(false);
+    setSelectedQRGroup(null);
   };
-
-  const joinedGroups = [
-    {
-      id: 1,
-      name: 'Premium Coffee Beans (Brazil)',
-      description: 'Rich, Good morning. Nice. We are all in.',
-      icon: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
-      hasNotification: true,
-      unreadCount: 3,
-    },
-    {
-      id: 2,
-      name: 'Smart LED Light Strips',
-      description: 'Alice Requested to check the delivery status.',
-      icon: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
-      hasNotification: false,
-      unreadCount: 0,
-    },
-    {
-      id: 3,
-      name: 'High-Speed USB-C Hub',
-      description: 'Group Deal Completed! Your order has been.',
-      icon: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
-      hasNotification: false,
-      unreadCount: 0,
-    },
-    {
-      id: 4,
-      name: 'Organic Snack Variety Pack',
-      description: 'You! You invited a new friend, almost.',
-      icon: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
-      hasNotification: true,
-      unreadCount: 7,
-    },
-    {
-      id: 5,
-      name: 'Noise-Cancelling Headphones',
-      description: 'Admin: Unfortunately, this group buy did not.',
-      icon: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
-      hasNotification: false,
-      unreadCount: 0,
-    },
-    {
-      id: 6,
-      name: 'Ergonomic Office Chair',
-      description: 'New deal for a similar product has.',
-      icon: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
-      hasNotification: true,
-      unreadCount: 12,
-    },
-    {
-      id: 7,
-      name: 'Gaming Mouse Pad XL',
-      description: 'Awesome! 2x bigger! 4th creator has joined.',
-      icon: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
-      hasNotification: false,
-      unreadCount: 0,
-    },
-    {
-      id: 8,
-      name: 'Designer Succulent Planter',
-      description: 'Botanic: The next delivery is reported by ord.',
-      icon: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
-      hasNotification: false,
-      unreadCount: 0,
-    },
-    {
-      id: 9,
-      name: 'Resistance Band Set',
-      description: 'FitnessGuru: Just used them, great quality!',
-      icon: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
-      hasNotification: false,
-      unreadCount: 0,
-    },
-  ];
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -286,7 +220,7 @@ export default function GroupList() {
 
       {/* Main Content - Responsive */}
       <main className="flex-1 px-3 sm:px-6 py-4 sm:py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-8">
+        <div className="max-w-4xl mx-auto">
           {/* Left Column - Your Group Activities */}
           <div>
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 max-h-[600px] overflow-y-auto overflow-x-hidden scrollable-container">
@@ -314,69 +248,48 @@ export default function GroupList() {
                         <td className="px-3 sm:px-6 py-3 sm:py-4 text-sm text-gray-900">{group.name}</td>
                         <td className="px-3 sm:px-6 py-3 sm:py-4">
                           <span className={`inline-flex px-2 sm:px-2.5 py-0.5 sm:py-1 text-xs font-medium rounded-full ${
-                            group.status === 'Active' ? 'bg-green-100 text-green-700' :
-                            group.status === 'Completed' ? 'bg-blue-100 text-blue-700' :
-                            'bg-yellow-100 text-yellow-700'
+                            group.status === 'forming' ? 'bg-blue-100 text-blue-700' :
+                            group.status === 'active' ? 'bg-green-100 text-green-700' :
+                            group.status === 'payment_pending' ? 'bg-yellow-100 text-yellow-700' :
+                            group.status === 'processing' ? 'bg-purple-100 text-purple-700' :
+                            group.status === 'ready_for_pickup' ? 'bg-orange-100 text-orange-700' :
+                            group.status === 'completed' ? 'bg-blue-100 text-blue-700' :
+                            'bg-red-100 text-red-700'
                           }`}>
-                            {group.status}
+                            {group.status === 'forming' ? 'Forming Group' :
+                             group.status === 'active' ? 'Active' :
+                             group.status === 'payment_pending' ? 'Payment Due' :
+                             group.status === 'processing' ? 'Processing' :
+                             group.status === 'ready_for_pickup' ? 'Ready for Pickup' :
+                             group.status === 'completed' ? 'Completed' :
+                             'Cancelled'}
                           </span>
                         </td>
                         <td className="px-3 sm:px-6 py-3 sm:py-4 text-sm text-gray-700">{group.progress}</td>
                         <td className="px-3 sm:px-6 py-3 sm:py-4 text-sm text-gray-700">{group.dueDate}</td>
                         <td className="px-3 sm:px-6 py-3 sm:py-4">
-                          <button 
-                            onClick={() => handleViewDetails(group)}
-                            className="text-sm text-blue-600 hover:text-blue-800 font-medium"
-                          >
-                            View Details
-                          </button>
+                          <div className="flex gap-2">
+                            <button 
+                              onClick={() => handleViewDetails(group)}
+                              className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                            >
+                              View Details
+                            </button>
+                            {group.status === 'ready_for_pickup' && (
+                              <button 
+                                onClick={() => handleShowQRCode(group)}
+                                className="text-sm text-green-600 hover:text-green-800 font-medium"
+                              >
+                                Show QR Code
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
                 </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Right Column - My Joined Groups */}
-          <div>
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 max-h-[600px] overflow-y-auto scrollable-container">
-              <div className="p-4 sm:p-6 border-b border-gray-200 sticky top-0 bg-white z-10">
-                <h2 className="text-xl sm:text-2xl font-bold text-gray-900">My Joined Groups</h2>
-                <p className="text-sm text-gray-600 mt-1">Groups created by admins that you've joined</p>
-              </div>
-              <div className="p-4 sm:p-6 space-y-3">
-                {joinedGroups.map((group) => (
-                  <div 
-                    key={group.id} 
-                    onClick={() => navigate(`/group-chat/${group.id}`)}
-                    className="bg-gray-50 rounded-lg border border-gray-200 p-4 hover:bg-gray-100 hover:shadow-sm transition flex items-start gap-4 cursor-pointer"
-                  >
-                    <div 
-                      onClick={(e) => handleGroupIconClick(group, e)}
-                      className="w-12 h-12 bg-gradient-to-br from-gray-100 to-gray-200 rounded-lg flex items-center justify-center flex-shrink-0 hover:from-blue-100 hover:to-blue-200 transition-all cursor-pointer"
-                    >
-                      {group.icon.startsWith('http') ? (
-                        <img src={group.icon} alt={group.name} className="w-12 h-12 object-cover rounded-lg" />
-                      ) : (
-                        <span className="text-2xl">{group.icon}</span>
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-2">
-                        <h3 className="text-sm font-semibold text-gray-900">{group.name}</h3>
-                        {group.hasNotification && group.unreadCount > 0 && (
-                          <div className="bg-blue-600 text-white text-xs font-bold rounded-full min-w-[20px] h-5 flex items-center justify-center px-1.5 flex-shrink-0">
-                            {group.unreadCount > 99 ? '99+' : group.unreadCount}
-                          </div>
-                        )}
-                      </div>
-                      <p className="text-xs text-gray-600 mt-1 line-clamp-1">{group.description}</p>
-                    </div>
-                  </div>
-                ))}
               </div>
             </div>
           </div>
@@ -526,12 +439,6 @@ export default function GroupList() {
               {/* Action Buttons */}
               <div className="flex gap-3 pt-4">
                 <button
-                  onClick={() => navigate(`/group-chat/${selectedGroup.id}`)}
-                  className="flex-1 bg-blue-600 text-white py-3 px-6 rounded-lg hover:bg-blue-700 transition font-medium"
-                >
-                  Go to Group Chat
-                </button>
-                <button
                   onClick={closeModal}
                   className="px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition font-medium"
                 >
@@ -542,72 +449,88 @@ export default function GroupList() {
           </div>
         </div>
       )}
-      
-      {/* Modal for Joined Group Icon Details */}
-      {isJoinedGroupModalOpen && selectedJoinedGroup && (
+
+      {/* QR Code Modal */}
+      {showQRCode && selectedQRGroup && (
         <div 
           className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-          onClick={closeJoinedGroupModal}
+          onClick={closeQRCodeModal}
         >
           <div 
             className="bg-white rounded-lg shadow-xl max-w-md w-full overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Large Icon Display */}
-            <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-12 flex items-center justify-center">
-              <div className="w-32 h-32 bg-gradient-to-br from-blue-100 to-blue-200 rounded-2xl flex items-center justify-center shadow-lg">
-                {selectedJoinedGroup.icon.startsWith('http') ? (
-                  <img src={selectedJoinedGroup.icon} alt={selectedJoinedGroup.name} className="w-32 h-32 object-cover rounded-2xl" />
-                ) : (
-                  <span className="text-8xl">{selectedJoinedGroup.icon}</span>
-                )}
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-green-600 to-green-700 p-6 text-white relative">
+              <button
+                onClick={closeQRCodeModal}
+                className="absolute top-4 right-4 text-white hover:bg-white hover:bg-opacity-20 rounded-lg p-1 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+              <div className="text-center">
+                <h2 className="text-xl font-bold">Pickup QR Code</h2>
+                <p className="text-green-100 mt-1">Show this at {selectedQRGroup.pickupLocation}</p>
               </div>
             </div>
 
-            {/* Group Details */}
+            {/* QR Code Display */}
             <div className="p-6 space-y-4">
-              <div>
-                <div className="flex items-start justify-between gap-2 mb-2">
-                  <h2 className="text-xl font-bold text-gray-900">{selectedJoinedGroup.name}</h2>
-                  {selectedJoinedGroup.hasNotification && selectedJoinedGroup.unreadCount > 0 && (
-                    <div className="bg-blue-600 text-white text-sm font-bold rounded-full min-w-[24px] h-6 flex items-center justify-center px-2 flex-shrink-0">
-                      {selectedJoinedGroup.unreadCount > 99 ? '99+' : selectedJoinedGroup.unreadCount}
+              <div className="bg-gray-50 border-2 border-dashed border-gray-300 rounded-lg p-8 flex items-center justify-center">
+                <div className="text-center">
+                  {/* Placeholder QR Code - in real app this would be generated */}
+                  <div className="w-48 h-48 bg-white border-2 border-gray-200 rounded-lg flex items-center justify-center mx-auto mb-4">
+                    <div className="text-center text-gray-400">
+                      <div className="text-6xl mb-2">📱</div>
+                      <div className="text-sm">QR Code</div>
+                      <div className="text-xs mt-1">Order #{selectedQRGroup.id.toString().padStart(6, '0')}</div>
                     </div>
-                  )}
+                  </div>
+                  <p className="text-sm text-gray-600">Scan this QR code at the pickup location</p>
                 </div>
-                <p className="text-gray-600 text-sm">{selectedJoinedGroup.description}</p>
               </div>
 
-              {/* Additional Info */}
-              <div className="bg-gray-50 rounded-lg p-4 space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Group ID:</span>
-                  <span className="font-semibold text-gray-900">#{selectedJoinedGroup.id}</span>
-                </div>
-                {selectedJoinedGroup.unreadCount > 0 && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Unread Messages:</span>
-                    <span className="font-semibold text-blue-600">{selectedJoinedGroup.unreadCount}</span>
+              {/* Order Details */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <h3 className="font-semibold text-blue-900 mb-2">Order Details</h3>
+                <div className="space-y-1 text-sm text-blue-800">
+                  <div className="flex justify-between">
+                    <span>Order #:</span>
+                    <span className="font-mono">{selectedQRGroup.id.toString().padStart(6, '0')}</span>
                   </div>
-                )}
+                  <div className="flex justify-between">
+                    <span>Product:</span>
+                    <span>{selectedQRGroup.name}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Pickup Location:</span>
+                    <span>{selectedQRGroup.pickupLocation}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Status:</span>
+                    <span className="text-green-600 font-medium">Ready for Pickup</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Instructions */}
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <h4 className="font-semibold text-yellow-900 mb-2">Pickup Instructions</h4>
+                <ul className="text-sm text-yellow-800 space-y-1">
+                  <li>• Bring this QR code to {selectedQRGroup.pickupLocation}</li>
+                  <li>• Show valid ID if requested</li>
+                  <li>• Collect your order and verify contents</li>
+                  <li>• Sign receipt upon pickup</li>
+                </ul>
               </div>
 
               {/* Action Buttons */}
               <div className="flex gap-3 pt-2">
                 <button
-                  onClick={() => {
-                    closeJoinedGroupModal();
-                    navigate(`/group-chat/${selectedJoinedGroup.id}`);
-                  }}
-                  className="flex-1 bg-blue-600 text-white py-3 px-6 rounded-lg hover:bg-blue-700 transition font-medium"
+                  onClick={closeQRCodeModal}
+                  className="flex-1 bg-green-600 text-white py-3 px-6 rounded-lg hover:bg-green-700 transition font-medium"
                 >
-                  Open Group Chat
-                </button>
-                <button
-                  onClick={closeJoinedGroupModal}
-                  className="px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition font-medium"
-                >
-                  Close
+                  Got it - Ready to Pickup
                 </button>
               </div>
             </div>

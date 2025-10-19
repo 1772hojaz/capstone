@@ -439,17 +439,6 @@ export default function GroupChat() {
           ))}
         </div>
 
-        {/* Start New Deal Button */}
-        <div className="p-4 border-t border-gray-200 bg-gray-50">
-          <button 
-            onClick={() => navigate('/create-group')}
-            className="w-full flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 rounded-lg transition-all shadow-md hover:shadow-lg"
-          >
-            <span className="text-xl font-bold">+</span>
-            Start New Deal
-          </button>
-        </div>
-
         {/* User Profile */}
         <div 
           onClick={() => handleUserClick(0)}
