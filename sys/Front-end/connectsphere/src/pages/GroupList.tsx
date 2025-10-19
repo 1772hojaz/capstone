@@ -1,12 +1,14 @@
-import { Search, MapPin, User, X } from 'lucide-react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useState } from 'react';
+import { Search, MapPin, User, X, Eye } from 'lucide-react';
 
 export default function GroupList() {
   const navigate = useNavigate();
   const [selectedCurrency, setSelectedCurrency] = useState<'USD' | 'ZIG'>('USD');
   const [showQRCode, setShowQRCode] = useState(false);
   const [selectedQRGroup, setSelectedQRGroup] = useState<any>(null);
+  const [showGroupDetails, setShowGroupDetails] = useState(false);
+  const [selectedGroupDetails, setSelectedGroupDetails] = useState<any>(null);
 
   const activeGroups = [
     {
@@ -86,9 +88,19 @@ export default function GroupList() {
     setShowQRCode(true);
   };
 
+  const handleViewGroupDetails = (group: any) => {
+    setSelectedGroupDetails(group);
+    setShowGroupDetails(true);
+  };
+
   const closeQRCodeModal = () => {
     setShowQRCode(false);
     setSelectedQRGroup(null);
+  };
+
+  const closeGroupDetailsModal = () => {
+    setShowGroupDetails(false);
+    setSelectedGroupDetails(null);
   };
 
   return (
@@ -322,7 +334,13 @@ export default function GroupList() {
                         <td className="px-3 sm:px-6 py-3 sm:py-4 text-sm text-gray-700">{group.dueDate}</td>
                         <td className="px-3 sm:px-6 py-3 sm:py-4">
                           <div className="flex gap-2">
-                            {/* No actions needed - all info shown on page */}
+                            <button
+                              onClick={() => handleViewGroupDetails(group)}
+                              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 bg-blue-50 rounded-md hover:bg-blue-100 transition"
+                            >
+                              <Eye className="w-3 h-3" />
+                              View Group
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -473,6 +491,125 @@ export default function GroupList() {
                 >
                   Got it - Ready to Pickup
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Group Details Modal */}
+      {showGroupDetails && selectedGroupDetails && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          onClick={closeGroupDetailsModal}
+        >
+          <div 
+            className="bg-white rounded-lg shadow-xl max-w-lg w-full overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-blue-600 to-blue-700 p-6 text-white relative">
+              <button
+                onClick={closeGroupDetailsModal}
+                className="absolute top-4 right-4 text-white hover:bg-white hover:bg-opacity-20 rounded-lg p-1 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+              <div className="text-center">
+                <h2 className="text-xl font-bold">Group Details</h2>
+                <p className="text-blue-100 mt-1">Group #{selectedGroupDetails.id.toString().padStart(6, '0')}</p>
+              </div>
+            </div>
+
+            {/* Group Details */}
+            <div className="p-6 space-y-4">
+              {/* Group Name and Status */}
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">{selectedGroupDetails.name}</h3>
+                  <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
+                    selectedGroupDetails.status === 'forming' ? 'bg-blue-100 text-blue-700' :
+                    selectedGroupDetails.status === 'active' ? 'bg-green-100 text-green-700' :
+                    selectedGroupDetails.status === 'payment_pending' ? 'bg-yellow-100 text-yellow-700' :
+                    selectedGroupDetails.status === 'processing' ? 'bg-purple-100 text-purple-700' :
+                    selectedGroupDetails.status === 'ready_for_pickup' ? 'bg-orange-100 text-orange-700' :
+                    selectedGroupDetails.status === 'completed' ? 'bg-blue-100 text-blue-700' :
+                    'bg-red-100 text-red-700'
+                  }`}>
+                    {selectedGroupDetails.status === 'forming' ? 'Forming Group' :
+                     selectedGroupDetails.status === 'active' ? 'Active' :
+                     selectedGroupDetails.status === 'payment_pending' ? 'Payment Due' :
+                     selectedGroupDetails.status === 'processing' ? 'Processing' :
+                     selectedGroupDetails.status === 'ready_for_pickup' ? 'Ready for Pickup' :
+                     selectedGroupDetails.status === 'completed' ? 'Completed' :
+                     'Cancelled'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Description */}
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                <h4 className="font-semibold text-gray-900 mb-2">Description</h4>
+                <p className="text-sm text-gray-700">{selectedGroupDetails.description}</p>
+              </div>
+
+              {/* Group Information */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <h4 className="font-semibold text-blue-900 mb-1">Progress</h4>
+                  <p className="text-sm text-blue-800">{selectedGroupDetails.progress}</p>
+                </div>
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <h4 className="font-semibold text-green-900 mb-1">Price</h4>
+                  <p className="text-sm text-green-800">{selectedGroupDetails.price}</p>
+                </div>
+                <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                  <h4 className="font-semibold text-purple-900 mb-1">Due Date</h4>
+                  <p className="text-sm text-purple-800">{selectedGroupDetails.dueDate}</p>
+                </div>
+                <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                  <h4 className="font-semibold text-orange-900 mb-1">Savings</h4>
+                  <p className="text-sm text-orange-800">{selectedGroupDetails.savings}</p>
+                </div>
+              </div>
+
+              {/* Pickup Location */}
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <h4 className="font-semibold text-yellow-900 mb-2">Pickup Location</h4>
+                <div className="flex items-center gap-2 text-sm text-yellow-800">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  {selectedGroupDetails.pickupLocation}
+                </div>
+              </div>
+
+              {/* Order Status */}
+              <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
+                <h4 className="font-semibold text-indigo-900 mb-2">Order Status</h4>
+                <p className="text-sm text-indigo-800">{selectedGroupDetails.orderStatus}</p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={closeGroupDetailsModal}
+                  className="flex-1 bg-blue-600 text-white py-3 px-6 rounded-lg hover:bg-blue-700 transition font-medium"
+                >
+                  Close
+                </button>
+                {selectedGroupDetails.status === 'ready_for_pickup' && (
+                  <button
+                    onClick={() => {
+                      closeGroupDetailsModal();
+                      handleShowQRCode(selectedGroupDetails);
+                    }}
+                    className="flex-1 bg-green-600 text-white py-3 px-6 rounded-lg hover:bg-green-700 transition font-medium"
+                  >
+                    Show QR Code
+                  </button>
+                )}
               </div>
             </div>
           </div>
