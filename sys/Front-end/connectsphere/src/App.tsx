@@ -4,7 +4,6 @@ import LoginPage from './pages/LoginPage';
 import AdminDashboard from './pages/AdminDashboard';
 import TraderDashboard from './pages/TraderDashboard';
 import GroupList from './pages/GroupList';
-import GroupStatus from './pages/GroupStatus';
 import AllGroups from './pages/AllGroups';
 import ProfilePage from './pages/ProfilePage';
 import GroupModeration from './pages/GroupModeration';
@@ -23,7 +22,6 @@ function App() {
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/groups" element={<GroupList />} />
         <Route path="/all-groups" element={<AllGroups />} />
-        <Route path="/group-status/:groupId" element={<GroupStatus />} />
         <Route path="/moderation" element={<GroupModeration />} />
         <Route path="/users" element={<UserManagement />} />
         <Route path="/products" element={<ProductCatalog />} />

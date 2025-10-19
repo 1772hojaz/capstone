@@ -10,6 +10,8 @@ export default function AllGroups() {
   const [sortBy, setSortBy] = useState<'participants' | 'price-low' | 'price-high' | 'newest'>('participants');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [showFilters, setShowFilters] = useState(false);
+  const [joiningGroup, setJoiningGroup] = useState<number | null>(null);
+  const [joinSuccess, setJoinSuccess] = useState<string | null>(null);
 
   const allGroups = [
     {
@@ -136,6 +138,30 @@ export default function AllGroups() {
 
   // Categories for filtering
   const categories = ['All', 'Electronics', 'Appliances', 'Furniture', 'Food & Beverages', 'Gaming', 'Home & Garden', 'Sports & Fitness'];
+
+  // Join group handler
+  const handleJoinGroup = async (groupId: number, groupName: string) => {
+    setJoiningGroup(groupId);
+    try {
+      // TODO: Replace with actual API call to join group
+      // const response = await fetch(`/api/groups/${groupId}/join`, {
+      //   method: 'POST',
+      //   headers: { 'Content-Type': 'application/json' },
+      //   body: JSON.stringify({ quantity: 1 }) // Default quantity
+      // });
+      
+      // Simulate API call delay
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      setJoinSuccess(`Successfully joined "${groupName}"! Check My Groups to track progress.`);
+      setTimeout(() => setJoinSuccess(null), 5000);
+    } catch (error) {
+      console.error('Failed to join group:', error);
+      // TODO: Show error message
+    } finally {
+      setJoiningGroup(null);
+    }
+  };
 
   // Filtered and sorted groups
   const filteredAndSortedGroups = useMemo(() => {
@@ -283,6 +309,24 @@ export default function AllGroups() {
       {/* Main Content */}
       <main className="flex-1 px-3 sm:px-6 py-4 sm:py-8">
         <div className="max-w-7xl mx-auto">
+          {/* Success Message */}
+          {joinSuccess && (
+            <div className="mb-6 bg-green-50 border border-green-200 rounded-lg p-4 flex items-center gap-3">
+              <div className="text-green-600">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <p className="text-green-800 font-medium">{joinSuccess}</p>
+              <button
+                onClick={() => setJoinSuccess(null)}
+                className="ml-auto text-green-600 hover:text-green-800"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
           <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-4 sm:mb-6">All Available Groups</h2>
           <p className="text-sm text-gray-600 mb-6">Browse all admin-created group buy opportunities</p>
 
@@ -446,10 +490,15 @@ export default function AllGroups() {
                     </div>
 
                     <button
-                      onClick={() => navigate(`/group-status/${group.id}`)}
-                      className="w-full px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition"
+                      onClick={() => handleJoinGroup(group.id, group.name)}
+                      disabled={joiningGroup === group.id}
+                      className={`w-full px-4 py-2 text-sm font-medium rounded-lg transition ${
+                        joiningGroup === group.id
+                          ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                          : 'bg-blue-600 text-white hover:bg-blue-700'
+                      }`}
                     >
-                      Join Group
+                      {joiningGroup === group.id ? 'Joining...' : 'Join Group'}
                     </button>
                   </div>
                 </div>
@@ -492,10 +541,15 @@ export default function AllGroups() {
                       <p className="text-gray-600 mb-4 line-clamp-2">{group.description}</p>
 
                       <button
-                        onClick={() => navigate(`/group-status/${group.id}`)}
-                        className="px-6 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition"
+                        onClick={() => handleJoinGroup(group.id, group.name)}
+                        disabled={joiningGroup === group.id}
+                        className={`px-6 py-2 text-sm font-medium rounded-lg transition ${
+                          joiningGroup === group.id
+                            ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                            : 'bg-blue-600 text-white hover:bg-blue-700'
+                        }`}
                       >
-                        Join Group
+                        {joiningGroup === group.id ? 'Joining...' : 'Join Group'}
                       </button>
                     </div>
                   </div>
