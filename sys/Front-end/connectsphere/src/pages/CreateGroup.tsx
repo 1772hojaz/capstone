@@ -140,12 +140,6 @@ export default function CreateGroup() {
             >
               All Groups
             </button>
-            <button 
-              onClick={() => navigate('/create-group')}
-              className="text-sm font-medium text-blue-600"
-            >
-              Create Group
-            </button>
           </nav>
 
           {/* Right Side */}
@@ -213,12 +207,6 @@ export default function CreateGroup() {
               className="py-4 text-sm font-medium border-b-2 border-transparent text-gray-600 hover:text-gray-900 transition"
             >
               All Groups
-            </button>
-            <button
-              onClick={() => navigate('/create-group')}
-              className="py-4 text-sm font-medium border-b-2 border-blue-600 text-blue-600 transition"
-            >
-              Create Group
             </button>
           </nav>
         </div>

@@ -148,12 +148,6 @@ export default function AllGroups() {
             >
               All Groups
             </button>
-            <button 
-              onClick={() => navigate('/create-group')}
-              className="text-sm text-gray-700 hover:text-gray-900"
-            >
-              Create Group
-            </button>
           </nav>
 
           {/* Right Side */}
@@ -222,12 +216,6 @@ export default function AllGroups() {
             >
               All Groups
             </button>
-            <button 
-              onClick={() => navigate('/create-group')}
-              className="py-4 text-sm font-medium border-b-2 border-transparent text-gray-600 hover:text-gray-900 transition"
-            >
-              Create Group
-            </button>
           </nav>
         </div>
       </div>
@@ -236,6 +224,7 @@ export default function AllGroups() {
       <main className="flex-1 px-3 sm:px-6 py-4 sm:py-8">
         <div className="max-w-7xl mx-auto">
           <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-4 sm:mb-6">All Available Groups</h2>
+          <p className="text-sm text-gray-600 mb-6">Browse all admin-created group buy opportunities</p>
           
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {allGroups.map((group) => (

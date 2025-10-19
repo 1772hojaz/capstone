@@ -94,12 +94,6 @@ const TraderDashboard = () => {
             >
               All Groups
             </button>
-            <button 
-              onClick={() => navigate('/create-group')}
-              className="text-sm text-gray-700 hover:text-gray-900"
-            >
-              Create Group
-            </button>
           </nav>
 
           {/* Right Side */}
@@ -177,14 +171,6 @@ const TraderDashboard = () => {
             >
               All Groups
             </button>
-            <button
-              onClick={() => navigate('/create-group')}
-              role="tab"
-              aria-selected="false"
-              className="py-4 text-sm font-medium border-b-2 border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300 transition focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-            >
-              Create Group
-            </button>
           </nav>
         </div>
       </div>
@@ -200,7 +186,7 @@ const TraderDashboard = () => {
               <span>AI Powered</span>
             </div>
           </div>
-          <p className="text-sm sm:text-base text-gray-600">Personalized group buys based on your interests and activity · Save up to 40%</p>
+          <p className="text-sm sm:text-base text-gray-600">Personalized group buys created by admins based on your interests and activity · Save up to 40%</p>
         </div>
 
         {/* Product Grid - Visual hierarchy with better spacing */}
@@ -305,8 +291,8 @@ const TraderDashboard = () => {
               <div className="w-14 h-14 sm:w-16 sm:h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
                 <span className="text-2xl sm:text-3xl">👥</span>
               </div>
-              <h3 className="font-semibold text-gray-900 mb-2 text-sm sm:text-base">1. Join a Group</h3>
-              <p className="text-xs sm:text-sm text-gray-600">Browse deals and join groups for products you want</p>
+              <h3 className="font-semibold text-gray-900 mb-2 text-sm sm:text-base">1. Browse Admin-Created Groups</h3>
+              <p className="text-xs sm:text-sm text-gray-600">Browse deals and join groups created by admins for products you want</p>
             </div>
             
             {/* Step 2 */}

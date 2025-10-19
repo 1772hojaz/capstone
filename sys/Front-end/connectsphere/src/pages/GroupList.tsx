@@ -212,12 +212,6 @@ export default function GroupList() {
             >
               All Groups
             </button>
-            <button 
-              onClick={() => navigate('/create-group')}
-              className="text-sm text-gray-700 hover:text-gray-900"
-            >
-              Create Group
-            </button>
           </nav>
 
           {/* Right Side */}
@@ -286,12 +280,6 @@ export default function GroupList() {
             >
               All Groups
             </button>
-            <button
-              onClick={() => navigate('/create-group')}
-              className="py-3 sm:py-4 text-sm font-medium border-b-2 border-transparent text-gray-600 hover:text-gray-900 transition whitespace-nowrap"
-            >
-              Create Group
-            </button>
           </nav>
         </div>
       </div>
@@ -304,6 +292,7 @@ export default function GroupList() {
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 max-h-[600px] overflow-y-auto overflow-x-hidden scrollable-container">
               <div className="p-4 sm:p-6 border-b border-gray-200 sticky top-0 bg-white z-10">
                 <h2 className="text-xl sm:text-2xl font-bold text-gray-900">My Active Groups</h2>
+                <p className="text-sm text-gray-600 mt-1">Groups you've joined that are currently active</p>
               </div>
               
               {/* My Active Groups - Responsive Table */}
@@ -356,6 +345,7 @@ export default function GroupList() {
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 max-h-[600px] overflow-y-auto scrollable-container">
               <div className="p-4 sm:p-6 border-b border-gray-200 sticky top-0 bg-white z-10">
                 <h2 className="text-xl sm:text-2xl font-bold text-gray-900">My Joined Groups</h2>
+                <p className="text-sm text-gray-600 mt-1">Groups created by admins that you've joined</p>
               </div>
               <div className="p-4 sm:p-6 space-y-3">
                 {joinedGroups.map((group) => (
@@ -397,7 +387,7 @@ export default function GroupList() {
           <div className="bg-white rounded-lg shadow-sm border border-gray-200">
             <div className="p-4 sm:p-6 border-b border-gray-200">
               <h3 className="text-lg font-semibold text-gray-900">Past Groups</h3>
-              <p className="text-sm text-gray-600 mt-1">Summary of your completed group buys.</p>
+              <p className="text-sm text-gray-600 mt-1">Summary of your completed admin-created group buys.</p>
             </div>
             <div className="p-4 sm:p-6 space-y-3">
               <div className="flex justify-between text-sm">
