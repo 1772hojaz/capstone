@@ -1,7 +1,7 @@
 import { ArrowLeft, Users, Clock, DollarSign, MapPin, CheckCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
-export default function GroupChat() {
+export default function GroupStatus() {
   const navigate = useNavigate();
 
   const groupDetails = {
