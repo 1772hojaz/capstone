@@ -1,812 +1,242 @@
-import { useState, useRef } from 'react';
-import { ArrowLeft, Paperclip, Tag, Send, User, X, Flag, UserX, Mail } from 'lucide-react';
+import { ArrowLeft, Users, Clock, DollarSign, MapPin, CheckCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-
-interface Message {
-  id: number;
-  sender: string;
-  avatar: string;
-  content: string;
-  time: string;
-  isCurrentUser: boolean;
-  userId?: number;
-  productCard?: {
-    name: string;
-    image: string;
-    description: string;
-    discount: string;
-    badge: string;
-  };
-  statusBadge?: {
-    text: string;
-    color: string;
-  };
-}
-
-interface UserProfile {
-  id: number;
-  name: string;
-  username: string;
-  avatar: string;
-  email: string;
-  memberSince: string;
-  groupsJoined: number;
-  dealsCompleted: number;
-  bio: string;
-}
 
 export default function GroupChat() {
   const navigate = useNavigate();
-  const [message, setMessage] = useState('');
-  const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
-  const [isUserModalOpen, setIsUserModalOpen] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isShareProductModalOpen, setIsShareProductModalOpen] = useState(false);
 
-  const userProfiles: { [key: number]: UserProfile } = {
-    1: {
-      id: 1,
-      name: 'Alice Johnson',
-      username: '@alice',
-      avatar: '👤',
-      email: 'alice@example.com',
-      memberSince: 'March 2023',
-      groupsJoined: 28,
-      dealsCompleted: 45,
-      bio: 'Deal hunter and tech enthusiast. Love organizing group buys for electronics.',
-    },
-    2: {
-      id: 2,
-      name: 'Bob Williams',
-      username: '@bob',
-      avatar: '👤',
-      email: 'bob@example.com',
-      memberSince: 'June 2023',
-      groupsJoined: 15,
-      dealsCompleted: 22,
-      bio: 'Always looking for great deals on home appliances.',
-    },
-    3: {
-      id: 3,
-      name: 'Charlie Davis',
-      username: '@charlie',
-      avatar: '👤',
-      email: 'charlie@example.com',
-      memberSince: 'January 2024',
-      groupsJoined: 12,
-      dealsCompleted: 18,
-      bio: 'Bargain shopper and coffee lover.',
-    },
-    4: {
-      id: 4,
-      name: 'Diana Martinez',
-      username: '@diana',
-      avatar: '👤',
-      email: 'diana@example.com',
-      memberSince: 'August 2023',
-      groupsJoined: 20,
-      dealsCompleted: 30,
-      bio: 'Professional shopper. Love finding the best deals.',
-    },
-    5: {
-      id: 5,
-      name: 'Ethan Brown',
-      username: '@ethan',
-      avatar: '👤',
-      email: 'ethan@example.com',
-      memberSince: 'December 2023',
-      groupsJoined: 10,
-      dealsCompleted: 15,
-      bio: 'Tech gadget enthusiast.',
-    },
-    0: {
-      id: 0,
-      name: 'Sarah Parker',
-      username: '@sarahp',
-      avatar: '👤',
-      email: 'sarah.p@example.com',
-      memberSince: 'January 2024',
-      groupsJoined: 32,
-      dealsCompleted: 52,
-      bio: 'Passionate about finding great deals and organizing group buys. Love coffee, tech gadgets, and eco-friendly products.',
-    },
+  const groupDetails = {
+    id: 1,
+    name: 'Premium Coffee Beans (Brazil)',
+    description: 'High-quality Brazilian coffee beans sourced from sustainable farms. Perfect for espresso and drip coffee.',
+    status: 'ready_for_pickup',
+    progress: '5/5',
+    dueDate: '2024-01-15',
+    price: '$45.00',
+    members: 5,
+    targetMembers: 5,
+    savings: '$12.00 per member',
+    pickupLocation: 'Harare Central Branch',
+    orderStatus: 'Ready for pickup - show QR code at branch',
+    participants: [
+      { id: 1, name: 'Alice Johnson', status: 'confirmed', joinedDate: '2024-01-10' },
+      { id: 2, name: 'Bob Williams', status: 'confirmed', joinedDate: '2024-01-11' },
+      { id: 3, name: 'Charlie Davis', status: 'confirmed', joinedDate: '2024-01-12' },
+      { id: 4, name: 'Diana Martinez', status: 'confirmed', joinedDate: '2024-01-13' },
+      { id: 5, name: 'You', status: 'confirmed', joinedDate: '2024-01-14' },
+    ]
   };
 
-  const handleUserClick = (userId: number) => {
-    if (userId === 0) {
-      // Current user - navigate to profile page
-      navigate('/profile');
-    } else {
-      // Other users - show modal
-      setSelectedUser(userProfiles[userId]);
-      setIsUserModalOpen(true);
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'forming': return 'bg-blue-100 text-blue-700';
+      case 'active': return 'bg-green-100 text-green-700';
+      case 'payment_pending': return 'bg-yellow-100 text-yellow-700';
+      case 'processing': return 'bg-purple-100 text-purple-700';
+      case 'ready_for_pickup': return 'bg-orange-100 text-orange-700';
+      case 'completed': return 'bg-blue-100 text-blue-700';
+      default: return 'bg-red-100 text-red-700';
     }
   };
 
-  const closeUserModal = () => {
-    setIsUserModalOpen(false);
-    setSelectedUser(null);
-  };
-
-  const handleReportUser = () => {
-    alert(`Report submitted for ${selectedUser?.name}`);
-    closeUserModal();
-  };
-
-  const handleBlockUser = () => {
-    alert(`${selectedUser?.name} has been blocked`);
-    closeUserModal();
-  };
-
-  const handleSendMessage = () => {
-    if (message.trim()) {
-      // Handle sending message
-      setMessage('');
+  const getStatusText = (status: string) => {
+    switch (status) {
+      case 'forming': return 'Forming Group';
+      case 'active': return 'Active';
+      case 'payment_pending': return 'Payment Due';
+      case 'processing': return 'Processing';
+      case 'ready_for_pickup': return 'Ready for Pickup';
+      case 'completed': return 'Completed';
+      default: return 'Cancelled';
     }
   };
-
-  const handleFileSelect = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (files && files.length > 0) {
-      const fileNames = Array.from(files).map(f => f.name).join(', ');
-      alert(`Selected files: ${fileNames}`);
-      // Here you would typically handle file upload
-    }
-  };
-
-  const handleShareProduct = () => {
-    setIsShareProductModalOpen(true);
-  };
-
-  const closeShareProductModal = () => {
-    setIsShareProductModalOpen(false);
-  };
-
-  const handleShareGroupBuy = (productName: string) => {
-    alert(`Sharing group buy: ${productName}`);
-    closeShareProductModal();
-    // Here you would handle sharing the product to the chat
-  };
-
-  const groupMembers = [
-    { 
-      id: 1,
-      name: 'Premium Coffee Beans (Brazil)', 
-      icon: '☕',
-      count: 3,
-      active: true 
-    },
-    { 
-      id: 2,
-      name: 'Smart LED Light Strips', 
-      icon: '💡',
-      count: null 
-    },
-    { 
-      id: 3,
-      name: 'High-Speed USB-C Hub', 
-      icon: '🔌',
-      count: null 
-    },
-    { 
-      id: 4,
-      name: 'Organic Snack Variety Pack', 
-      icon: '🍿',
-      count: 7 
-    },
-    { 
-      id: 5,
-      name: 'Noise-Cancelling Headphones', 
-      icon: '🎧',
-      count: null 
-    },
-    { 
-      id: 6,
-      name: 'Ergonomic Office Chair', 
-      icon: '🪑',
-      count: 12 
-    },
-    { 
-      id: 7,
-      name: 'Gaming Mouse Pad XL', 
-      icon: '🖱️',
-      count: null 
-    },
-    { 
-      id: 8,
-      name: 'Designer Succulent Planter', 
-      icon: '🌱',
-      count: null 
-    },
-    { 
-      id: 9,
-      name: 'Resistance Band Set', 
-      icon: '🏋️',
-      count: null 
-    },
-  ];
-
-  const messages: Message[] = [
-    {
-      id: 1,
-      sender: 'Alice',
-      userId: 1,
-      avatar: '👤',
-      content: "Hey everyone! Saw a great deal on the new Smart TV. Thinking of organizing a group buy.",
-      time: '10:00 AM',
-      isCurrentUser: false,
-    },
-    {
-      id: 2,
-      sender: 'You',
-      userId: 0,
-      avatar: '👤',
-      content: "Oh, I've been waiting for that! How much can we save?",
-      time: '',
-      isCurrentUser: true,
-    },
-    {
-      id: 3,
-      sender: 'Alice',
-      userId: 1,
-      avatar: '👤',
-      content: "If we get 5 people, it's 30% off. Here's the product:",
-      time: '10:04 AM',
-      isCurrentUser: false,
-      productCard: {
-        name: 'QuantumView 65" 4K Smart TV',
-        image: '/api/placeholder/400/300',
-        description: 'Experience stunning visuals and smart features with the QuantumView 65-inch 4K Smart TV. Perfect for home entertainment.',
-        discount: '30% OFF',
-        badge: '5+',
-      },
-    },
-    {
-      id: 4,
-      sender: 'Bob',
-      userId: 2,
-      avatar: '👤',
-      content: "That's an amazing offer! I'm definitely in.",
-      time: '10:15 AM',
-      isCurrentUser: false,
-    },
-    {
-      id: 5,
-      sender: 'Charlie',
-      userId: 3,
-      avatar: '👤',
-      content: "Me too! Need a new TV for my living room.",
-      time: '10:18 AM',
-      isCurrentUser: false,
-    },
-    {
-      id: 6,
-      sender: 'Alice',
-      userId: 1,
-      avatar: '👤',
-      content: 'Deal status updated: October 26, 2023',
-      time: '',
-      isCurrentUser: false,
-    },
-    {
-      id: 7,
-      sender: 'Alice',
-      userId: 1,
-      avatar: '👤',
-      content: "Great! We need 2 more. I'll update the deal status.",
-      time: '10:35 AM',
-      isCurrentUser: false,
-      statusBadge: {
-        text: '⚡ DEAL ACTIVE - Searching for 2 more buyers to reach the 30% discount tier.',
-        color: 'blue',
-      },
-    },
-    {
-      id: 8,
-      sender: 'You',
-      userId: 0,
-      avatar: '👤',
-      content: "I'll share it in my network, maybe someone is interested!",
-      time: '',
-      isCurrentUser: true,
-    },
-    {
-      id: 9,
-      sender: 'Diana',
-      userId: 4,
-      avatar: '👤',
-      content: "Just saw this! I'm in for the TV. Count me.",
-      time: '10:40 AM',
-      isCurrentUser: false,
-    },
-    {
-      id: 10,
-      sender: 'Alice',
-      userId: 1,
-      avatar: '👤',
-      content: 'Awesome! Just one more to go!',
-      time: '10:47 AM',
-      isCurrentUser: false,
-      statusBadge: {
-        text: '💬 NEGOTIATING - Only 1 buyer needed to unlock 30% discount!',
-        color: 'blue',
-      },
-    },
-    {
-      id: 11,
-      sender: 'Ethan',
-      userId: 5,
-      avatar: '👤',
-      content: "Is there still space for the TV deal? I'm interested.",
-      time: '10:56 AM',
-      isCurrentUser: false,
-    },
-    {
-      id: 12,
-      sender: 'Alice',
-      userId: 1,
-      avatar: '👤',
-      content: "Yes, Ethan! You're the 5th! We've reached the minimum!",
-      time: '10:57 AM',
-      isCurrentUser: false,
-      statusBadge: {
-        text: '❤️ DEAL CLOSED! - Deal closed! We have 5 buyers, 30% discount secured.',
-        color: 'red',
-      },
-    },
-    {
-      id: 13,
-      sender: 'You',
-      userId: 0,
-      avatar: '👤',
-      content: 'Fantastic news! What are the next steps for payment and shipping?',
-      time: '',
-      isCurrentUser: true,
-    },
-    {
-      id: 14,
-      sender: 'Alice',
-      userId: 1,
-      avatar: '👤',
-      content: "I'll send out a consolidated order form and payment instructions shortly. Anticipating delivery in 3-7 business days.",
-      time: '11:00 AM',
-      isCurrentUser: false,
-      statusBadge: {
-        text: '📦 PROCESSING - Order processing for 5 Smart TVs. Payment instructions sent to all participants.',
-        color: 'yellow',
-      },
-    },
-  ];
 
   return (
-    <div className="flex h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-      {/* Left Sidebar - Group List */}
-      <div className="w-72 bg-white border-r border-gray-200 flex flex-col shadow-lg">
-        {/* Logo */}
-        <div className="p-5 border-b border-gray-200 bg-gradient-to-r from-blue-600 to-blue-700">
-          <button 
-            onClick={() => navigate('/trader')}
-            className="flex items-center gap-2 hover:opacity-90 transition"
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
+        <div className="px-4 sm:px-6 py-4 flex items-center gap-4">
+          <button
+            onClick={() => navigate('/groups')}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
           >
-            <svg className="w-8 h-8 text-white" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-            </svg>
-            <span className="text-xl font-bold text-white">ConnectSphere</span>
+            <ArrowLeft className="w-5 h-5 text-gray-600" />
           </button>
-        </div>
-
-        {/* Group Buys Label */}
-        <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
-          <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
-            <svg className="w-5 h-5 text-blue-600" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
-            </svg>
-            My Group Chats
-          </div>
-        </div>
-
-        {/* Groups List */}
-        <div className="flex-1 overflow-y-auto scrollable-container">
-          {groupMembers.map((group, index) => (
-            <div
-              key={index}
-              className={`px-4 py-3.5 flex items-center justify-between cursor-pointer transition-all ${
-                group.active
-                  ? 'bg-blue-50 border-l-4 border-blue-600 shadow-sm'
-                  : 'hover:bg-gray-50 border-l-4 border-transparent hover:border-gray-300'
-              }`}
-            >
-              <div className="flex items-center gap-3 flex-1 min-w-0">
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                  group.active ? 'bg-gradient-to-br from-orange-400 to-orange-600' : 'bg-gradient-to-br from-gray-100 to-gray-200'
-                }`}>
-                  <span className="text-xl">{group.icon}</span>
-                </div>
-                <span className={`text-sm truncate ${group.active ? 'font-semibold text-gray-900' : 'text-gray-700'}`}>
-                  {group.name}
-                </span>
-              </div>
-              {group.count !== null && group.count !== undefined && (
-                <span className="ml-2 px-2.5 py-1 bg-blue-600 text-white text-xs font-bold rounded-full shadow-sm">
-                  {group.count > 99 ? '99+' : group.count}
-                </span>
-              )}
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full flex items-center justify-center shadow-md">
+              <span className="text-2xl">☕</span>
             </div>
-          ))}
-        </div>
-
-        {/* User Profile */}
-        <div 
-          onClick={() => handleUserClick(0)}
-          className="p-4 border-t border-gray-200 flex items-center gap-3 bg-white cursor-pointer hover:bg-gray-50 transition-colors"
-        >
-          <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center shadow-sm">
-            <User className="w-5 h-5 text-white" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-gray-900 truncate">Sarah P.</p>
-            <p className="text-xs text-green-600 flex items-center gap-1">
-              <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-              Online
-            </p>
+            <div>
+              <h1 className="text-lg font-bold text-gray-900">{groupDetails.name}</h1>
+              <p className="text-sm text-gray-500 flex items-center gap-1">
+                <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                {groupDetails.members} members
+              </p>
+            </div>
           </div>
         </div>
-      </div>
+      </header>
 
-      {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col bg-white">
-        {/* Chat Header */}
-        <div className="bg-white border-b border-gray-200 px-6 py-4 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
+      {/* Main Content */}
+      <main className="max-w-4xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+        {/* Group Status Card */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className="flex items-start justify-between mb-4">
+            <div>
+              <h2 className="text-xl font-bold text-gray-900 mb-2">Group Status</h2>
+              <span className={`inline-flex px-3 py-1 text-sm font-medium rounded-full ${getStatusColor(groupDetails.status)}`}>
+                {getStatusText(groupDetails.status)}
+              </span>
+            </div>
+            {groupDetails.status === 'ready_for_pickup' && (
               <button
                 onClick={() => navigate('/groups')}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition font-medium flex items-center gap-2"
               >
-                <ArrowLeft className="w-5 h-5 text-gray-600" />
+                <CheckCircle className="w-4 h-4" />
+                Show QR Code
               </button>
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full flex items-center justify-center shadow-md">
-                  <span className="text-2xl">☕</span>
-                </div>
-                <div>
-                  <h1 className="text-lg font-bold text-gray-900">Premium Coffee Beans (Brazil)</h1>
-                  <p className="text-sm text-gray-500 flex items-center gap-1">
-                    <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-                    5 members online
-                  </p>
-                </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-gray-50 rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Users className="w-5 h-5 text-blue-600" />
+                <span className="text-sm font-medium text-gray-700">Participants</span>
               </div>
+              <p className="text-2xl font-bold text-gray-900">{groupDetails.progress}</p>
+              <p className="text-sm text-gray-600">Goal reached!</p>
             </div>
-            <button 
-              onClick={() => navigate('/profile')}
-              className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-2 border border-gray-300"
-            >
-              <User className="w-4 h-4" />
-              Profile
-            </button>
+
+            <div className="bg-gray-50 rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Clock className="w-5 h-5 text-green-600" />
+                <span className="text-sm font-medium text-gray-700">Due Date</span>
+              </div>
+              <p className="text-2xl font-bold text-gray-900">{groupDetails.dueDate}</p>
+              <p className="text-sm text-gray-600">Completed on time</p>
+            </div>
+
+            <div className="bg-gray-50 rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <DollarSign className="w-5 h-5 text-purple-600" />
+                <span className="text-sm font-medium text-gray-700">Total Savings</span>
+              </div>
+              <p className="text-2xl font-bold text-green-600">${groupDetails.savings.split(' ')[0]}</p>
+              <p className="text-sm text-gray-600">per member</p>
+            </div>
           </div>
         </div>
 
-        {/* Messages Area */}
-        <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6 bg-gradient-to-b from-gray-50 to-white scrollable-container">
-          {messages.map((msg) => (
-            <div key={msg.id} className={`flex ${msg.isCurrentUser ? 'justify-end' : 'justify-start'}`}>
-              {!msg.isCurrentUser && (
-                <div className="flex gap-3 max-w-2xl">
-                  <div 
-                    onClick={() => msg.userId !== undefined && handleUserClick(msg.userId)}
-                    className="w-10 h-10 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full flex items-center justify-center flex-shrink-0 shadow-md cursor-pointer hover:shadow-lg transition-shadow"
-                  >
-                    <span className="text-sm text-white font-semibold">{msg.avatar}</span>
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-baseline gap-2 mb-1.5">
-                      <span 
-                        onClick={() => msg.userId !== undefined && handleUserClick(msg.userId)}
-                        className="text-sm font-bold text-gray-900 cursor-pointer hover:text-blue-600 transition-colors"
-                      >
-                        {msg.sender}
-                      </span>
-                      {msg.time && <span className="text-xs text-gray-400">{msg.time}</span>}
-                    </div>
-                    
-                    {msg.content && !msg.content.includes('Deal status updated') && (
-                      <div className="bg-white border border-gray-200 rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm hover:shadow-md transition-shadow">
-                        <p className="text-sm text-gray-800 leading-relaxed">{msg.content}</p>
-                      </div>
-                    )}
-
-                    {msg.content.includes('Deal status updated') && (
-                      <div className="text-xs text-gray-400 text-center py-3 flex items-center gap-2">
-                        <div className="flex-1 h-px bg-gray-200"></div>
-                        <span>{msg.content}</span>
-                        <div className="flex-1 h-px bg-gray-200"></div>
-                      </div>
-                    )}
-
-                    {msg.productCard && (
-                      <div className="mt-3 bg-white border-2 border-gray-200 rounded-xl overflow-hidden max-w-md shadow-lg hover:shadow-xl transition-shadow">
-                        <div className="relative">
-                          <img
-                            src={msg.productCard.image}
-                            alt={msg.productCard.name}
-                            className="w-full h-48 object-cover bg-gradient-to-br from-yellow-100 to-orange-200"
-                          />
-                          <div className="absolute top-3 right-3 flex gap-2">
-                            <span className="px-3 py-1 bg-blue-600 text-white text-xs font-bold rounded-full shadow-md">
-                              {msg.productCard.badge}
-                            </span>
-                            <span className="px-3 py-1 bg-red-500 text-white text-xs font-bold rounded-full shadow-md">
-                              {msg.productCard.discount}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="p-4">
-                          <h3 className="font-bold text-gray-900 mb-2">{msg.productCard.name}</h3>
-                          <p className="text-sm text-gray-600 mb-4 leading-relaxed">{msg.productCard.description}</p>
-                          <button className="w-full px-4 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white text-sm font-semibold rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all shadow-md hover:shadow-lg">
-                            View Deal Details
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
-                    {msg.statusBadge && (
-                      <div className={`mt-3 px-4 py-3 rounded-xl text-sm font-medium shadow-md ${
-                        msg.statusBadge.color === 'blue' ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white' :
-                        msg.statusBadge.color === 'red' ? 'bg-gradient-to-r from-red-500 to-red-600 text-white' :
-                        'bg-gradient-to-r from-yellow-400 to-yellow-500 text-gray-900'
-                      }`}>
-                        {msg.statusBadge.text}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {msg.isCurrentUser && (
-                <div className="flex gap-3 max-w-2xl items-end">
-                  <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-2xl rounded-br-sm px-4 py-3 shadow-md hover:shadow-lg transition-shadow">
-                    <p className="text-sm leading-relaxed">{msg.content}</p>
-                  </div>
-                  <div className="w-10 h-10 bg-gradient-to-br from-green-400 to-green-600 rounded-full flex items-center justify-center flex-shrink-0 shadow-md">
-                    <span className="text-sm text-white font-semibold">{msg.avatar}</span>
-                  </div>
-                </div>
-              )}
+        {/* Product Details */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <h2 className="text-xl font-bold text-gray-900 mb-4">Product Details</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <h3 className="font-semibold text-gray-900 mb-2">Description</h3>
+              <p className="text-gray-600 leading-relaxed">{groupDetails.description}</p>
             </div>
-          ))}
+            <div className="space-y-3">
+              <div className="flex justify-between">
+                <span className="text-gray-600">Price per Person:</span>
+                <span className="font-semibold text-gray-900">{groupDetails.price}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Pickup Location:</span>
+                <span className="font-semibold text-gray-900 flex items-center gap-1">
+                  <MapPin className="w-4 h-4" />
+                  {groupDetails.pickupLocation}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Order Status:</span>
+                <span className="font-semibold text-orange-600">{groupDetails.orderStatus}</span>
+              </div>
+            </div>
+          </div>
         </div>
 
-        {/* Message Input */}
-        <div className="bg-white border-t border-gray-200 px-6 py-4 shadow-lg">
-          <div className="flex items-center gap-3">
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileChange}
-              className="hidden"
-              multiple
-              accept="image/*,video/*,.pdf,.doc,.docx,.txt"
-            />
-            <button 
-              onClick={handleFileSelect}
-              className="p-2.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
-              title="Attach files"
-            >
-              <Paperclip className="w-5 h-5" />
-            </button>
-            <button 
-              onClick={handleShareProduct}
-              className="p-2.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
-              title="Share group buy product"
-            >
-              <Tag className="w-5 h-5" />
-            </button>
-            <input
-              type="text"
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-              placeholder="Discuss products, share deals, or negotiate prices..."
-              className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-gray-50 focus:bg-white transition-colors"
-            />
+        {/* Participants */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <h2 className="text-xl font-bold text-gray-900 mb-4">Group Participants</h2>
+          <div className="space-y-3">
+            {groupDetails.participants.map((participant) => (
+              <div key={participant.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full flex items-center justify-center text-white font-semibold">
+                    {participant.name[0]}
+                  </div>
+                  <div>
+                    <p className="font-medium text-gray-900">{participant.name}</p>
+                    <p className="text-sm text-gray-600">Joined {participant.joinedDate}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                    participant.status === 'confirmed' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                  }`}>
+                    {participant.status === 'confirmed' ? 'Confirmed' : 'Pending'}
+                  </span>
+                  {participant.name === 'You' && (
+                    <span className="text-xs text-blue-600 font-medium">You</span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Next Steps */}
+        {groupDetails.status === 'ready_for_pickup' && (
+          <div className="bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded-xl p-6">
+            <div className="flex items-start gap-3">
+              <CheckCircle className="w-6 h-6 text-green-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <h3 className="font-bold text-gray-900 mb-2">Ready for Pickup!</h3>
+                <p className="text-gray-700 mb-3">
+                  Your order is ready for collection at {groupDetails.pickupLocation}.
+                  Bring your phone with the QR code to collect your items.
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => navigate('/groups')}
+                    className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition font-medium"
+                  >
+                    Show QR Code
+                  </button>
+                  <button
+                    onClick={() => navigate('/groups')}
+                    className="border border-gray-300 text-gray-700 px-6 py-2 rounded-lg hover:bg-gray-50 transition"
+                  >
+                    Back to Groups
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Group Actions */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <h2 className="text-xl font-bold text-gray-900 mb-4">Group Actions</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <button
-              onClick={handleSendMessage}
-              className="px-5 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl hover:from-blue-700 hover:to-blue-800 transition-all flex items-center gap-2 font-medium shadow-md hover:shadow-lg"
+              onClick={() => navigate('/groups')}
+              className="flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium"
             >
-              <Send className="w-4 h-4" />
-              Send
+              <Users className="w-4 h-4" />
+              View All Groups
+            </button>
+            <button
+              onClick={() => navigate('/trader')}
+              className="flex items-center justify-center gap-2 px-4 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition"
+            >
+              <DollarSign className="w-4 h-4" />
+              Find New Deals
             </button>
           </div>
         </div>
-      </div>
-
-      {/* User Profile Modal */}
-      {isUserModalOpen && selectedUser && (
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-          onClick={closeUserModal}
-        >
-          <div 
-            className="bg-white rounded-lg shadow-xl max-w-md w-full overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Modal Header */}
-            <div className="bg-gradient-to-r from-blue-600 to-blue-700 p-6 text-white relative">
-              <button
-                onClick={closeUserModal}
-                className="absolute top-4 right-4 text-white hover:bg-white hover:bg-opacity-20 rounded-lg p-1 transition"
-              >
-                <X className="w-5 h-5" />
-              </button>
-              <div className="flex items-center gap-4">
-                <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-lg">
-                  <User className="w-8 h-8 text-blue-600" />
-                </div>
-                <div>
-                  <h2 className="text-xl font-bold">{selectedUser.name}</h2>
-                  <p className="text-blue-100">{selectedUser.username}</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-6 space-y-4">
-              {/* Bio */}
-              <div>
-                <h3 className="text-sm font-semibold text-gray-900 mb-2">About</h3>
-                <p className="text-sm text-gray-600">{selectedUser.bio}</p>
-              </div>
-
-              {/* Stats */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-gray-50 rounded-lg p-3">
-                  <p className="text-xs text-gray-600">Groups Joined</p>
-                  <p className="text-lg font-bold text-gray-900">{selectedUser.groupsJoined}</p>
-                </div>
-                <div className="bg-gray-50 rounded-lg p-3">
-                  <p className="text-xs text-gray-600">Deals Completed</p>
-                  <p className="text-lg font-bold text-gray-900">{selectedUser.dealsCompleted}</p>
-                </div>
-              </div>
-
-              {/* Member Since */}
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                <p className="text-xs text-blue-800">Member since {selectedUser.memberSince}</p>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="space-y-2 pt-2">
-                <button
-                  onClick={() => alert(`Send message to ${selectedUser.name}`)}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium"
-                >
-                  <Mail className="w-4 h-4" />
-                  Send Direct Message
-                </button>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    onClick={handleReportUser}
-                    className="flex items-center justify-center gap-2 px-4 py-2 border border-orange-300 text-orange-700 rounded-lg hover:bg-orange-50 transition text-sm font-medium"
-                  >
-                    <Flag className="w-4 h-4" />
-                    Report
-                  </button>
-                  <button
-                    onClick={handleBlockUser}
-                    className="flex items-center justify-center gap-2 px-4 py-2 border border-red-300 text-red-700 rounded-lg hover:bg-red-50 transition text-sm font-medium"
-                  >
-                    <UserX className="w-4 h-4" />
-                    Block
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Share Group Buy Product Modal */}
-      {isShareProductModalOpen && (
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-          onClick={closeShareProductModal}
-        >
-          <div 
-            className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Modal Header */}
-            <div className="bg-white border-b border-gray-200 p-6 flex items-center justify-between flex-shrink-0 z-10">
-              <div>
-                <h2 className="text-xl font-bold text-gray-900">Share Group Buy Product</h2>
-                <p className="text-sm text-gray-600 mt-1">Select a product to share in this chat</p>
-              </div>
-              <button
-                onClick={closeShareProductModal}
-                className="text-gray-400 hover:text-gray-600 transition"
-              >
-                <X className="w-6 h-6" />
-              </button>
-            </div>
-
-            {/* Product List - Scrollable */}
-            <div className="p-6 space-y-3 overflow-y-auto scrollable-container">
-              {/* Sample products - these would come from your active groups */}
-              {[
-                {
-                  name: 'QuantumView 65" 4K Smart TV',
-                  image: '/api/placeholder/400/300',
-                  discount: '30% OFF',
-                  minBuyers: '5+',
-                  description: 'Experience stunning visuals and smart features.',
-                  price: '$699',
-                },
-                {
-                  name: 'Premium Coffee Beans (Brazil)',
-                  image: '/api/placeholder/400/300',
-                  discount: '25% OFF',
-                  minBuyers: '10+',
-                  description: 'High-quality Brazilian coffee beans.',
-                  price: '$45',
-                },
-                {
-                  name: 'Smart LED Light Strips',
-                  image: '/api/placeholder/400/300',
-                  discount: '20% OFF',
-                  minBuyers: '20+',
-                  description: 'RGB LED strips with smart home integration.',
-                  price: '$28.99',
-                },
-                {
-                  name: 'Noise-Cancelling Headphones',
-                  image: '/api/placeholder/400/300',
-                  discount: '40% OFF',
-                  minBuyers: '25+',
-                  description: 'Premium wireless headphones with ANC.',
-                  price: '$149.99',
-                },
-              ].map((product, index) => (
-                <div
-                  key={index}
-                  className="bg-gray-50 border border-gray-200 rounded-lg p-4 hover:bg-gray-100 transition cursor-pointer"
-                  onClick={() => handleShareGroupBuy(product.name)}
-                >
-                  <div className="flex gap-4">
-                    <div className="relative w-24 h-24 flex-shrink-0">
-                      <div className="w-full h-full bg-gradient-to-br from-yellow-100 to-orange-200 rounded-lg"></div>
-                      <div className="absolute top-1 right-1 flex gap-1">
-                        <span className="px-1.5 py-0.5 bg-blue-600 text-white text-xs font-bold rounded">
-                          {product.minBuyers}
-                        </span>
-                        <span className="px-1.5 py-0.5 bg-red-500 text-white text-xs font-bold rounded">
-                          {product.discount}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-bold text-gray-900 mb-1">{product.name}</h3>
-                      <p className="text-sm text-gray-600 mb-2 line-clamp-1">{product.description}</p>
-                      <div className="flex items-center justify-between">
-                        <p className="text-lg font-bold text-blue-600">{product.price}</p>
-                        <button className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition">
-                          Share to Chat
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
+      </main>
     </div>
   );
 }
