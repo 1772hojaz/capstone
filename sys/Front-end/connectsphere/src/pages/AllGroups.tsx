@@ -1,4 +1,4 @@
-import { Search, MapPin, User, Users, Filter, SortAsc, Grid, List, X, Eye } from 'lucide-react';
+import { Search, MapPin, User, Users, Filter, SortAsc, Grid, List, X, Zap } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useState, useMemo } from 'react';
 
@@ -162,10 +162,7 @@ export default function AllGroups() {
     }
   };
 
-  // View group handler
-  const handleViewGroup = (groupId: number) => {
-    navigate(`/group/${groupId}`);
-  };
+
 
   // Filtered and sorted groups
   const filteredAndSortedGroups = useMemo(() => {
@@ -460,57 +457,85 @@ export default function AllGroups() {
               <p className="text-gray-600">Try adjusting your search or filter criteria</p>
             </div>
           ) : viewMode === 'grid' ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {filteredAndSortedGroups.map((group) => (
-                <div key={group.id} className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition">
-                  {/* Product Image */}
-                  <div className="h-48 bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+                <div key={group.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-lg hover:border-blue-300 transition-all duration-200 group">
+                  {/* Product Image - Larger and more prominent */}
+                  <div className="h-56 bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center relative">
                     {group.image.startsWith('http') ? (
-                      <img src={group.image} alt={group.name} className="h-32 object-contain" />
+                      <img src={group.image} alt={group.name} className="h-40 object-contain" />
                     ) : (
-                      <span className="text-6xl">{group.image}</span>
+                      <span className="text-7xl">{group.image}</span>
                     )}
+                    {/* Category badge on image */}
+                    <div className="absolute top-3 left-3 bg-blue-600 text-white text-xs font-semibold px-3 py-1 rounded-full shadow-sm">
+                      {group.category}
+                    </div>
+                    {/* Discount badge for visual appeal */}
+                    <div className="absolute top-3 right-3 bg-green-500 text-white text-xs font-bold px-2 py-1 rounded-full shadow-sm">
+                      Save 30%
+                    </div>
                   </div>
 
-                  {/* Product Info */}
-                  <div className="p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded-full">
-                        {group.category}
-                      </span>
-                      <span className="text-xs text-gray-500">
-                        {new Date(group.created).toLocaleDateString()}
-                      </span>
-                    </div>
-                    <h3 className="text-base font-semibold text-gray-900 mb-2 line-clamp-1">{group.name}</h3>
-                    <p className="text-sm text-gray-600 mb-3 line-clamp-2">{group.description}</p>
+                  {/* Product Info - Clear hierarchy */}
+                  <div className="p-5">
+                {/* Recommendation reason - kept for visual parity with recommendations */}
+                <div className="flex items-center gap-1.5 mb-2">
+                  <Zap className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />
+                  <p className="text-xs text-blue-600 font-medium">Popular in {group.category}</p>
+                </div>
 
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="text-lg font-bold text-gray-900">${group.price}</span>
-                      <div className="flex items-center gap-1 text-sm text-gray-600">
-                        <Users className="w-4 h-4" />
-                        <span>{group.participants}</span>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2 line-clamp-2 min-h-[3.5rem]">{group.name}</h3>
+                
+                {/* Price with visual emphasis */}
+                    <div className="mb-3">
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-2xl font-bold text-blue-600">${group.price}</span>
+                        <span className="text-sm text-gray-400 line-through">${(group.price / 0.7).toFixed(2)}</span>
+                      </div>
+                      <p className="text-xs text-green-600 font-medium">Group Buy Price</p>
+                    </div>
+                    
+                    <p className="text-sm text-gray-600 mb-4 line-clamp-2">{group.description}</p>
+                    
+                    {/* Progress indicator - Clear feedback */}
+                    <div className="mb-4">
+                      <div className="flex items-center justify-between text-sm mb-1">
+                        <span className="flex items-center gap-1 text-gray-700">
+                          <Users className="w-4 h-4" />
+                          <span className="font-medium">{group.participants} joined</span>
+                        </span>
+                        <span className="text-gray-500">50 needed</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                        <div 
+                          className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                          style={{ width: `${(group.participants / 50) * 100}%` }}
+                          role="progressbar"
+                          aria-valuenow={group.participants}
+                          aria-valuemin={0}
+                          aria-valuemax={50}
+                        ></div>
                       </div>
                     </div>
 
-                    <div className="flex gap-2">
+                    {/* Clear call-to-action (View + Join) */}
+                    <div className="flex gap-3">
                       <button
-                        onClick={() => handleViewGroup(group.id)}
-                        className="flex-1 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition flex items-center justify-center gap-1"
+                        onClick={() => navigate(`/group/${group.id}`)}
+                        aria-label={`View details for ${group.name}`}
+                        className="py-3 px-4 text-sm font-medium rounded-lg border border-gray-200 text-gray-700 bg-white hover:bg-gray-50"
                       >
-                        <Eye className="w-4 h-4" />
-                        View Group
+                        View
                       </button>
-                      <button
+
+                      <button 
                         onClick={() => handleJoinGroup(group.id, group.name)}
+                        className={`flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 active:bg-blue-800 transition-colors duration-150 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 shadow-sm ${joiningGroup === group.id ? 'opacity-60 cursor-not-allowed' : ''}`}
+                        aria-label={`Join ${group.name} group buy`}
                         disabled={joiningGroup === group.id}
-                        className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg transition ${
-                          joiningGroup === group.id
-                            ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
-                            : 'bg-blue-600 text-white hover:bg-blue-700'
-                        }`}
                       >
-                        {joiningGroup === group.id ? 'Joining...' : 'Join Group'}
+                        {joiningGroup === group.id ? 'Joining...' : 'Join'}
                       </button>
                     </div>
                   </div>
@@ -518,59 +543,85 @@ export default function AllGroups() {
               ))}
             </div>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-3">
               {filteredAndSortedGroups.map((group) => (
-                <div key={group.id} className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition">
-                  <div className="flex flex-col sm:flex-row">
-                    {/* Product Image */}
-                    <div className="sm:w-48 h-48 sm:h-auto bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center flex-shrink-0">
+                <div key={group.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-lg hover:border-blue-300 transition-all duration-200">
+                  <div className="flex">
+                    {/* Product Image - Compact */}
+                    <div className="w-32 h-32 bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center relative flex-shrink-0">
                       {group.image.startsWith('http') ? (
-                        <img src={group.image} alt={group.name} className="h-32 object-contain" />
+                        <img src={group.image} alt={group.name} className="h-20 object-contain" />
                       ) : (
                         <span className="text-4xl">{group.image}</span>
                       )}
+                      {/* Category badge on image */}
+                      <div className="absolute top-2 left-2 bg-blue-600 text-white text-xs font-semibold px-2 py-1 rounded-full shadow-sm">
+                        {group.category}
+                      </div>
+                      {/* Discount badge for visual appeal */}
+                      <div className="absolute top-2 right-2 bg-green-500 text-white text-xs font-bold px-2 py-1 rounded-full shadow-sm">
+                        Save 30%
+                      </div>
                     </div>
 
-                    {/* Product Info */}
+                    {/* Product Info - Streamlined */}
                     <div className="flex-1 p-4">
-                      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between mb-2">
-                        <div className="flex items-center gap-2 mb-2 sm:mb-0">
-                          <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded-full">
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex-1">
+                          <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded-full mb-2 inline-block">
                             {group.category}
                           </span>
-                          <span className="text-xs text-gray-500">
-                            {new Date(group.created).toLocaleDateString()}
-                          </span>
+                          <h3 className="text-lg font-semibold text-gray-900 mb-2 line-clamp-2 min-h-[3.5rem]">{group.name}</h3>
                         </div>
-                        <div className="flex items-center gap-4 text-sm text-gray-600">
-                          <div className="flex items-center gap-1">
-                            <Users className="w-4 h-4" />
-                            <span>{group.participants} participants</span>
+                        <div className="text-right ml-4">
+                          <div className="flex items-baseline gap-2 mb-1">
+                            <span className="text-xl font-bold text-blue-600">${group.price}</span>
+                            <span className="text-sm text-gray-400 line-through">${(group.price / 0.7).toFixed(2)}</span>
                           </div>
-                          <span className="text-lg font-bold text-gray-900">${group.price}</span>
+                          <p className="text-xs text-green-600 font-medium">Group Buy Price</p>
                         </div>
                       </div>
-                      <h3 className="text-lg font-semibold text-gray-900 mb-2">{group.name}</h3>
-                      <p className="text-gray-600 mb-4 line-clamp-2">{group.description}</p>
 
+                      <p className="text-sm text-gray-600 mb-3 line-clamp-2">{group.description}</p>
+
+                      {/* Progress indicator - Clear feedback */}
+                      <div className="mb-3">
+                        <div className="flex items-center justify-between text-sm mb-1">
+                          <span className="flex items-center gap-1 text-gray-700">
+                            <Users className="w-4 h-4" />
+                            <span className="font-medium">{group.participants} joined</span>
+                          </span>
+                          <span className="text-gray-500">50 needed</span>
+                        </div>
+                        <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                          <div 
+                            className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                            style={{ width: `${(group.participants / 50) * 100}%` }}
+                            role="progressbar"
+                            aria-valuenow={group.participants}
+                            aria-valuemin={0}
+                            aria-valuemax={50}
+                          ></div>
+                        </div>
+                      </div>
+
+                      {/* Clear call-to-action (View + Join) */}
                       <div className="flex gap-3">
                         <button
-                          onClick={() => handleViewGroup(group.id)}
-                          className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition flex items-center gap-2"
+                          onClick={() => navigate(`/group/${group.id}`)}
+                          aria-label={`View details for ${group.name}`}
+                          className="py-3 px-4 text-sm font-medium rounded-lg border border-gray-200 text-gray-700 bg-white hover:bg-gray-50"
                         >
-                          <Eye className="w-4 h-4" />
-                          View Group
+                          View
                         </button>
-                        <button
+
+                        <button 
                           onClick={() => handleJoinGroup(group.id, group.name)}
+                          className={`flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 active:bg-blue-800 transition-colors duration-150 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 shadow-sm ${joiningGroup === group.id ? 'opacity-60 cursor-not-allowed' : ''}`}
+                          aria-label={`Join ${group.name} group buy`}
                           disabled={joiningGroup === group.id}
-                          className={`px-4 py-2 text-sm font-medium rounded-lg transition ${
-                            joiningGroup === group.id
-                              ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
-                              : 'bg-blue-600 text-white hover:bg-blue-700'
-                          }`}
                         >
-                          {joiningGroup === group.id ? 'Joining...' : 'Join Group'}
+                          {joiningGroup === group.id ? 'Joining...' : 'Join'}
                         </button>
                       </div>
                     </div>

@@ -193,47 +193,47 @@ const TraderDashboard = () => {
           <p className="text-sm sm:text-base text-gray-600">Personalized group buys created by admins based on your interests and activity · Save up to 40%</p>
         </div>
 
-        {/* Product Grid - Visual hierarchy with better spacing */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+        {/* Product Grid - Simplified for informal traders */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-12">
           {recommendations.map((product) => (
             <div 
               key={product.id} 
-              className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-lg hover:border-blue-300 transition-all duration-200 group"
+              className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-lg transition-all duration-200 group"
               role="article"
               aria-label={`${product.name} group buy`}
             >
-              {/* Product Image with better visual appeal */}
-              <div className="h-48 bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center relative overflow-hidden">
+              {/* Product Image with better visual appeal - Larger */}
+              <div className="h-56 bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center relative overflow-hidden">
                 {product.image.startsWith('http') ? (
                   <img 
                     src={product.image} 
                     alt={product.name} 
-                    className="h-32 object-contain group-hover:scale-110 transition-transform duration-200" 
+                    className="h-40 object-contain group-hover:scale-105 transition-transform duration-200" 
                   />
                 ) : (
-                  <span className="text-6xl group-hover:scale-110 transition-transform duration-200">{product.image}</span>
+                  <span className="text-7xl group-hover:scale-105 transition-transform duration-200">{product.image}</span>
                 )}
-                {/* Discount badge for visual appeal */}
+                {/* Match score badge */}
+                <div className="absolute top-3 left-3 bg-blue-600 text-white text-xs font-bold px-3 py-1 rounded-full shadow-sm">
+                  {product.matchScore}% Match
+                </div>
+                {/* Save badge */}
                 <div className="absolute top-3 right-3 bg-green-500 text-white text-xs font-bold px-2 py-1 rounded-full shadow-sm">
                   Save 30%
                 </div>
-                {/* Match score badge */}
-                <div className="absolute top-3 left-3 bg-blue-600 text-white text-xs font-bold px-2 py-1 rounded-full shadow-sm">
-                  {product.matchScore}% Match
-                </div>
               </div>
 
-              {/* Product Info - Clear hierarchy */}
+              {/* Product Info - Streamlined */}
               <div className="p-5">
-                {/* Recommendation reason - Clear explanation */}
+                {/* Recommendation reason - Simplified */}
                 <div className="flex items-center gap-1.5 mb-2">
                   <Zap className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />
                   <p className="text-xs text-blue-600 font-medium">{product.reason}</p>
                 </div>
                 
-                <h3 className="text-lg font-semibold text-gray-900 mb-2 line-clamp-2 min-h-[3.5rem]">{product.name}</h3>
+                <h3 className="text-lg font-bold text-gray-900 mb-2 line-clamp-2 leading-tight">{product.name}</h3>
                 
-                {/* Price with visual emphasis */}
+                {/* Price with visual emphasis - Simplified */}
                 <div className="mb-3">
                   <div className="flex items-baseline gap-2">
                     <span className="text-2xl font-bold text-blue-600">${product.price}</span>
@@ -242,18 +242,16 @@ const TraderDashboard = () => {
                   <p className="text-xs text-green-600 font-medium">Group Buy Price</p>
                 </div>
                 
-                <p className="text-sm text-gray-600 mb-4 line-clamp-2">{product.description}</p>
-                
-                {/* Progress indicator - Clear feedback */}
+                {/* Participants - Simplified */}
                 <div className="mb-4">
-                  <div className="flex items-center justify-between text-sm mb-1">
+                  <div className="flex items-center justify-between text-sm">
                     <span className="flex items-center gap-1 text-gray-700">
                       <Users className="w-4 h-4" />
                       <span className="font-medium">{product.participants} joined</span>
                     </span>
                     <span className="text-gray-500">50 needed</span>
                   </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                  <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden mt-1">
                     <div 
                       className="bg-blue-600 h-2 rounded-full transition-all duration-300"
                       style={{ width: `${(product.participants / 50) * 100}%` }}
@@ -265,20 +263,20 @@ const TraderDashboard = () => {
                   </div>
                 </div>
 
-                {/* Clear call-to-action */}
+                {/* Simplified call-to-action */}
                 <div className="flex gap-2">
                   <button
                     onClick={() => handleViewGroup(product.id)}
-                    className="flex-1 px-3 py-3 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition flex items-center justify-center gap-1"
+                    className="flex-1 py-3 text-sm font-semibold text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors flex items-center justify-center gap-1"
                   >
                     <Eye className="w-4 h-4" />
-                    View Group
+                    View
                   </button>
                   <button 
                     className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 active:bg-blue-800 transition-colors duration-150 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 shadow-sm"
                     aria-label={`Join ${product.name} group buy`}
                   >
-                    Join Group Buy
+                    Join
                   </button>
                 </div>
               </div>
