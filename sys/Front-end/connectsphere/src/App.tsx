@@ -5,6 +5,7 @@ import AdminDashboard from './pages/AdminDashboard';
 import TraderDashboard from './pages/TraderDashboard';
 import GroupList from './pages/GroupList';
 import AllGroups from './pages/AllGroups';
+import GroupDetail from './pages/GroupDetail';
 import ProfilePage from './pages/ProfilePage';
 import GroupModeration from './pages/GroupModeration';
 import UserManagement from './pages/UserManagement';
@@ -22,6 +23,7 @@ function App() {
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/groups" element={<GroupList />} />
         <Route path="/all-groups" element={<AllGroups />} />
+        <Route path="/group/:id" element={<GroupDetail />} />
         <Route path="/moderation" element={<GroupModeration />} />
         <Route path="/users" element={<UserManagement />} />
         <Route path="/products" element={<ProductCatalog />} />

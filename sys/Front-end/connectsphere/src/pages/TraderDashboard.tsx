@@ -1,12 +1,16 @@
-import { Search, MapPin, User, Zap, Users } from 'lucide-react';
+import { Search, MapPin, User, Zap, Users, Eye } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 
 const TraderDashboard = () => {
   const navigate = useNavigate();
-  const activeTab = 'recommended';
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCurrency, setSelectedCurrency] = useState<'USD' | 'ZIG'>('USD');
+
+  // View group handler
+  const handleViewGroup = (groupId: number) => {
+    navigate(`/group/${groupId}`);
+  };
 
   const recommendations = [
     {
@@ -262,12 +266,21 @@ const TraderDashboard = () => {
                 </div>
 
                 {/* Clear call-to-action */}
-                <button 
-                  className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 active:bg-blue-800 transition-colors duration-150 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 shadow-sm"
-                  aria-label={`Join ${product.name} group buy`}
-                >
-                  Join Group Buy
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleViewGroup(product.id)}
+                    className="flex-1 px-3 py-3 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition flex items-center justify-center gap-1"
+                  >
+                    <Eye className="w-4 h-4" />
+                    View Group
+                  </button>
+                  <button 
+                    className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 active:bg-blue-800 transition-colors duration-150 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 shadow-sm"
+                    aria-label={`Join ${product.name} group buy`}
+                  >
+                    Join Group Buy
+                  </button>
+                </div>
               </div>
             </div>
           ))}

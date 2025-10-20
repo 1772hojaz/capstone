@@ -1,4 +1,4 @@
-import { Search, MapPin, User, Users, Filter, SortAsc, Grid, List, X } from 'lucide-react';
+import { Search, MapPin, User, Users, Filter, SortAsc, Grid, List, X, Eye } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useState, useMemo } from 'react';
 
@@ -9,7 +9,6 @@ export default function AllGroups() {
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [sortBy, setSortBy] = useState<'participants' | 'price-low' | 'price-high' | 'newest'>('participants');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-  const [showFilters, setShowFilters] = useState(false);
   const [joiningGroup, setJoiningGroup] = useState<number | null>(null);
   const [joinSuccess, setJoinSuccess] = useState<string | null>(null);
 
@@ -161,6 +160,11 @@ export default function AllGroups() {
     } finally {
       setJoiningGroup(null);
     }
+  };
+
+  // View group handler
+  const handleViewGroup = (groupId: number) => {
+    navigate(`/group/${groupId}`);
   };
 
   // Filtered and sorted groups
@@ -489,17 +493,26 @@ export default function AllGroups() {
                       </div>
                     </div>
 
-                    <button
-                      onClick={() => handleJoinGroup(group.id, group.name)}
-                      disabled={joiningGroup === group.id}
-                      className={`w-full px-4 py-2 text-sm font-medium rounded-lg transition ${
-                        joiningGroup === group.id
-                          ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
-                          : 'bg-blue-600 text-white hover:bg-blue-700'
-                      }`}
-                    >
-                      {joiningGroup === group.id ? 'Joining...' : 'Join Group'}
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleViewGroup(group.id)}
+                        className="flex-1 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition flex items-center justify-center gap-1"
+                      >
+                        <Eye className="w-4 h-4" />
+                        View Group
+                      </button>
+                      <button
+                        onClick={() => handleJoinGroup(group.id, group.name)}
+                        disabled={joiningGroup === group.id}
+                        className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg transition ${
+                          joiningGroup === group.id
+                            ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                            : 'bg-blue-600 text-white hover:bg-blue-700'
+                        }`}
+                      >
+                        {joiningGroup === group.id ? 'Joining...' : 'Join Group'}
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -540,17 +553,26 @@ export default function AllGroups() {
                       <h3 className="text-lg font-semibold text-gray-900 mb-2">{group.name}</h3>
                       <p className="text-gray-600 mb-4 line-clamp-2">{group.description}</p>
 
-                      <button
-                        onClick={() => handleJoinGroup(group.id, group.name)}
-                        disabled={joiningGroup === group.id}
-                        className={`px-6 py-2 text-sm font-medium rounded-lg transition ${
-                          joiningGroup === group.id
-                            ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
-                            : 'bg-blue-600 text-white hover:bg-blue-700'
-                        }`}
-                      >
-                        {joiningGroup === group.id ? 'Joining...' : 'Join Group'}
-                      </button>
+                      <div className="flex gap-3">
+                        <button
+                          onClick={() => handleViewGroup(group.id)}
+                          className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition flex items-center gap-2"
+                        >
+                          <Eye className="w-4 h-4" />
+                          View Group
+                        </button>
+                        <button
+                          onClick={() => handleJoinGroup(group.id, group.name)}
+                          disabled={joiningGroup === group.id}
+                          className={`px-4 py-2 text-sm font-medium rounded-lg transition ${
+                            joiningGroup === group.id
+                              ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                              : 'bg-blue-600 text-white hover:bg-blue-700'
+                          }`}
+                        >
+                          {joiningGroup === group.id ? 'Joining...' : 'Join Group'}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
