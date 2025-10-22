@@ -1,9 +1,14 @@
+import { useState } from 'react';
 import Layout from '../components/Layout';
-import { Settings, Bell, Shield, Database, Mail, Globe } from 'lucide-react';
+import { Settings, Bell, Shield, Database, Mail, Globe, Check, AlertTriangle } from 'lucide-react';
 
 const SystemSettings = () => {
+  const [platformName, setPlatformName] = useState('ConnectSphere');
+  const [platformDescription, setPlatformDescription] = useState('A collaborative group buying platform connecting users for better deals.');
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
+  const [maintenanceMode, setMaintenanceMode] = useState(false);
   return (
-    <Layout title="System Settings" user="Admin User">
+    <Layout title="System Settings">
       {/* Header */}
       <div className="mb-6">
         <div className="flex items-center gap-2 mb-2">
@@ -23,17 +28,22 @@ const SystemSettings = () => {
           <div className="p-6 space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Platform Name</label>
-              <input
-                type="text"
-                defaultValue="ConnectSphere"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  value={platformName}
+                  onChange={(e) => setPlatformName(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+                <p className="text-xs text-gray-500">This name will be displayed across the entire platform</p>
+              </div>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Platform Description</label>
               <textarea
                 rows={3}
-                defaultValue="A collaborative group buying platform connecting users for better deals."
+                value={platformDescription}
+                onChange={(e) => setPlatformDescription(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
@@ -43,7 +53,12 @@ const SystemSettings = () => {
                 <p className="text-xs text-gray-500">Temporarily disable public access</p>
               </div>
               <label className="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" className="sr-only peer" />
+                <input 
+                  type="checkbox" 
+                  className="sr-only peer"
+                  checked={maintenanceMode}
+                  onChange={(e) => setMaintenanceMode(e.target.checked)}
+                />
                 <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
               </label>
             </div>
@@ -199,13 +214,84 @@ const SystemSettings = () => {
           </div>
         </div>
 
+        {/* Save Status */}
+        {saveStatus !== 'idle' && (
+          <div className={`p-4 rounded-lg ${
+            saveStatus === 'saving' ? 'bg-blue-50 border border-blue-200' :
+            saveStatus === 'success' ? 'bg-green-50 border border-green-200' :
+            'bg-red-50 border border-red-200'
+          }`}>
+            <div className="flex items-center gap-2">
+              {saveStatus === 'saving' ? (
+                <>
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600" />
+                  <p className="text-sm text-blue-700">Saving changes...</p>
+                </>
+              ) : saveStatus === 'success' ? (
+                <>
+                  <Check className="w-5 h-5 text-green-600" />
+                  <p className="text-sm text-green-700">Settings saved successfully!</p>
+                </>
+              ) : (
+                <>
+                  <AlertTriangle className="w-5 h-5 text-red-600" />
+                  <p className="text-sm text-red-700">Error saving settings. Please try again.</p>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Save Button */}
         <div className="flex justify-end gap-3">
-          <button className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition">
+          <button 
+            onClick={() => {
+              setPlatformName('ConnectSphere');
+              setPlatformDescription('A collaborative group buying platform connecting users for better deals.');
+              setMaintenanceMode(false);
+            }}
+            className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+          >
             Reset
           </button>
-          <button className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
-            Save Changes
+          <button 
+            onClick={async () => {
+              try {
+                setSaveStatus('saving');
+                
+                // Simulating API call to save settings
+                await new Promise((resolve) => setTimeout(resolve, 1000));
+                
+                // Here you would normally make an API call to save the settings
+                // const response = await fetch('/api/settings', {
+                //   method: 'POST',
+                //   headers: { 'Content-Type': 'application/json' },
+                //   body: JSON.stringify({
+                //     platformName,
+                //     platformDescription,
+                //     maintenanceMode,
+                //   }),
+                // });
+                
+                // if (!response.ok) throw new Error('Failed to save settings');
+
+                // Show success message
+                setSaveStatus('success');
+                
+                // Reset status after 3 seconds
+                setTimeout(() => setSaveStatus('idle'), 3000);
+              } catch (error) {
+                // Show error message
+                setSaveStatus('error');
+                
+                // Reset status after 3 seconds
+                setTimeout(() => setSaveStatus('idle'), 3000);
+              }
+            }}
+            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50"
+            disabled={saveStatus === 'saving'}
+          >
+            {saveStatus === 'saving' ? 'Saving...' : 'Save Changes'}
           </button>
         </div>
       </div>

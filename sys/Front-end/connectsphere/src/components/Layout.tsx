@@ -14,7 +14,9 @@ const Layout = ({ children, title = 'Dashboard' }: LayoutProps) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex flex-col">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex flex-col" role="application">
+      {/* Skip link for keyboard users */}
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 bg-white px-3 py-2 rounded-md shadow">Skip to content</a>
       {/* Header */}
       <header className="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-50">
         <div className="px-4 sm:px-6 py-3 sm:py-4">
@@ -66,16 +68,6 @@ const Layout = ({ children, title = 'Dashboard' }: LayoutProps) => {
                   }`}
                 >
                   Moderation
-                </button>
-                <button 
-                  onClick={() => navigate('/products')}
-                  className={`px-3 xl:px-4 py-2 text-sm font-medium rounded-md transition-all duration-200 whitespace-nowrap ${
-                    location.pathname === '/products' 
-                      ? 'bg-white text-blue-600 shadow-sm' 
-                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                  }`}
-                >
-                  Products
                 </button>
                 <button 
                   onClick={() => navigate('/settings')}
@@ -183,19 +175,6 @@ const Layout = ({ children, title = 'Dashboard' }: LayoutProps) => {
                 </button>
                 <button 
                   onClick={() => {
-                    navigate('/products');
-                    setMobileMenuOpen(false);
-                  }}
-                  className={`px-4 py-3 text-left text-sm font-medium rounded-lg transition-all duration-200 ${
-                    location.pathname === '/products' 
-                      ? 'bg-blue-50 text-blue-600' 
-                      : 'text-gray-600 hover:bg-gray-50'
-                  }`}
-                >
-                  Products
-                </button>
-                <button 
-                  onClick={() => {
                     navigate('/settings');
                     setMobileMenuOpen(false);
                   }}
@@ -226,9 +205,9 @@ const Layout = ({ children, title = 'Dashboard' }: LayoutProps) => {
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 px-4 sm:px-6 lg:px-8 py-8 max-w-7xl mx-auto w-full">
+      <main id="main-content" className="flex-1 px-4 sm:px-6 lg:px-8 py-8 max-w-7xl mx-auto w-full" role="main" aria-labelledby="page-title">
         <div className="mb-6">
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent">
+          <h1 id="page-title" className="text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent">
             {title}
           </h1>
           <div className="h-1 w-20 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-full mt-2"></div>

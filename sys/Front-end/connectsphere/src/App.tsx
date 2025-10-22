@@ -9,7 +9,6 @@ import GroupDetail from './pages/GroupDetail';
 import ProfilePage from './pages/ProfilePage';
 import GroupModeration from './pages/GroupModeration';
 import UserManagement from './pages/UserManagement';
-import ProductCatalog from './pages/ProductCatalog';
 import SystemSettings from './pages/SystemSettings';
 
 function App() {
@@ -26,7 +25,6 @@ function App() {
         <Route path="/group/:id" element={<GroupDetail />} />
         <Route path="/moderation" element={<GroupModeration />} />
         <Route path="/users" element={<UserManagement />} />
-        <Route path="/products" element={<ProductCatalog />} />
         <Route path="/settings" element={<SystemSettings />} />
       </Routes>
     </Router>

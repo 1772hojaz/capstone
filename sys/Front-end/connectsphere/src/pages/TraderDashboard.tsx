@@ -1,4 +1,4 @@
-import { Search, MapPin, User, Zap, Users, Eye } from 'lucide-react';
+import { Search, MapPin, User, Zap, Users, Eye, DollarSign, ArrowUpRight, Calendar } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 
@@ -202,83 +202,121 @@ const TraderDashboard = () => {
               role="article"
               aria-label={`${product.name} group buy`}
             >
-              {/* Product Image with better visual appeal - Larger */}
-              <div className="h-56 bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center relative overflow-hidden">
+              {/* Product Image with enhanced visual appeal */}
+              <div className="h-56 bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center relative overflow-hidden group-hover:from-blue-100 group-hover:to-indigo-200 transition-colors duration-300">
                 {product.image.startsWith('http') ? (
                   <img 
                     src={product.image} 
                     alt={product.name} 
-                    className="h-40 object-contain group-hover:scale-105 transition-transform duration-200" 
+                    className="h-40 object-contain group-hover:scale-105 transition-transform duration-300 filter drop-shadow-lg" 
                   />
                 ) : (
-                  <span className="text-7xl group-hover:scale-105 transition-transform duration-200">{product.image}</span>
+                  <span className="text-7xl group-hover:scale-105 transition-transform duration-300">{product.image}</span>
                 )}
-                {/* Match score badge */}
-                <div className="absolute top-3 left-3 bg-blue-600 text-white text-xs font-bold px-3 py-1 rounded-full shadow-sm">
+                {/* Enhanced match score badge */}
+                <div className="absolute top-3 left-3 bg-blue-600 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-md flex items-center gap-1.5 transform transition-transform group-hover:-translate-y-0.5">
+                  <div className="w-1.5 h-1.5 bg-blue-200 rounded-full animate-pulse"></div>
                   {product.matchScore}% Match
                 </div>
-                {/* Save badge */}
-                <div className="absolute top-3 right-3 bg-green-500 text-white text-xs font-bold px-2 py-1 rounded-full shadow-sm">
+                {/* Enhanced savings badge */}
+                <div className="absolute top-3 right-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-md flex items-center gap-1.5 transform transition-transform group-hover:-translate-y-0.5">
+                  <DollarSign className="w-3.5 h-3.5" />
                   Save 30%
+                </div>
+                {/* Time-limited tag if needed */}
+                <div className="absolute bottom-3 right-3 bg-orange-100 text-orange-800 text-xs font-semibold px-3 py-1.5 rounded-full shadow-sm flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5" />
+                  2 days left
                 </div>
               </div>
 
-              {/* Product Info - Streamlined */}
+              {/* Enhanced Product Info */}
               <div className="p-5">
-                {/* Recommendation reason - Simplified */}
-                <div className="flex items-center gap-1.5 mb-2">
-                  <Zap className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />
+                {/* Enhanced recommendation reason */}
+                <div className="flex items-center gap-1.5 mb-2 transform transition-transform group-hover:translate-x-1">
+                  <div className="p-1.5 bg-blue-50 rounded-full">
+                    <Zap className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />
+                  </div>
                   <p className="text-xs text-blue-600 font-medium">{product.reason}</p>
                 </div>
                 
                 <h3 className="text-lg font-bold text-gray-900 mb-2 line-clamp-2 leading-tight">{product.name}</h3>
                 
-                {/* Price with visual emphasis - Simplified */}
-                <div className="mb-3">
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-2xl font-bold text-blue-600">${product.price}</span>
-                    <span className="text-sm text-gray-400 line-through">${(product.price / 0.7).toFixed(2)}</span>
+                {/* Enhanced price display */}
+                <div className="mb-4">
+                  <div className="flex items-baseline gap-3">
+                    <div className="flex-1">
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-blue-800 bg-clip-text text-transparent">${product.price}</span>
+                        <span className="text-sm text-gray-400 line-through">${(product.price / 0.7).toFixed(2)}</span>
+                      </div>
+                      <p className="text-xs text-green-600 font-medium flex items-center gap-1">
+                        <DollarSign className="w-3.5 h-3.5" />
+                        Group Buy Price
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-medium text-gray-900">Limited Time</p>
+                      <p className="text-xs text-gray-500">Ends in 48h</p>
+                    </div>
                   </div>
-                  <p className="text-xs text-green-600 font-medium">Group Buy Price</p>
                 </div>
                 
-                {/* Participants - Simplified */}
+                {/* Enhanced participants display */}
                 <div className="mb-4">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="flex items-center gap-1 text-gray-700">
-                      <Users className="w-4 h-4" />
-                      <span className="font-medium">{product.participants} joined</span>
-                    </span>
-                    <span className="text-gray-500">50 needed</span>
+                  <div className="flex items-center justify-between text-sm mb-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 bg-blue-50 rounded-full flex items-center justify-center">
+                        <Users className="w-4 h-4 text-blue-600" />
+                      </div>
+                      <div>
+                        <p className="font-medium text-gray-900">{product.participants} joined</p>
+                        <p className="text-xs text-gray-500">of 50 needed</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-medium text-green-600">{((product.participants / 50) * 100).toFixed(0)}%</p>
+                      <p className="text-xs text-gray-500">Complete</p>
+                    </div>
                   </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden mt-1">
+                  <div className="w-full bg-gray-100 rounded-full h-3 overflow-hidden">
                     <div 
-                      className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                      className="bg-gradient-to-r from-blue-500 to-blue-600 h-3 rounded-full transition-all duration-500 ease-out shadow-sm"
                       style={{ width: `${(product.participants / 50) * 100}%` }}
                       role="progressbar"
                       aria-valuenow={product.participants}
                       aria-valuemin={0}
                       aria-valuemax={50}
-                    ></div>
+                    >
+                      <div className="w-full h-full opacity-25 bg-stripes animate-move-stripes"></div>
+                    </div>
                   </div>
                 </div>
 
-                {/* Simplified call-to-action */}
+                {/* Enhanced call-to-action buttons */}
                 <div className="flex gap-2">
                   <button
                     onClick={() => handleViewGroup(product.id)}
-                    className="flex-1 py-3 text-sm font-semibold text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors flex items-center justify-center gap-1"
+                    className="flex-1 py-3 text-sm font-semibold text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-all duration-300 flex items-center justify-center gap-2 group relative overflow-hidden shadow-sm hover:shadow"
                   >
-                    <Eye className="w-4 h-4" />
-                    View
+                    <Eye className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                    <span>View Details</span>
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent opacity-0 group-hover:opacity-20 translate-x-[-100%] group-hover:translate-x-[100%] transition-all duration-1000"></div>
                   </button>
                   <button 
-                    className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 active:bg-blue-800 transition-colors duration-150 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 shadow-sm"
+                    className="flex-1 bg-gradient-to-r from-blue-600 to-blue-700 text-white py-3 rounded-lg font-semibold hover:from-blue-700 hover:to-blue-800 active:from-blue-800 active:to-blue-900 transition-all duration-300 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 flex items-center justify-center gap-2"
                     aria-label={`Join ${product.name} group buy`}
                   >
-                    Join
+                    <span>Join Group</span>
+                    <ArrowUpRight className="w-4 h-4" />
                   </button>
                 </div>
+                
+                {/* Participation incentive */}
+                <p className="text-xs text-gray-500 text-center mt-3">
+                  <span className="text-green-600 font-medium">+5 more people needed</span>
+                  {' '}to unlock additional 5% discount
+                </p>
               </div>
             </div>
           ))}
