@@ -196,6 +196,22 @@ class AdminGroup(Base):
             return int(((self.original_price - self.price) / self.original_price) * 100)
         return 0
 
+class AdminGroupJoin(Base):
+    __tablename__ = "admin_group_joins"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    admin_group_id = Column(Integer, ForeignKey("admin_groups.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    quantity = Column(Integer, nullable=False, default=1)
+    delivery_method = Column(String, nullable=False)  # "pickup" or "delivery"
+    payment_method = Column(String, nullable=False)   # "cash" or "card"
+    special_instructions = Column(Text, nullable=True)
+    joined_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    admin_group = relationship("AdminGroup", backref="joins")
+    user = relationship("User", backref="admin_group_joins")
+
 class QRCodePickup(Base):
     __tablename__ = "qr_code_pickups"
     

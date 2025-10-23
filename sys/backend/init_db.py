@@ -2,7 +2,7 @@
 Database initialization script with sample data
 """
 from database import engine, SessionLocal, Base
-from models import User, Product, GroupBuy, Contribution, Transaction, QRCodePickup, PickupLocation, AdminGroup
+from models import User, Product, GroupBuy, Contribution, Transaction, QRCodePickup, PickupLocation, AdminGroup, AdminGroupJoin
 from auth import hash_password
 from datetime import datetime, timedelta
 import random
@@ -317,6 +317,104 @@ def init_database():
         
         db.commit()
         print(f"Created {len(pickup_locations)} pickup locations")
+        
+        # Create sample admin groups
+        admin_groups_data = [
+            {
+                "name": "Bulk Rice Purchase",
+                "description": "High-quality rice for traders",
+                "long_description": "Premium long-grain rice perfect for bulk reselling in local markets. Each participant gets 10kg packaging.",
+                "category": "Food & Staples",
+                "price": 150.00,
+                "original_price": 180.00,
+                "image": "/uploads/group_rice.jpg",
+                "max_participants": 20,
+                "end_date": datetime.utcnow() + timedelta(days=7),
+                "admin_name": "Admin",
+                "shipping_info": "Free delivery within Harare CBD",
+                "estimated_delivery": "2-3 weeks after group completion",
+                "features": ["Premium quality", "Bulk packaging", "Market ready"],
+                "requirements": ["Valid trading license", "Minimum order 10kg"],
+                "participants": 5
+            },
+            {
+                "name": "Cooking Oil Bulk Deal",
+                "description": "Refined sunflower cooking oil in bulk",
+                "long_description": "High-quality cooking oil perfect for restaurants and retailers. 25L containers with competitive pricing.",
+                "category": "Food & Staples",
+                "price": 65.00,
+                "original_price": 80.00,
+                "image": "/uploads/group_oil.jpg",
+                "max_participants": 15,
+                "end_date": datetime.utcnow() + timedelta(days=10),
+                "admin_name": "Admin",
+                "shipping_info": "Free delivery within city limits",
+                "estimated_delivery": "1-2 weeks after group completion",
+                "features": ["Refined quality", "25L containers", "Restaurant grade"],
+                "requirements": ["Business registration", "Storage facility"],
+                "participants": 3
+            },
+            {
+                "name": "Laundry Detergent Wholesale",
+                "description": "High-quality washing powder in bulk",
+                "long_description": "Professional grade laundry detergent perfect for laundromats and retailers. 10kg packaging with excellent cleaning power.",
+                "category": "Household",
+                "price": 35.00,
+                "original_price": 45.00,
+                "image": "/uploads/group_detergent.jpg",
+                "max_participants": 25,
+                "end_date": datetime.utcnow() + timedelta(days=14),
+                "admin_name": "Admin",
+                "shipping_info": "Free delivery for orders over $500",
+                "estimated_delivery": "2-3 weeks after group completion",
+                "features": ["High cleaning power", "Bulk packaging", "Professional grade"],
+                "requirements": ["Business license", "Adequate storage"],
+                "participants": 8
+            },
+            {
+                "name": "Sugar Bulk Purchase",
+                "description": "White refined sugar in 50kg bags",
+                "long_description": "Premium refined sugar perfect for bakeries and retailers. Consistent quality and competitive pricing.",
+                "category": "Food & Staples",
+                "price": 95.00,
+                "original_price": 120.00,
+                "image": "/uploads/group_sugar.jpg",
+                "max_participants": 18,
+                "end_date": datetime.utcnow() + timedelta(days=5),
+                "admin_name": "Admin",
+                "shipping_info": "Free delivery within metropolitan area",
+                "estimated_delivery": "1-2 weeks after group completion",
+                "features": ["Refined quality", "50kg bags", "Bakery grade"],
+                "requirements": ["Food handling license", "Storage facility"],
+                "participants": 12
+            },
+            {
+                "name": "Maize Meal Bulk Deal",
+                "description": "Fine maize meal for household and retail",
+                "long_description": "High-quality maize meal perfect for supermarkets and retailers. 25kg packaging with excellent milling quality.",
+                "category": "Food & Staples",
+                "price": 48.00,
+                "original_price": 60.00,
+                "image": "/uploads/group_maize.jpg",
+                "max_participants": 30,
+                "end_date": datetime.utcnow() + timedelta(days=12),
+                "admin_name": "Admin",
+                "shipping_info": "Free delivery for orders over $300",
+                "estimated_delivery": "2-3 weeks after group completion",
+                "features": ["Fine milling", "25kg bags", "Retail ready"],
+                "requirements": ["Trading license", "Dry storage"],
+                "participants": 15
+            }
+        ]
+        
+        admin_groups = []
+        for ag_data in admin_groups_data:
+            admin_group = AdminGroup(**ag_data)
+            admin_groups.append(admin_group)
+            db.add(admin_group)
+        
+        db.commit()
+        print(f"Created {len(admin_groups)} admin-created groups")
         
         # Auto-train ML models with initial data
         print("\n🤖 Training ML models...")

@@ -11,7 +11,7 @@ import base64
 import io
 from cryptography.fernet import Fernet
 from database import get_db
-from models import User, AdminGroup, QRCodePickup, PickupLocation
+from models import User, AdminGroup, QRCodePickup, PickupLocation, AdminGroupJoin
 from auth import verify_token
 
 router = APIRouter()
@@ -103,11 +103,17 @@ class GroupCreateRequest(BaseModel):
 
 class JoinGroupRequest(BaseModel):
     quantity: int = 1
+    delivery_method: str  # "pickup" or "delivery"
+    payment_method: str   # "cash" or "card"
+    special_instructions: Optional[str] = None
 
     class Config:
         schema_extra = {
             "example": {
-                "quantity": 1
+                "quantity": 1,
+                "delivery_method": "pickup",
+                "payment_method": "cash",
+                "special_instructions": "Please call before delivery"
             }
         }
 
@@ -372,14 +378,14 @@ async def create_admin_group(
 
 @router.post(
     "/{group_id}/join",
-    summary="Join Group-Buy",
+    summary="Join Group-Buy with Order Details",
     description="""
-    Join an existing admin-created group-buy opportunity.
+    Join an existing admin-created group-buy opportunity with complete order details.
 
     Traders can join active groups that haven't reached their maximum participant limit.
-    Multiple quantities can be specified for bulk participation.
+    Must provide delivery method, payment method, and quantity. Optional special instructions supported.
     """,
-    response_description="Confirmation of successful group join",
+    response_description="Confirmation of successful group join with order details",
     tags=["Groups"],
     responses={
         200: {
@@ -389,12 +395,18 @@ async def create_admin_group(
                     "example": {
                         "message": "Successfully joined 'Bulk Rice Purchase'!",
                         "group_id": 1,
-                        "participants": 6
+                        "participants": 6,
+                        "join_details": {
+                            "quantity": 2,
+                            "delivery_method": "pickup",
+                            "payment_method": "cash",
+                            "special_instructions": "Please call before delivery"
+                        }
                     }
                 }
             }
         },
-        400: {"description": "Group is full or inactive"},
+        400: {"description": "Group is full, inactive, invalid data, or already joined"},
         404: {"description": "Group not found"}
     }
 )
@@ -415,16 +427,51 @@ async def join_admin_group(
     if group.participants >= group.max_participants:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Group is full")
     
-    # Check if user already joined (we'll use a simple approach for now)
-    # In a real app, you'd have a join table
+    # Check if user already joined this group
+    existing_join = db.query(AdminGroupJoin).filter(
+        AdminGroupJoin.admin_group_id == group_id,
+        AdminGroupJoin.user_id == user.id
+    ).first()
     
+    if existing_join:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You have already joined this group")
+    
+    # Validate form data
+    if join_data.delivery_method not in ["pickup", "delivery"]:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid delivery method")
+    
+    if join_data.payment_method not in ["cash", "card"]:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid payment method")
+    
+    if join_data.quantity < 1 or join_data.quantity > 100:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Quantity must be between 1 and 100")
+    
+    # Create the join record
+    join_record = AdminGroupJoin(
+        admin_group_id=group_id,
+        user_id=user.id,
+        quantity=join_data.quantity,
+        delivery_method=join_data.delivery_method,
+        payment_method=join_data.payment_method,
+        special_instructions=join_data.special_instructions
+    )
+    
+    db.add(join_record)
+    
+    # Update group participant count
     group.participants += join_data.quantity
     db.commit()
     
     return {
         "message": f"Successfully joined '{group.name}'!",
         "group_id": group.id,
-        "participants": group.participants
+        "participants": group.participants,
+        "join_details": {
+            "quantity": join_data.quantity,
+            "delivery_method": join_data.delivery_method,
+            "payment_method": join_data.payment_method,
+            "special_instructions": join_data.special_instructions
+        }
     }
 
 @router.post(

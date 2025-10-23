@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from database import engine, Base, SessionLocal
 from auth import router as auth_router
@@ -9,6 +9,7 @@ from ml import router as ml_router
 from admin import router as admin_router
 from settings import router as settings_router
 from ml_scheduler import scheduler, start_scheduler
+from websocket_manager import manager
 import uvicorn
 import asyncio
 import logging
@@ -111,7 +112,7 @@ async def startup_event():
     db = SessionLocal()
     try:
         from models import MLModel, Transaction, User, Product
-        from ml import train_clustering_model, load_models
+        from ml import train_clustering_model_with_progress, load_models
         
         print("\n" + "="*60)
         print("🚀 Hybrid Recommender System Initialization")
@@ -153,7 +154,7 @@ async def startup_event():
         if not latest_model and transaction_count >= 10 and trader_count >= 4:
             print("\n🤖 No trained hybrid model found. Auto-training with database data...")
             try:
-                training_results = train_clustering_model(db)
+                training_results = train_clustering_model_with_progress(db)
                 print("✅ Hybrid models trained successfully on startup!")
                 print(f"   - Silhouette Score: {training_results['silhouette_score']:.3f}")
                 print(f"   - Clusters: {training_results['n_clusters']}")
@@ -201,18 +202,18 @@ async def shutdown_event():
     print("\n🛑 Stopping ML scheduler...")
     await scheduler.stop()
 
-# Health check
-@app.get("/")
-async def root():
-    return {
-        "message": "Group-Buy System API",
-        "version": "1.0.0",
-        "status": "running"
-    }
-
-@app.get("/health")
-async def health_check():
-    return {"status": "healthy"}
+# WebSocket endpoint for ML training progress
+@app.websocket("/ws/ml-training")
+async def ml_training_websocket(websocket: WebSocket):
+    await manager.connect(websocket)
+    try:
+        while True:
+            # Keep connection alive, wait for client messages if needed
+            data = await websocket.receive_text()
+            # Echo back for connection health
+            await websocket.send_text(f"Connected: {data}")
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
 
 # Include routers
 app.include_router(auth_router, prefix="/api/auth", tags=["Authentication"])

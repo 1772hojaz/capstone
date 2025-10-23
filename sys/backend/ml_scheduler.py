@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from database import SessionLocal
 from models import MLModel, Transaction
-from ml import train_clustering_model
+from ml import train_clustering_model_with_progress
 import os
 
 class MLModelScheduler:
@@ -57,10 +57,10 @@ class MLModelScheduler:
             print(f"\n🤖 Auto-retraining HYBRID recommender (database has {total_transactions} transactions)...")
             
             # Train new hybrid model from DATABASE
-            training_results = train_clustering_model(db)
+            training_results = await train_clustering_model_with_progress(db)
             new_score = training_results['silhouette_score']
             
-            print(f"✅ New hybrid model trained:")
+            print("✅ New hybrid model trained:")
             print(f"   - Silhouette Score: {new_score:.3f}")
             print(f"   - Clusters: {training_results['n_clusters']}")
             print(f"   - NMF Rank: {training_results.get('nmf_rank', 'N/A')}")
@@ -110,7 +110,7 @@ class MLModelScheduler:
                     if os.path.exists(model.model_path):
                         try:
                             os.remove(model.model_path)
-                        except:
+                        except Exception:
                             pass
                     
                     db.delete(model)
@@ -132,7 +132,7 @@ class MLModelScheduler:
                     if os.path.exists(model.model_path):
                         try:
                             os.remove(model.model_path)
-                        except:
+                        except Exception:
                             pass
                     db.delete(model)
                     deleted_count += 1
@@ -144,7 +144,7 @@ class MLModelScheduler:
                 print(f"   ♻️  Cleaned up {deleted_count} suboptimal model(s)")
                 print(f"   ⭐ Best model score: {best_score:.3f}")
             else:
-                print(f"   ✅ No cleanup needed - current model is optimal")
+                print("   ✅ No cleanup needed - current model is optimal")
                 
         except Exception as e:
             print(f"   ⚠️  Cleanup error: {e}")

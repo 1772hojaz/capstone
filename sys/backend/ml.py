@@ -18,6 +18,7 @@ from sklearn.decomposition import NMF
 from database import get_db
 from models import User, GroupBuy, Transaction, Product, MLModel, Contribution, AdminGroup
 from auth import verify_token, get_current_user
+from websocket_manager import manager
 import logging
 
 logger = logging.getLogger(__name__)
@@ -142,269 +143,354 @@ def load_models():
     except Exception as e:
         print(f"⚠️  Error loading models: {e}")
 
-def train_clustering_model(db: Session):
-    """Train hybrid recommender system from DATABASE: Clustering + NMF + TF-IDF"""
+async def train_clustering_model_with_progress(db: Session):
+    """Train hybrid recommender system with progress tracking"""
     global clustering_model, nmf_model, tfidf_model, scaler, feature_store
     
     print("\n" + "="*60)
-    print("🚀 Training Hybrid Recommender from Database")
+    print("🚀 Training Hybrid Recommender with Progress Tracking")
     print("="*60)
     
-    # Get all products for content-based filtering
-    products = db.query(Product).all()
-    if len(products) < 5:
-        raise ValueError(f"Not enough products for training (minimum 5 required, found {len(products)})")
+    # Create a training status record
+    training_status = {
+        "status": "running",
+        "progress": 0,
+        "current_stage": "initializing",
+        "stages_completed": [],
+        "started_at": datetime.utcnow(),
+        "estimated_completion": None
+    }
     
-    print(f"📦 Products: {len(products)}")
+    # Store training status in a global variable (in production, use Redis/database)
+    global current_training_status
+    current_training_status = training_status
     
-    # Build product DataFrame
-    prod_data = []
-    for p in products:
-        prod_data.append({
-            'product_id': p.id,
-            'product_name': p.name,
-            'description': p.description or '',
-            'category': p.category or 'general',
-            'unit_price': p.unit_price,
-            'bulk_price': p.bulk_price
-        })
-    prod_df = pd.DataFrame(prod_data)
-    
-    # Get transaction data for all users
-    transactions = db.query(Transaction).all()
-    if len(transactions) < 10:
-        raise ValueError(f"Not enough transactions for training (minimum 10 required, found {len(transactions)})")
-    
-    users = db.query(User).filter(~User.is_admin).all()
-    if len(users) < 4:
-        raise ValueError(f"Not enough users for clustering (minimum 4 required, found {len(users)})")
-    
-    user_ids = [u.id for u in users]
-    n_users = len(user_ids)
-    n_products = len(products)
-    product_ids = [p.id for p in products]
-    
-    print(f"👥 Traders: {n_users}")
-    print(f"💳 Transactions: {len(transactions)}")
-    print(f"   Avg per trader: {len(transactions) / n_users:.1f}")
-    
-    # === STEP 1: Build User-Product Matrix from DATABASE ===
-    print(f"\n1️⃣  Building User-Product Matrix from DB transactions...")
-    user_product_matrix = np.zeros((n_users, n_products))
-    
-    for tx in transactions:
-        try:
-            if tx.user_id not in user_ids:
-                continue  # Skip non-trader users
-            user_idx = user_ids.index(tx.user_id)
-            
-            if tx.product_id not in product_ids:
-                continue  # Skip products not in current catalog
-            prod_idx = product_ids.index(tx.product_id)
-            
-            user_product_matrix[user_idx, prod_idx] += tx.quantity
-        except (ValueError, IndexError) as e:
-            continue
-    
-    sparsity = (user_product_matrix == 0).sum() / user_product_matrix.size * 100
-    print(f"   Matrix shape: {user_product_matrix.shape}")
-    print(f"   Sparsity: {sparsity:.1f}%")
-    print(f"   Total interactions: {(user_product_matrix > 0).sum()}")
-    
-    # === STEP 2: Clustering (for group formation) ===
-    # Use combined transaction + preference features for clustering
-    scaler = MinMaxScaler()
-    mat_scaled = scaler.fit_transform(trader_features)
-    
-    # Determine optimal clusters
-    silhouette_scores = []
-    inertia_scores = []
-    K_range = range(2, min(9, n_users // 2 + 1))
-    best_k, best_score = 4, -1
-    
-    for k in K_range:
-        km = KMeans(n_clusters=k, init="k-means++", n_init=10, random_state=42)
-        labels = km.fit_predict(mat_scaled)
-        if len(set(labels)) > 1:
-            score = silhouette_score(mat_scaled, labels)
-            silhouette_scores.append(score)
-            inertia_scores.append(km.inertia_)
-            if score > best_score:
-                best_k, best_score = k, score
-    
-    # Train final clustering model
-    clustering_model = KMeans(n_clusters=best_k, init="k-means++", n_init=10, random_state=42)
-    clustering_model.fit(mat_scaled)
-    
-    # Update user clusters
-    for idx, user_id in enumerate(user_ids):
-        user = db.query(User).filter(User.id == user_id).first()
-        if user:
-            user.cluster_id = int(clustering_model.labels_[idx])
-    
-    unique, counts = np.unique(clustering_model.labels_, return_counts=True)
-    cluster_sizes = counts.tolist()
-    
-    print(f"✓ Clustering: {best_k} clusters, silhouette={best_score:.4f}")
-    
-    # === STEP 3: Collaborative Filtering (NMF) ===
-    rank = min(8, min(user_product_matrix.shape) - 1)
-    nmf_model = NMF(n_components=rank, init="nndsvda", random_state=42, max_iter=500)
-    W = nmf_model.fit_transform(np.maximum(user_product_matrix, 0))
-    H = nmf_model.components_
-    R_hat_cf = np.dot(W, H)
-    
-    print(f"✓ NMF (CF): rank={rank}, reconstruction_error={nmf_model.reconstruction_err_:.4f}")
-    
-    # === STEP 4: Content-Based Filtering (TF-IDF) ===
-    prod_text = (prod_df['product_name'] + ' ' + prod_df['description'] + ' ' + prod_df['category']).values
-    tfidf_model = TfidfVectorizer()
-    X_tfidf = tfidf_model.fit_transform(prod_text)
-    
-    # Build trader profiles with transaction history AND preferences
-    trader_profiles = []
-    trader_features = []
-    
-    for user in users:
-        # Transaction-based features
-        user_vector = np.zeros(n_products)
-        user_transactions = [tx for tx in transactions if tx.user_id == user.id]
-        for tx in user_transactions:
+    try:
+        # Stage 1: Data Collection (10%)
+        print("1️⃣  Data Collection...")
+        training_status["current_stage"] = "data_collection"
+        training_status["progress"] = 10
+        training_status["stages_completed"].append("data_collection")
+        
+        # Broadcast progress update
+        await manager.broadcast(json.dumps({
+            "type": "progress",
+            "stage": "data_collection",
+            "progress": 10,
+            "message": "Collecting transaction and product data...",
+            "timestamp": datetime.utcnow().isoformat()
+        }))
+        
+        # Get all products for content-based filtering
+        products = db.query(Product).all()
+        if len(products) < 5:
+            raise ValueError(f"Not enough products for training (minimum 5 required, found {len(products)})")
+        
+        # Build product DataFrame for TF-IDF processing
+        prod_data = []
+        for p in products:
+            prod_data.append({
+                'product_id': p.id,
+                'product_name': p.name,
+                'description': p.description or '',
+                'category': p.category or 'general',
+                'unit_price': p.unit_price,
+                'bulk_price': p.bulk_price
+            })
+        
+        # Get transaction data for all users
+        transactions = db.query(Transaction).all()
+        if len(transactions) < 10:
+            raise ValueError(f"Not enough transactions for training (minimum 10 required, found {len(transactions)})")
+        
+        users = db.query(User).filter(~User.is_admin).all()
+        if len(users) < 4:
+            raise ValueError(f"Not enough users for clustering (minimum 4 required, found {len(users)})")
+        
+        user_ids = [u.id for u in users]
+        n_users = len(user_ids)
+        n_products = len(products)
+        product_ids = [p.id for p in products]
+        
+        print(f"   ✅ Collected: {n_users} users, {len(products)} products, {len(transactions)} transactions")
+        
+        # Stage 2: Matrix Building (20%)
+        print("2️⃣  Building User-Product Matrix...")
+        training_status["current_stage"] = "matrix_building"
+        training_status["progress"] = 20
+        training_status["stages_completed"].append("matrix_building")
+        
+        # Broadcast progress update
+        await manager.broadcast(json.dumps({
+            "type": "progress",
+            "stage": "matrix_building",
+            "progress": 20,
+            "message": "Building user-product interaction matrix...",
+            "timestamp": datetime.utcnow().isoformat()
+        }))
+        
+        user_product_matrix = np.zeros((n_users, n_products))
+        
+        for tx in transactions:
             try:
+                if tx.user_id not in user_ids:
+                    continue
+                user_idx = user_ids.index(tx.user_id)
+                
+                if tx.product_id not in product_ids:
+                    continue
                 prod_idx = product_ids.index(tx.product_id)
-                user_vector[prod_idx] += tx.quantity
-            except ValueError:
+                
+                user_product_matrix[user_idx, prod_idx] += tx.quantity
+            except (ValueError, IndexError):
                 continue
         
-        # Preference-based features
-        pref_features = np.zeros(10)  # 10 preference features
+        sparsity = (user_product_matrix == 0).sum() / user_product_matrix.size * 100
+        print(f"   ✅ Matrix built: {user_product_matrix.shape}, sparsity: {sparsity:.1f}%")
         
-        # Category preferences (encode as binary vector for top categories)
-        user_categories = user.preferred_categories or []
-        category_mapping = {'electronics': 0, 'clothing': 1, 'food': 2, 'household': 3, 'tools': 4}
-        for cat in user_categories[:3]:  # Top 3 preferences
-            if cat.lower() in category_mapping:
-                pref_features[category_mapping[cat.lower()]] = 1
+        # Stage 3: Clustering (40%)
+        print("3️⃣  Clustering Users...")
+        training_status["current_stage"] = "clustering"
+        training_status["progress"] = 40
+        training_status["stages_completed"].append("clustering")
         
-        # Budget range (ordinal encoding)
-        budget_mapping = {'low': 0, 'medium': 1, 'high': 2}
-        pref_features[5] = budget_mapping.get(user.budget_range or 'medium', 1)
+        # Broadcast progress update
+        await manager.broadcast(json.dumps({
+            "type": "progress",
+            "stage": "clustering",
+            "progress": 40,
+            "message": "Clustering users based on purchase patterns...",
+            "timestamp": datetime.utcnow().isoformat()
+        }))
         
-        # Experience level (ordinal encoding)
-        exp_mapping = {'beginner': 0, 'intermediate': 1, 'advanced': 2}
-        pref_features[6] = exp_mapping.get(user.experience_level or 'beginner', 0)
+        # Build trader features
+        trader_features = []
+        for user in users:
+            user_vector = np.zeros(n_products)
+            user_transactions = [tx for tx in transactions if tx.user_id == user.id]
+            for tx in user_transactions:
+                try:
+                    prod_idx = product_ids.index(tx.product_id)
+                    user_vector[prod_idx] += tx.quantity
+                except ValueError:
+                    continue
+            
+            pref_features = np.zeros(10)
+            if user.preferred_categories:
+                category_mapping = {'electronics': 0, 'clothing': 1, 'food': 2, 'household': 3, 'tools': 4}
+                for cat in user.preferred_categories[:3]:
+                    if cat.lower() in category_mapping:
+                        pref_features[category_mapping[cat.lower()]] = 1
+            
+            budget_mapping = {'low': 0, 'medium': 1, 'high': 2}
+            pref_features[5] = budget_mapping.get(user.budget_range or 'medium', 1)
+            
+            exp_mapping = {'beginner': 0, 'intermediate': 1, 'advanced': 2}
+            pref_features[6] = exp_mapping.get(user.experience_level or 'beginner', 0)
+            
+            if user.preferred_group_sizes:
+                group_size_mapping = {'small': 7, 'medium': 8, 'large': 9}
+                for size in user.preferred_group_sizes:
+                    if size.lower() in group_size_mapping:
+                        pref_features[group_size_mapping[size.lower()]] = 1
+            
+            combined_features = np.concatenate([user_vector, pref_features])
+            trader_features.append(combined_features)
         
-        # Group size preferences (encode as binary)
-        group_size_mapping = {'small': 7, 'medium': 8, 'large': 9}
-        user_group_sizes = user.preferred_group_sizes or []
-        for size in user_group_sizes:
-            if size.lower() in group_size_mapping:
-                pref_features[group_size_mapping[size.lower()]] = 1
+        trader_features = np.array(trader_features)
+        scaler = MinMaxScaler()
+        mat_scaled = scaler.fit_transform(trader_features)
         
-        # Combine transaction and preference features
-        combined_features = np.concatenate([user_vector, pref_features])
-        trader_features.append(combined_features)
-    
-    trader_features = np.array(trader_features)
-    
-    # Build trader profiles from transaction history only (for content-based)
-    trader_profiles = np.dot(user_product_matrix, X_tfidf.toarray())
-    norms = np.linalg.norm(trader_profiles, axis=1, keepdims=True) + 1e-9
-    trader_profiles_norm = trader_profiles / norms
-    
-    prod_norms = np.linalg.norm(X_tfidf.toarray(), axis=1, keepdims=True) + 1e-9
-    prod_vecs_norm = X_tfidf.toarray() / prod_norms
-    
-    R_hat_cbf = np.dot(trader_profiles_norm, prod_vecs_norm.T)
-    
-    print(f"✓ TF-IDF (CBF): vocabulary_size={len(tfidf_model.vocabulary_)}")
-    
-    # === STEP 5: Popularity Boost ===
-    product_popularity = user_product_matrix.sum(axis=0)
-    pop_min, pop_max = product_popularity.min(), product_popularity.max()
-    if pop_max > pop_min:
-        pop_norm = (product_popularity - pop_min) / (pop_max - pop_min)
-    else:
-        pop_norm = product_popularity * 0
-    boost = np.tile(pop_norm.reshape(1, -1), (n_users, 1))
-    
-    print(f"✓ Popularity boost: range=[{product_popularity.min():.0f}, {product_popularity.max():.0f}]")
-    
-    # === STEP 6: Hybrid Fusion ===
-    # R_hybrid = alpha * CF + beta * CBF + gamma * Boost
-    # This is saved in memory and used during recommendations
-    
-    # === STEP 7: Save Models ===
-    joblib.dump(clustering_model, os.path.join(MODEL_DIR, "clustering_model.pkl"))
-    joblib.dump(nmf_model, os.path.join(MODEL_DIR, "nmf_model.pkl"))
-    joblib.dump(tfidf_model, os.path.join(MODEL_DIR, "tfidf.pkl"))
-    joblib.dump(scaler, os.path.join(MODEL_DIR, "scaler.pkl"))
-    
-    # Save feature store
-    feature_store = {
-        "product_id_to_name": {int(p.id): p.name for p in products},
-        "product_categories": {int(p.id): p.category or 'general' for p in products},
-        "cluster_of_trader": {int(uid): int(clustering_model.labels_[idx]) for idx, uid in enumerate(user_ids)},
-        "alpha_beta_gamma": [ALPHA, BETA, GAMMA],
-        "n_traders": n_users,
-        "n_products": n_products,
-        "n_clusters": best_k,
-        "silhouette_score": float(best_score),
-        "user_ids": user_ids,
-        "product_ids": [int(p.id) for p in products]
-    }
-    
-    with open(os.path.join(MODEL_DIR, "feature_store.json"), 'w') as f:
-        json.dump(feature_store, f, indent=2)
-    
-    print("✓ Saved: clustering_model.pkl, nmf_model.pkl, tfidf.pkl, scaler.pkl, feature_store.json")
-    
-    db.commit()
-    
-    # Create meaningful feature names (top products by popularity for visualization)
-    # Limit to top 20 most popular products for cleaner radar charts
-    product_popularity = user_product_matrix.sum(axis=0)
-    top_product_indices = np.argsort(product_popularity)[::-1][:min(20, n_products)]
-    feature_names_for_viz = [products[idx].name for idx in top_product_indices]
-    
-    # Extract cluster centers for only these top features
-    cluster_centers_viz = clustering_model.cluster_centers_[:, top_product_indices].tolist()
-    
-    # Save model metadata
-    ml_model = MLModel(
-        model_type="hybrid_recommender",
-        model_path=MODEL_DIR,
-        metrics={
+        # Determine optimal clusters
+        K_range = range(2, min(9, n_users // 2 + 1))
+        best_k, best_score = 4, -1
+        
+        for k in K_range:
+            km = KMeans(n_clusters=k, init="k-means++", n_init=10, random_state=42)
+            labels = km.fit_predict(mat_scaled)
+            if len(set(labels)) > 1:
+                score = silhouette_score(mat_scaled, labels)
+                if score > best_score:
+                    best_k, best_score = k, score
+        
+        clustering_model = KMeans(n_clusters=best_k, init="k-means++", n_init=10, random_state=42)
+        clustering_model.fit(mat_scaled)
+        
+        for idx, user_id in enumerate(user_ids):
+            user = db.query(User).filter(User.id == user_id).first()
+            if user:
+                user.cluster_id = int(clustering_model.labels_[idx])
+        
+        print(f"   ✅ Clustering complete: {best_k} clusters, silhouette={best_score:.4f}")
+        
+        # Stage 4: NMF Training (60%)
+        print("4️⃣  Training NMF (Collaborative Filtering)...")
+        training_status["current_stage"] = "nmf_training"
+        training_status["progress"] = 60
+        training_status["stages_completed"].append("nmf_training")
+        
+        # Broadcast progress update
+        await manager.broadcast(json.dumps({
+            "type": "progress",
+            "stage": "nmf_training",
+            "progress": 60,
+            "message": "Training collaborative filtering model...",
+            "timestamp": datetime.utcnow().isoformat()
+        }))
+        
+        rank = min(8, min(user_product_matrix.shape) - 1)
+        nmf_model = NMF(n_components=rank, init="nndsvda", random_state=42, max_iter=500)
+        W = nmf_model.fit_transform(np.maximum(user_product_matrix, 0))
+        H = nmf_model.components_
+        
+        print(f"   ✅ NMF trained: rank={rank}, error={nmf_model.reconstruction_err_:.4f}")
+        
+        # Stage 5: TF-IDF Processing (75%)
+        print("5️⃣  Processing TF-IDF (Content-Based Filtering)...")
+        training_status["current_stage"] = "tfidf_processing"
+        training_status["progress"] = 75
+        training_status["stages_completed"].append("tfidf_processing")
+        
+        # Broadcast progress update
+        await manager.broadcast(json.dumps({
+            "type": "progress",
+            "stage": "tfidf_processing",
+            "progress": 75,
+            "message": "Processing product content for recommendations...",
+            "timestamp": datetime.utcnow().isoformat()
+        }))
+        
+        prod_text = (pd.DataFrame(prod_data)['product_name'] + ' ' + 
+                    pd.DataFrame(prod_data)['description'] + ' ' + 
+                    pd.DataFrame(prod_data)['category']).values
+        tfidf_model = TfidfVectorizer()
+        X_tfidf = tfidf_model.fit_transform(prod_text)
+        
+        trader_profiles = np.dot(user_product_matrix, X_tfidf.toarray())
+        norms = np.linalg.norm(trader_profiles, axis=1, keepdims=True) + 1e-9
+        trader_profiles_norm = trader_profiles / norms
+        
+        print(f"   ✅ TF-IDF processed: {len(tfidf_model.vocabulary_)} terms")
+        
+        # Stage 6: Hybrid Fusion (90%)
+        print("6️⃣  Creating Hybrid Model...")
+        training_status["current_stage"] = "hybrid_fusion"
+        training_status["progress"] = 90
+        training_status["stages_completed"].append("hybrid_fusion")
+        
+        # Broadcast progress update
+        await manager.broadcast(json.dumps({
+            "type": "progress",
+            "stage": "hybrid_fusion",
+            "progress": 90,
+            "message": "Combining collaborative and content-based filtering...",
+            "timestamp": datetime.utcnow().isoformat()
+        }))
+        
+        # Stage 7: Saving Models (100%)
+        print("7️⃣  Saving Models...")
+        training_status["current_stage"] = "model_saving"
+        training_status["progress"] = 100
+        training_status["stages_completed"].append("model_saving")
+        
+        # Broadcast progress update
+        await manager.broadcast(json.dumps({
+            "type": "progress",
+            "stage": "model_saving",
+            "progress": 100,
+            "message": "Saving trained models to disk...",
+            "timestamp": datetime.utcnow().isoformat()
+        }))
+        
+        joblib.dump(clustering_model, os.path.join(MODEL_DIR, "clustering_model.pkl"))
+        joblib.dump(nmf_model, os.path.join(MODEL_DIR, "nmf_model.pkl"))
+        joblib.dump(tfidf_model, os.path.join(MODEL_DIR, "tfidf.pkl"))
+        joblib.dump(scaler, os.path.join(MODEL_DIR, "scaler.pkl"))
+        
+        feature_store = {
+            "product_id_to_name": {int(p.id): p.name for p in products},
+            "product_categories": {int(p.id): p.category or 'general' for p in products},
+            "cluster_of_trader": {int(uid): int(clustering_model.labels_[idx]) for idx, uid in enumerate(user_ids)},
+            "alpha_beta_gamma": [ALPHA, BETA, GAMMA],
+            "n_traders": n_users,
+            "n_products": n_products,
+            "n_clusters": best_k,
             "silhouette_score": float(best_score),
-            "n_clusters": int(best_k),
-            "silhouette_scores": [float(s) for s in silhouette_scores],
-            "inertia_scores": [float(i) for i in inertia_scores],
-            "cluster_range": list(K_range),
-            "cluster_sizes": cluster_sizes,
-            "cluster_centers": cluster_centers_viz,
-            "feature_names": feature_names_for_viz,
-            "nmf_rank": rank,
-            "nmf_reconstruction_error": float(nmf_model.reconstruction_err_),
-            "tfidf_vocab_size": len(tfidf_model.vocabulary_),
-            "hybrid_weights": {"alpha": ALPHA, "beta": BETA, "gamma": GAMMA}
+            "user_ids": user_ids,
+            "product_ids": [int(p.id) for p in products]
         }
-    )
-    db.add(ml_model)
-    db.commit()
-    
-    return {
-        "silhouette_score": best_score,
-        "n_clusters": best_k,
-        "silhouette_scores": silhouette_scores,
-        "inertia_scores": inertia_scores,
-        "cluster_range": list(K_range),
-        "cluster_sizes": cluster_sizes,
-        "cluster_centers": cluster_centers_viz,
-        "feature_names": feature_names_for_viz,
-        "nmf_rank": rank,
-        "tfidf_vocab_size": len(tfidf_model.vocabulary_),
-        "model_type": "hybrid_recommender"
-    }
+        
+        with open(os.path.join(MODEL_DIR, "feature_store.json"), 'w') as f:
+            json.dump(feature_store, f, indent=2)
+        
+        # Save model metadata
+        ml_model = MLModel(
+            model_type="hybrid_recommender",
+            model_path=MODEL_DIR,
+            metrics={
+                "silhouette_score": float(best_score),
+                "n_clusters": int(best_k),
+                "nmf_rank": rank,
+                "nmf_reconstruction_error": float(nmf_model.reconstruction_err_),
+                "tfidf_vocab_size": len(tfidf_model.vocabulary_),
+                "hybrid_weights": {"alpha": ALPHA, "beta": BETA, "gamma": GAMMA}
+            }
+        )
+        db.add(ml_model)
+        db.commit()
+        
+        training_status["status"] = "completed"
+        training_status["completed_at"] = datetime.utcnow()
+        
+        # Broadcast completion
+        await manager.broadcast(json.dumps({
+            "type": "completed",
+            "stage": "completed",
+            "progress": 100,
+            "message": f"Training completed successfully! Silhouette Score: {best_score:.4f}",
+            "results": {
+                "silhouette_score": float(best_score),
+                "n_clusters": int(best_k),
+                "nmf_rank": rank,
+                "tfidf_vocab_size": len(tfidf_model.vocabulary_)
+            },
+            "timestamp": datetime.utcnow().isoformat()
+        }))
+        
+        print("✅ Training completed successfully!")
+        print(f"   - Silhouette Score: {best_score:.4f}")
+        print(f"   - Clusters: {best_k}")
+        print(f"   - NMF Rank: {rank}")
+        print(f"   - TF-IDF Vocab: {len(tfidf_model.vocabulary_)}")
+        
+    except Exception as e:
+        training_status["status"] = "failed"
+        training_status["error"] = str(e)
+        training_status["completed_at"] = datetime.utcnow()
+        
+        # Broadcast error
+        await manager.broadcast(json.dumps({
+            "type": "error",
+            "stage": "failed",
+            "progress": 0,
+            "message": f"Training failed: {str(e)}",
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat()
+        }))
+        
+        print(f"❌ Training failed: {e}")
+        raise
+
+# Global variable to track training status
+current_training_status = {
+    "status": "idle",
+    "progress": 0,
+    "current_stage": None,
+    "stages_completed": [],
+    "started_at": None,
+    "completed_at": None,
+    "error": None
+}
 
 def get_recommendations_for_user(user: User, db: Session) -> List[dict]:
     """Generate recommendations using Hybrid Recommender (NMF + TF-IDF + Clustering)"""
@@ -918,21 +1004,35 @@ async def retrain_models(
 ):
     """Retrain ML models (Admin only)"""
     try:
-        # Train clustering model
-        training_results = train_clustering_model(db)
+        # Train clustering model with progress tracking
+        background_tasks.add_task(train_clustering_model_with_progress, db)
         
         return RetrainingStatus(
-            status="success",
-            silhouette_score=training_results["silhouette_score"],
-            n_clusters=training_results["n_clusters"],
-            message=f"Models retrained successfully. Silhouette score: {training_results['silhouette_score']:.3f}, Clusters: {training_results['n_clusters']}",
-            training_details=training_results
+            status="started",
+            message="Model retraining started in background. Check /api/admin/training-status for progress."
         )
     except Exception as e:
         return RetrainingStatus(
             status="error",
-            message=f"Error during retraining: {str(e)}"
+            message=f"Error starting retraining: {str(e)}"
         )
+
+@router.get("/training-status")
+async def get_training_status(
+    admin = Depends(verify_token)
+):
+    """Get current training status for progress tracking"""
+    global current_training_status
+    
+    return {
+        "status": current_training_status["status"],
+        "progress": current_training_status["progress"],
+        "current_stage": current_training_status["current_stage"],
+        "stages_completed": current_training_status["stages_completed"],
+        "started_at": current_training_status["started_at"],
+        "completed_at": current_training_status["completed_at"],
+        "error": current_training_status["error"]
+    }
 
 @router.get("/training-visualization", response_model=TrainingVisualization)
 async def get_training_visualization(

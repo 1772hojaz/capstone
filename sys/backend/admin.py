@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_
+from sqlalchemy import func
 from pydantic import BaseModel
-from typing import List, Optional, Dict, Any
+from typing import List, Optional
 from datetime import datetime, timedelta
 from database import get_db
-from models import User, GroupBuy, Product, Transaction, Contribution, MLModel
-from auth import verify_token, verify_admin
+from models import User, GroupBuy, Product, Transaction, MLModel
+from auth import verify_admin
 
 router = APIRouter()
 
@@ -61,8 +61,8 @@ async def get_dashboard_stats(
     db: Session = Depends(get_db)
 ):
     """Get dashboard statistics"""
-    total_users = db.query(func.count(User.id)).filter(User.is_admin == False).scalar()
-    total_products = db.query(func.count(Product.id)).filter(Product.is_active == True).scalar()
+    total_users = db.query(func.count(User.id)).filter(not User.is_admin).scalar()
+    total_products = db.query(func.count(Product.id)).filter(Product.is_active).scalar()
     active_group_buys = db.query(func.count(GroupBuy.id)).filter(GroupBuy.status == "active").scalar()
     completed_group_buys = db.query(func.count(GroupBuy.id)).filter(GroupBuy.status == "completed").scalar()
     
@@ -133,7 +133,7 @@ async def get_all_users(
     db: Session = Depends(get_db)
 ):
     """Get all users with filtering"""
-    query = db.query(User).filter(User.is_admin == False)
+    query = db.query(User).filter(not User.is_admin)
     
     if location_zone:
         query = query.filter(User.location_zone == location_zone)
@@ -300,23 +300,59 @@ async def trigger_retrain(
     admin = Depends(verify_admin),
     db: Session = Depends(get_db)
 ):
-    """Trigger ML model retraining"""
+    """Trigger ML model retraining with progress tracking"""
     # Import here to avoid circular dependency
-    from ml import train_clustering_model
+    from ml import train_clustering_model_with_progress
+    import asyncio
     
     try:
-        silhouette, n_clusters = train_clustering_model(db)
+        # Start training in background with progress tracking
+        asyncio.create_task(train_clustering_model_with_progress(db))
+        
         return {
-            "status": "success",
-            "silhouette_score": silhouette,
-            "n_clusters": n_clusters,
-            "message": "Models retrained successfully"
+            "status": "started",
+            "message": "Model retraining started. Check /api/admin/training-status for progress."
         }
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error during retraining: {str(e)}"
+            detail=f"Error starting retraining: {str(e)}"
         )
+
+@router.get("/training-status")
+async def get_training_status(
+    admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Get current training status"""
+    # Import the global training status from ml.py
+    from ml import current_training_status
+    
+    # Get latest model info for additional context
+    latest_model = db.query(MLModel).filter(
+        MLModel.model_type == "hybrid_recommender"
+    ).order_by(MLModel.trained_at.desc()).first()
+    
+    status_info = {
+        "status": current_training_status["status"],
+        "progress": current_training_status["progress"],
+        "current_stage": current_training_status["current_stage"],
+        "stages_completed": current_training_status["stages_completed"],
+        "started_at": current_training_status["started_at"],
+        "completed_at": current_training_status["completed_at"],
+        "error": current_training_status["error"]
+    }
+    
+    # Add latest model results if training completed
+    if current_training_status["status"] == "completed" and latest_model:
+        status_info["results"] = {
+            "silhouette_score": latest_model.metrics.get('silhouette_score', 0),
+            "n_clusters": latest_model.metrics.get('n_clusters', 0),
+            "nmf_rank": latest_model.metrics.get('nmf_rank', 0),
+            "tfidf_vocab_size": latest_model.metrics.get('tfidf_vocab_size', 0)
+        }
+    
+    return status_info
 
 # ML Performance Tracking
 class MLModelPerformance(BaseModel):
