@@ -13,6 +13,14 @@ class User(Base):
     is_admin = Column(Boolean, default=False)
     location_zone = Column(String, nullable=False)
     cluster_id = Column(Integer, nullable=True)
+    
+    # User preferences for better recommendations
+    preferred_categories = Column(JSON, default=list)  # List of preferred product categories
+    budget_range = Column(String, default="medium")  # low, medium, high
+    experience_level = Column(String, default="beginner")  # beginner, intermediate, advanced
+    preferred_group_sizes = Column(JSON, default=list)  # List of preferred group sizes [small, medium, large]
+    participation_frequency = Column(String, default="occasional")  # occasional, regular, frequent
+    
     created_at = Column(DateTime, default=datetime.utcnow)
     
     # Relationships
@@ -155,4 +163,68 @@ class RecommendationEvent(Base):
     # Relationships
     user = relationship("User", backref="recommendation_events")
     group_buy = relationship("GroupBuy", backref="recommendation_events")
+
+class AdminGroup(Base):
+    __tablename__ = "admin_groups"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    description = Column(Text, nullable=False)
+    long_description = Column(Text)
+    category = Column(String, nullable=False)
+    price = Column(Float, nullable=False)
+    original_price = Column(Float, nullable=False)
+    image = Column(String, nullable=False)
+    max_participants = Column(Integer, default=50)
+    participants = Column(Integer, default=0)
+    created = Column(DateTime, default=datetime.utcnow)
+    end_date = Column(DateTime, nullable=False)
+    admin_name = Column(String, default="Admin")
+    shipping_info = Column(String, default="Free shipping when group goal is reached")
+    estimated_delivery = Column(String, default="2-3 weeks after group completion")
+    features = Column(JSON)  # List of feature strings
+    requirements = Column(JSON)  # List of requirement strings
+    is_active = Column(Boolean, default=True)
+    
+    @property
+    def savings(self):
+        return self.original_price - self.price
+    
+    @property
+    def discount_percentage(self):
+        if self.original_price > 0:
+            return int(((self.original_price - self.price) / self.original_price) * 100)
+        return 0
+
+class QRCodePickup(Base):
+    __tablename__ = "qr_code_pickups"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    qr_code_data = Column(String, nullable=False, unique=True)  # Encrypted QR code content
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    group_buy_id = Column(Integer, ForeignKey("group_buys.id"), nullable=False)
+    pickup_location = Column(String, nullable=False)  # Branch location
+    generated_at = Column(DateTime, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=False)
+    is_used = Column(Boolean, default=False)
+    used_at = Column(DateTime, nullable=True)
+    used_by_staff = Column(String, nullable=True)  # Staff member who scanned
+    used_location = Column(String, nullable=True)  # Actual pickup location
+    
+    # Relationships
+    user = relationship("User", backref="qr_pickups")
+    group_buy = relationship("GroupBuy", backref="qr_pickups")
+
+class PickupLocation(Base):
+    __tablename__ = "pickup_locations"
+    
+    id = Column(String, primary_key=True)  # Location code like "HARARE_A", "BULAWAYO_B"
+    name = Column(String, nullable=False)
+    address = Column(Text, nullable=False)
+    city = Column(String, nullable=False)
+    province = Column(String, nullable=False)
+    phone = Column(String, nullable=False)
+    operating_hours = Column(String, nullable=False)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
 

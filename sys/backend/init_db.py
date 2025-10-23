@@ -2,7 +2,7 @@
 Database initialization script with sample data
 """
 from database import engine, SessionLocal, Base
-from models import User, Product, GroupBuy, Contribution, Transaction
+from models import User, Product, GroupBuy, Contribution, Transaction, QRCodePickup, PickupLocation, AdminGroup
 from auth import hash_password
 from datetime import datetime, timedelta
 import random
@@ -37,13 +37,24 @@ def init_database():
         
         # Create sample traders
         traders = []
+        categories = ["Groceries", "Household", "Electronics", "Clothing"]
+        budget_ranges = ["low", "medium", "high"]
+        experience_levels = ["beginner", "intermediate", "advanced"]
+        group_sizes = ["small", "medium", "large"]
+        participation_freq = ["occasional", "regular", "frequent"]
+        
         for i in range(50):
             trader = User(
                 email=f"trader{i+1}@example.com",
                 hashed_password=hash_password("password123"),
                 full_name=f"Trader {i+1}",
                 location_zone=random.choice(zones),
-                is_admin=False
+                is_admin=False,
+                preferred_categories=random.sample(categories, random.randint(1, 3)),
+                budget_range=random.choice(budget_ranges),
+                experience_level=random.choice(experience_levels),
+                preferred_group_sizes=random.sample(group_sizes, random.randint(1, 2)),
+                participation_frequency=random.choice(participation_freq)
             )
             traders.append(trader)
             db.add(trader)
@@ -248,6 +259,64 @@ def init_database():
         
         db.commit()
         print("Created historical completed group-buys")
+        
+        # Create sample pickup locations
+        pickup_locations_data = [
+            {
+                "id": "HARARE_A",
+                "name": "Harare Central Branch",
+                "address": "123 Main Street, Harare CBD",
+                "city": "Harare",
+                "province": "Harare",
+                "phone": "+263 24 2123456",
+                "operating_hours": "Mon-Fri 8:00-17:00, Sat 8:00-13:00"
+            },
+            {
+                "id": "HARARE_B",
+                "name": "Harare East Branch",
+                "address": "456 East Avenue, Harare East",
+                "city": "Harare",
+                "province": "Harare",
+                "phone": "+263 24 2789456",
+                "operating_hours": "Mon-Fri 8:00-17:00, Sat 8:00-13:00"
+            },
+            {
+                "id": "BULAWAYO_A",
+                "name": "Bulawayo Central Branch",
+                "address": "789 Central Avenue, Bulawayo CBD",
+                "city": "Bulawayo",
+                "province": "Bulawayo",
+                "phone": "+263 29 2123456",
+                "operating_hours": "Mon-Fri 8:00-17:00, Sat 8:00-13:00"
+            },
+            {
+                "id": "GWERU_A",
+                "name": "Gweru Main Branch",
+                "address": "321 Main Street, Gweru CBD",
+                "city": "Gweru",
+                "province": "Midlands",
+                "phone": "+263 54 2123456",
+                "operating_hours": "Mon-Fri 8:00-17:00, Sat 8:00-13:00"
+            },
+            {
+                "id": "MUTARE_A",
+                "name": "Mutare Central Branch",
+                "address": "654 Herbert Chitepo Street, Mutare CBD",
+                "city": "Mutare",
+                "province": "Manicaland",
+                "phone": "+263 20 2123456",
+                "operating_hours": "Mon-Fri 8:00-17:00, Sat 8:00-13:00"
+            }
+        ]
+        
+        pickup_locations = []
+        for loc_data in pickup_locations_data:
+            location = PickupLocation(**loc_data)
+            pickup_locations.append(location)
+            db.add(location)
+        
+        db.commit()
+        print(f"Created {len(pickup_locations)} pickup locations")
         
         # Auto-train ML models with initial data
         print("\n🤖 Training ML models...")

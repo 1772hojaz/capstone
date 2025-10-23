@@ -6,6 +6,7 @@ import bcrypt
 from datetime import datetime, timedelta
 import jwt
 import os
+from typing import List
 from database import get_db
 from models import User
 
@@ -22,6 +23,11 @@ class UserRegister(BaseModel):
     password: str
     full_name: str
     location_zone: str
+    preferred_categories: List[str] = []
+    budget_range: str = "medium"
+    experience_level: str = "beginner"
+    preferred_group_sizes: List[str] = []
+    participation_frequency: str = "occasional"
 
 class UserLogin(BaseModel):
     email: EmailStr
@@ -41,6 +47,11 @@ class UserProfile(BaseModel):
     location_zone: str
     is_admin: bool
     cluster_id: int | None
+    preferred_categories: List[str]
+    budget_range: str
+    experience_level: str
+    preferred_group_sizes: List[str]
+    participation_frequency: str
 
     class Config:
         from_attributes = True
@@ -99,6 +110,11 @@ async def register(user_data: UserRegister, db: Session = Depends(get_db)):
         hashed_password=hash_password(user_data.password),
         full_name=user_data.full_name,
         location_zone=user_data.location_zone,
+        preferred_categories=user_data.preferred_categories,
+        budget_range=user_data.budget_range,
+        experience_level=user_data.experience_level,
+        preferred_group_sizes=user_data.preferred_group_sizes,
+        participation_frequency=user_data.participation_frequency,
         is_admin=False
     )
     
@@ -143,6 +159,11 @@ async def get_current_user(user: User = Depends(verify_token)):
 async def update_profile(
     full_name: str = None,
     location_zone: str = None,
+    preferred_categories: List[str] = None,
+    budget_range: str = None,
+    experience_level: str = None,
+    preferred_group_sizes: List[str] = None,
+    participation_frequency: str = None,
     user: User = Depends(verify_token),
     db: Session = Depends(get_db)
 ):
@@ -150,8 +171,28 @@ async def update_profile(
         user.full_name = full_name
     if location_zone:
         user.location_zone = location_zone
+    if preferred_categories is not None:
+        user.preferred_categories = preferred_categories
+    if budget_range:
+        user.budget_range = budget_range
+    if experience_level:
+        user.experience_level = experience_level
+    if preferred_group_sizes is not None:
+        user.preferred_group_sizes = preferred_group_sizes
+    if participation_frequency:
+        user.participation_frequency = participation_frequency
     
     db.commit()
     db.refresh(user)
     
     return UserProfile.from_orm(user)
+
+@router.post("/logout")
+async def logout():
+    """
+    Logout user by clearing client-side token.
+    
+    Note: Since JWT tokens are stateless, this endpoint primarily serves
+    as a semantic logout endpoint. The client should discard the token.
+    """
+    return {"message": "Successfully logged out"}

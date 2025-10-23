@@ -7,9 +7,52 @@ from groups import router as groups_router
 from chat import router as chat_router
 from ml import router as ml_router
 from admin import router as admin_router
+from settings import router as settings_router
 from ml_scheduler import scheduler, start_scheduler
 import uvicorn
 import asyncio
+import logging
+import logging.config
+import os
+from logging.config import dictConfig
+
+# Centralized logging configuration
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+LOG_FILE = os.path.join(os.path.dirname(__file__), "backend.log")
+
+LOGGING_CONFIG = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "default": {"format": "%(asctime)s %(levelname)s [%(name)s] %(message)s"},
+        "detailed": {"format": "%(asctime)s %(levelname)s [%(name)s:%(lineno)d] %(message)s"}
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "level": LOG_LEVEL,
+            "formatter": "default",
+            "stream": "ext://sys.stdout"
+        },
+        "file": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "level": LOG_LEVEL,
+            "formatter": "detailed",
+            "filename": LOG_FILE,
+            "maxBytes": 5 * 1024 * 1024,
+            "backupCount": 5,
+            "encoding": "utf8"
+        }
+    },
+    "root": {"level": LOG_LEVEL, "handlers": ["console", "file"]},
+    "loggers": {
+        "uvicorn": {"level": "INFO", "handlers": ["console"], "propagate": False},
+        "sqlalchemy": {"level": "WARN", "handlers": ["console"], "propagate": False}
+    }
+}
+
+dictConfig(LOGGING_CONFIG)
+logger = logging.getLogger(__name__)
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
@@ -17,14 +60,45 @@ Base.metadata.create_all(bind=engine)
 # Initialize FastAPI app
 app = FastAPI(
     title="Group-Buy System API",
-    description="AI-Driven Group-Buy Recommendation Platform for Informal Traders",
-    version="1.0.0"
+    description="""
+    # AI-Driven Group-Buy Recommendation Platform for Informal Traders
+
+    This API powers a comprehensive group-buy system designed for informal traders in markets like Mbare, Harare.
+
+    ## Features
+
+    * **Authentication**: JWT-based user authentication for traders and admins
+    * **Product Management**: CRUD operations for market products
+    * **Group-Buy Management**: Admin-created group buying opportunities
+    * **AI Recommendations**: Hybrid ML model for personalized product recommendations
+    * **Real-time Chat**: WebSocket-based communication between traders
+    * **Admin Dashboard**: Comprehensive analytics and group management tools
+
+    ## Authentication
+
+    All API endpoints (except health checks) require JWT authentication.
+    Include the token in the Authorization header: `Bearer <token>`
+
+    ## API Endpoints
+
+    * `GET /docs` - Interactive Swagger UI documentation
+    * `GET /redoc` - Alternative ReDoc documentation
+    * `GET /openapi.json` - OpenAPI JSON schema
+    """,
+    version="1.0.0",
+    contact={
+        "name": "Group-Buy System Support",
+        "email": "support@groupbuy.com",
+    },
+    license_info={
+        "name": "MIT",
+    },
 )
 
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001"],  # React dev server
+    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://localhost:5173"],  # React dev server (Vite default)
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -93,7 +167,7 @@ async def startup_event():
                 print("   Models can be trained manually via: POST /api/ml/retrain")
         elif latest_model:
             score = latest_model.metrics.get('silhouette_score', 0)
-            print(f"\n✅ Loaded existing hybrid model")
+            print("\n✅ Loaded existing hybrid model")
             print(f"   - Trained at: {latest_model.trained_at}")
             print(f"   - Silhouette Score: {score:.3f}")
             print(f"   - Clusters: {latest_model.metrics.get('n_clusters', 'N/A')}")
@@ -101,7 +175,7 @@ async def startup_event():
             print(f"   - Model Type: {latest_model.model_type}")
         else:
             print("\n⚠️  Not enough data for hybrid training yet")
-            print(f"   Need: ≥10 transactions, ≥4 traders, ≥5 products")
+            print("   Need: ≥10 transactions, ≥4 traders, ≥5 products")
             print(f"   Have: {transaction_count} transactions, {trader_count} traders, {product_count} products")
         
         # Start the daily retraining scheduler
@@ -147,6 +221,7 @@ app.include_router(groups_router, prefix="/api/groups", tags=["Group-Buys"])
 app.include_router(chat_router, prefix="/api/chat", tags=["Chat"])
 app.include_router(ml_router, prefix="/api/ml", tags=["Machine Learning"])
 app.include_router(admin_router, prefix="/api/admin", tags=["Admin"])
+app.include_router(settings_router, prefix="/api/settings", tags=["Settings"])
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

@@ -1,8 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 import numpy as np
 import pandas as pd
@@ -16,8 +16,11 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.decomposition import NMF
 # import shap  # Temporarily disabled due to llvmlite compatibility issue
 from database import get_db
-from models import User, GroupBuy, Transaction, Product, MLModel
-from auth import verify_token
+from models import User, GroupBuy, Transaction, Product, MLModel, Contribution, AdminGroup
+from auth import verify_token, get_current_user
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -67,6 +70,19 @@ class RecommendationResponse(BaseModel):
     recommendation_score: float
     reason: str
     ml_scores: Optional[MLScores] = None
+    
+    # Additional fields for detailed view
+    description: Optional[str] = None
+    long_description: Optional[str] = None
+    category: Optional[str] = None
+    created_at: Optional[datetime] = None
+    admin_created: bool = True
+    admin_name: Optional[str] = "ConnectSphere Admin"
+    discount_percentage: float = 0.0
+    shipping_info: Optional[str] = "Free shipping when group goal is reached"
+    estimated_delivery: Optional[str] = "2-3 weeks after group completion"
+    features: Optional[List[str]] = None
+    requirements: Optional[List[str]] = None
 
 class ClusterInfo(BaseModel):
     cluster_id: int
@@ -196,8 +212,9 @@ def train_clustering_model(db: Session):
     print(f"   Total interactions: {(user_product_matrix > 0).sum()}")
     
     # === STEP 2: Clustering (for group formation) ===
+    # Use combined transaction + preference features for clustering
     scaler = MinMaxScaler()
-    mat_scaled = scaler.fit_transform(user_product_matrix)
+    mat_scaled = scaler.fit_transform(trader_features)
     
     # Determine optimal clusters
     silhouette_scores = []
@@ -244,7 +261,53 @@ def train_clustering_model(db: Session):
     tfidf_model = TfidfVectorizer()
     X_tfidf = tfidf_model.fit_transform(prod_text)
     
-    # Build trader profiles
+    # Build trader profiles with transaction history AND preferences
+    trader_profiles = []
+    trader_features = []
+    
+    for user in users:
+        # Transaction-based features
+        user_vector = np.zeros(n_products)
+        user_transactions = [tx for tx in transactions if tx.user_id == user.id]
+        for tx in user_transactions:
+            try:
+                prod_idx = product_ids.index(tx.product_id)
+                user_vector[prod_idx] += tx.quantity
+            except ValueError:
+                continue
+        
+        # Preference-based features
+        pref_features = np.zeros(10)  # 10 preference features
+        
+        # Category preferences (encode as binary vector for top categories)
+        user_categories = user.preferred_categories or []
+        category_mapping = {'electronics': 0, 'clothing': 1, 'food': 2, 'household': 3, 'tools': 4}
+        for cat in user_categories[:3]:  # Top 3 preferences
+            if cat.lower() in category_mapping:
+                pref_features[category_mapping[cat.lower()]] = 1
+        
+        # Budget range (ordinal encoding)
+        budget_mapping = {'low': 0, 'medium': 1, 'high': 2}
+        pref_features[5] = budget_mapping.get(user.budget_range or 'medium', 1)
+        
+        # Experience level (ordinal encoding)
+        exp_mapping = {'beginner': 0, 'intermediate': 1, 'advanced': 2}
+        pref_features[6] = exp_mapping.get(user.experience_level or 'beginner', 0)
+        
+        # Group size preferences (encode as binary)
+        group_size_mapping = {'small': 7, 'medium': 8, 'large': 9}
+        user_group_sizes = user.preferred_group_sizes or []
+        for size in user_group_sizes:
+            if size.lower() in group_size_mapping:
+                pref_features[group_size_mapping[size.lower()]] = 1
+        
+        # Combine transaction and preference features
+        combined_features = np.concatenate([user_vector, pref_features])
+        trader_features.append(combined_features)
+    
+    trader_features = np.array(trader_features)
+    
+    # Build trader profiles from transaction history only (for content-based)
     trader_profiles = np.dot(user_product_matrix, X_tfidf.toarray())
     norms = np.linalg.norm(trader_profiles, axis=1, keepdims=True) + 1e-9
     trader_profiles_norm = trader_profiles / norms
@@ -368,8 +431,15 @@ def get_recommendations_for_user(user: User, db: Session) -> List[dict]:
         product_ids = feature_store.get('product_ids', [])
         
         if user.id not in user_ids:
-            print(f"⚠️  User {user.id} not in training data, using simple recommendations")
-            return get_simple_recommendations(user, db, active_groups)
+            print(f"⚠️  User {user.id} not in training data, checking transaction history")
+            # Check if user has any transaction history
+            user_transactions = db.query(Transaction).filter(Transaction.user_id == user.id).count()
+            if user_transactions == 0:
+                print(f"⚠️  User {user.id} has no transaction history, using similarity-based recommendations")
+                return get_similarity_based_recommendations(user, db, active_groups)
+            else:
+                print(f"⚠️  User {user.id} has transaction history but not in training data, using simple recommendations")
+                return get_simple_recommendations(user, db, active_groups)
         
         user_idx = user_ids.index(user.id)
         n_users = len(user_ids)
@@ -522,7 +592,19 @@ def get_recommendations_for_user(user: User, db: Session) -> List[dict]:
                         "content_based": float(cbf_score),
                         "popularity": float(pop_score),
                         "hybrid": float(base_score)
-                    }
+                    },
+                    # Additional detailed fields for GroupDetail page
+                    "description": gb.product.description or f"High-quality {gb.product.name} available at bulk pricing",
+                    "long_description": gb.product.description or f"Join this group buy to get {gb.product.name} at {savings:.0f}% savings compared to retail price. Minimum order quantity: {gb.product.moq} units.",
+                    "category": gb.product.category or "General",
+                    "created_at": gb.created_at,
+                    "admin_created": True,
+                    "admin_name": "ConnectSphere Admin",
+                    "discount_percentage": savings,
+                    "shipping_info": "Free shipping when group goal is reached",
+                    "estimated_delivery": "2-3 weeks after group completion",
+                    "features": ["Bulk pricing", "Quality guaranteed", "Group savings"],
+                    "requirements": [f"Minimum {gb.product.moq} participants required", "Full payment required to join"]
                 })
             except ValueError:
                 continue
@@ -599,11 +681,170 @@ def get_simple_recommendations(user: User, db: Session, active_groups) -> List[d
                 "moq_progress": moq_progress,
                 "participants_count": gb.participants_count,
                 "recommendation_score": score,
-                "reason": ", ".join(reasons) if reasons else "Recommended for you"
+                "reason": ", ".join(reasons) if reasons else "Recommended for you",
+                # Additional detailed fields for GroupDetail page
+                "description": gb.product.description or f"High-quality {gb.product.name} available at bulk pricing",
+                "long_description": gb.product.description or f"Join this group buy to get {gb.product.name} at {savings:.0f}% savings compared to retail price. Minimum order quantity: {gb.product.moq} units.",
+                "category": gb.product.category or "General",
+                "created_at": gb.created_at,
+                "admin_created": True,
+                "admin_name": "ConnectSphere Admin",
+                "discount_percentage": savings,
+                "shipping_info": "Free shipping when group goal is reached",
+                "estimated_delivery": "2-3 weeks after group completion",
+                "features": ["Bulk pricing", "Quality guaranteed", "Group savings"],
+                "requirements": [f"Minimum {gb.product.moq} participants required", "Full payment required to join"]
             })
     
     recommendations.sort(key=lambda x: x["recommendation_score"], reverse=True)
     return recommendations[:10]
+
+def get_similarity_based_recommendations(user: User, db: Session, active_groups: List[GroupBuy], top_k: int = 10) -> List[dict]:
+    """Get recommendations based on user similarity for new users without transaction history"""
+    
+    # Get all users with preferences (exclude the target user)
+    all_users = db.query(User).filter(
+        User.id != user.id,
+        User.preferred_categories.isnot(None)
+    ).all()
+    
+    if not all_users:
+        return []
+    
+    # Calculate similarity scores for all users
+    user_similarities = []
+    for other_user in all_users:
+        similarity = calculate_user_similarity(user, other_user)
+        if similarity > 0.3:  # Only consider users with reasonable similarity
+            user_similarities.append((other_user, similarity))
+    
+    # Sort by similarity (highest first)
+    user_similarities.sort(key=lambda x: x[1], reverse=True)
+    
+    # Take top 50 most similar users to avoid too many queries
+    top_similar_users = user_similarities[:50]
+    
+    if not top_similar_users:
+        return []
+    
+    # Get groups that similar users have joined
+    similar_user_ids = [u.id for u, _ in top_similar_users]
+    contributions = db.query(Contribution).filter(
+        Contribution.user_id.in_(similar_user_ids)
+    ).all()
+    
+    # Count group participation and average similarity
+    group_scores = {}
+    for contrib in contributions:
+        group_id = contrib.group_buy_id
+        user_id = contrib.user_id
+        
+        # Find similarity score for this user
+        user_similarity = next((sim for u, sim in top_similar_users if u.id == user_id), 0)
+        
+        if group_id not in group_scores:
+            group_scores[group_id] = {
+                'total_similarity': 0.0,
+                'participant_count': 0,
+                'avg_similarity': 0.0
+            }
+        
+        group_scores[group_id]['total_similarity'] += user_similarity
+        group_scores[group_id]['participant_count'] += 1
+    
+    # Calculate average similarity for each group
+    for group_id, scores in group_scores.items():
+        scores['avg_similarity'] = scores['total_similarity'] / scores['participant_count']
+    
+    # Create recommendations from active groups
+    recommendations = []
+    active_group_ids = {gb.id for gb in active_groups}
+    
+    for group_id, scores in group_scores.items():
+        if group_id in active_group_ids:
+            group_buy = next((gb for gb in active_groups if gb.id == group_id), None)
+            if group_buy:
+                # Base score on average similarity of participants
+                base_score = scores['avg_similarity']
+                
+                # Boost score based on number of similar participants
+                participant_boost = min(scores['participant_count'] / 5.0, 0.2)  # Max 0.2 boost
+                
+                # Boost for groups with high MOQ progress
+                moq_boost = 0
+                moq_progress = group_buy.moq_progress
+                if moq_progress >= 75:
+                    moq_boost = 0.1
+                elif moq_progress >= 50:
+                    moq_boost = 0.05
+                
+                # Boost for groups ending soon
+                deadline_boost = 0
+                days_remaining = (group_buy.deadline - datetime.utcnow()).days
+                if days_remaining <= 3:
+                    deadline_boost = 0.05
+                
+                final_score = min(base_score + participant_boost + moq_boost + deadline_boost, 1.0)
+                
+                # Build reasons
+                reasons = []
+                reasons.append("Similar traders joined this group")
+                
+                if scores['participant_count'] > 1:
+                    reasons.append(f"{scores['participant_count']} similar traders participated")
+                
+                if moq_progress >= 75:
+                    reasons.append("Almost at target quantity")
+                elif moq_progress >= 50:
+                    reasons.append("Good progress toward target")
+                
+                if days_remaining <= 3:
+                    reasons.append("Ending soon")
+                
+                savings = group_buy.product.savings_factor * 100
+                if savings >= 20:
+                    reasons.append(f"{savings:.0f}% savings")
+                
+                recommendations.append({
+                    "group_buy_id": group_buy.id,
+                    "product_id": group_buy.product_id,
+                    "product_name": group_buy.product.name,
+                    "product_image_url": group_buy.product.image_url,
+                    "unit_price": group_buy.product.unit_price,
+                    "bulk_price": group_buy.product.bulk_price,
+                    "moq": group_buy.product.moq,
+                    "savings_factor": group_buy.product.savings_factor,
+                    "savings": savings,
+                    "location_zone": group_buy.location_zone,
+                    "deadline": group_buy.deadline,
+                    "total_quantity": group_buy.total_quantity,
+                    "moq_progress": moq_progress,
+                    "participants_count": group_buy.participants_count,
+                    "recommendation_score": final_score,
+                    "reason": ", ".join(reasons),
+                    "ml_scores": {
+                        "user_similarity": float(scores['avg_similarity']),
+                        "participant_boost": float(participant_boost),
+                        "progress_boost": float(moq_boost + deadline_boost),
+                        "hybrid": final_score
+                    },
+                    # Additional detailed fields for GroupDetail page
+                    "description": group_buy.product.description or f"High-quality {group_buy.product.name} available at bulk pricing",
+                    "long_description": group_buy.product.description or f"Join this group buy to get {group_buy.product.name} at {savings:.0f}% savings compared to retail price. Minimum order quantity: {group_buy.product.moq} units.",
+                    "category": group_buy.product.category or "General",
+                    "created_at": group_buy.created_at,
+                    "admin_created": True,
+                    "admin_name": "ConnectSphere Admin",
+                    "discount_percentage": savings,
+                    "shipping_info": "Free shipping when group goal is reached",
+                    "estimated_delivery": "2-3 weeks after group completion",
+                    "features": ["Bulk pricing", "Quality guaranteed", "Group savings"],
+                    "requirements": [f"Minimum {group_buy.product.moq} participants required", "Full payment required to join"]
+                })
+    
+    # Sort by final score and return top recommendations
+    recommendations.sort(key=lambda x: x["recommendation_score"], reverse=True)
+    return recommendations[:top_k]
 
 # Routes
 @router.get("/recommendations", response_model=List[RecommendationResponse])
@@ -611,18 +852,19 @@ async def get_recommendations(
     user: User = Depends(verify_token),
     db: Session = Depends(get_db)
 ):
-    """Get personalized recommendations for the current user"""
+    """Get personalized recommendations for the current user using hybrid approach"""
     from models import RecommendationEvent
     
-    recommendations = get_recommendations_for_user(user, db)
+    # Use hybrid recommendations (ML for established users, similarity for new users)
+    recommendations = get_hybrid_recommendations(user.id, db)
     
     # Track that recommendations were shown
     for rec in recommendations:
         event = RecommendationEvent(
             user_id=user.id,
-            group_buy_id=rec['group_buy_id'],
+            group_buy_id=rec['group_buy_id'],  # Updated to match similarity-based format
             recommendation_score=rec['recommendation_score'],
-            recommendation_reasons=rec['reason'].split(', ') if rec.get('reason') else [],
+            recommendation_reasons=[rec.get('reason', 'Hybrid recommendation')] if rec.get('reason') else ['Hybrid recommendation'],
             shown_at=datetime.utcnow()
         )
         db.add(event)
@@ -1015,3 +1257,227 @@ async def initialize_models(
 
 # Load models on startup
 load_models()
+
+def calculate_user_similarity(user1: User, user2: User) -> float:
+    """Calculate similarity score between two users based on registration preferences"""
+    if user1.id == user2.id:
+        return 1.0  # Perfect similarity with self
+    
+    score = 0.0
+    total_weights = 0.0
+    
+    # 1. Preferred categories (weight: 0.3)
+    if user1.preferred_categories and user2.preferred_categories:
+        cat1 = set(user1.preferred_categories)
+        cat2 = set(user2.preferred_categories)
+        if cat1 and cat2:
+            intersection = len(cat1.intersection(cat2))
+            union = len(cat1.union(cat2))
+            jaccard = intersection / union if union > 0 else 0
+            score += 0.3 * jaccard
+        total_weights += 0.3
+    
+    # 2. Budget range (weight: 0.2)
+    if user1.budget_range and user2.budget_range:
+        budget_order = {'low': 1, 'medium': 2, 'high': 3}
+        b1 = budget_order.get(user1.budget_range, 2)
+        b2 = budget_order.get(user2.budget_range, 2)
+        budget_diff = abs(b1 - b2) / 2.0  # Normalize to 0-1
+        budget_sim = 1.0 - budget_diff
+        score += 0.2 * budget_sim
+        total_weights += 0.2
+    
+    # 3. Experience level (weight: 0.15)
+    if user1.experience_level and user2.experience_level:
+        exp_order = {'beginner': 1, 'intermediate': 2, 'advanced': 3}
+        e1 = exp_order.get(user1.experience_level, 2)
+        e2 = exp_order.get(user2.experience_level, 2)
+        exp_diff = abs(e1 - e2) / 2.0  # Normalize to 0-1
+        exp_sim = 1.0 - exp_diff
+        score += 0.15 * exp_sim
+        total_weights += 0.15
+    
+    # 4. Preferred group sizes (weight: 0.25)
+    if user1.preferred_group_sizes and user2.preferred_group_sizes:
+        sizes1 = set(user1.preferred_group_sizes)
+        sizes2 = set(user2.preferred_group_sizes)
+        if sizes1 and sizes2:
+            intersection = len(sizes1.intersection(sizes2))
+            union = len(sizes1.union(sizes2))
+            jaccard = intersection / union if union > 0 else 0
+            score += 0.25 * jaccard
+        total_weights += 0.25
+    
+    # 5. Participation frequency (weight: 0.1)
+    if user1.participation_frequency and user2.participation_frequency:
+        freq_order = {'occasional': 1, 'regular': 2, 'frequent': 3}
+        f1 = freq_order.get(user1.participation_frequency, 2)
+        f2 = freq_order.get(user2.participation_frequency, 2)
+        freq_diff = abs(f1 - f2) / 2.0  # Normalize to 0-1
+        freq_sim = 1.0 - freq_diff
+        score += 0.1 * freq_sim
+        total_weights += 0.1
+    
+    # Return normalized similarity score
+    return score / total_weights if total_weights > 0 else 0.0
+
+def get_user_similarity_based_recommendations(user_id: int, db: Session, limit: int = 10) -> List[Dict[str, Any]]:
+    """Get group recommendations based on user similarity"""
+    try:
+        # Get target user
+        target_user = db.query(User).filter(User.id == user_id).first()
+        if not target_user:
+            return []
+        
+        # Get all other users with complete profiles
+        other_users = db.query(User).filter(
+            User.id != user_id,
+            User.preferred_categories.isnot(None),
+            User.budget_range.isnot(None),
+            User.experience_level.isnot(None),
+            User.preferred_group_sizes.isnot(None),
+            User.participation_frequency.isnot(None)
+        ).all()
+        
+        if not other_users:
+            return []
+        
+        # Calculate similarity scores
+        similarities = []
+        for user in other_users:
+            sim_score = calculate_user_similarity(target_user, user)
+            similarities.append((user, sim_score))
+        
+        # Sort by similarity (highest first)
+        similarities.sort(key=lambda x: x[1], reverse=True)
+        
+        # Get groups that similar users have joined
+        recommended_groups = []
+        seen_group_ids = set()
+        
+        for similar_user, sim_score in similarities[:20]:  # Top 20 most similar users
+            # Get groups this user has joined (using Contribution table for GroupBuy)
+            user_groups = db.query(GroupBuy).join(Contribution).filter(
+                Contribution.user_id == similar_user.id,
+                Contribution.is_fully_paid  # Only count fully paid participations
+            ).all()
+            
+            for group in user_groups:
+                if group.id not in seen_group_ids and group.status == 'active':
+                    # Calculate recommendation score based on similarity and group metrics
+                    rec_score = sim_score * 0.8 + (group.current_members / group.max_members) * 0.2
+                    
+                    recommended_groups.append({
+                        'group': group,
+                        'similarity_score': sim_score,
+                        'recommendation_score': rec_score,
+                        'reason': f"Similar users with {sim_score:.2f} compatibility have joined this group"
+                    })
+                    
+                    seen_group_ids.add(group.id)
+                    
+                    if len(recommended_groups) >= limit:
+                        break
+            
+            if len(recommended_groups) >= limit:
+                break
+        
+        # Sort by recommendation score and return
+        recommended_groups.sort(key=lambda x: x['recommendation_score'], reverse=True)
+        
+        return [{
+            'group_buy_id': rec['group'].id,
+            'product_id': rec['group'].product_id,
+            'product_name': rec['group'].product.name if rec['group'].product else 'Unknown Product',
+            'product_image_url': rec['group'].product.image_url if rec['group'].product else None,
+            'unit_price': rec['group'].product.unit_price if rec['group'].product else 0,
+            'bulk_price': rec['group'].product.bulk_price if rec['group'].product else 0,
+            'moq': rec['group'].product.moq if rec['group'].product else 10,
+            'savings_factor': rec['group'].product.savings_factor if rec['group'].product else 0.1,
+            'savings': (rec['group'].product.savings_factor * 100) if rec['group'].product else 10,
+            'location_zone': rec['group'].location_zone,
+            'deadline': rec['group'].deadline,
+            'total_quantity': rec['group'].total_quantity,
+            'moq_progress': rec['group'].moq_progress,
+            'participants_count': rec['group'].participants_count,
+            'recommendation_score': rec['recommendation_score'],
+            'reason': rec['reason'],
+            'ml_scores': {
+                'user_similarity': rec['similarity_score'],
+                'participant_boost': 0.0,
+                'progress_boost': 0.0,
+                'hybrid': rec['recommendation_score']
+            },
+            # Additional detailed fields for GroupDetail page
+            'description': rec['group'].product.description if rec['group'].product else "High-quality product available at bulk pricing",
+            'long_description': rec['group'].product.description if rec['group'].product else f"Join this group buy to get quality products at discounted prices. Minimum order quantity: {rec['group'].product.moq if rec['group'].product else 10} units.",
+            'category': rec['group'].product.category if rec['group'].product else 'General',
+            'created_at': rec['group'].created_at,
+            'admin_created': True,
+            'admin_name': "ConnectSphere Admin",
+            'discount_percentage': (rec['group'].product.savings_factor * 100) if rec['group'].product else 10,
+            'shipping_info': "Free shipping when group goal is reached",
+            'estimated_delivery': "2-3 weeks after group completion",
+            'features': ["Bulk pricing", "Quality guaranteed", "Group savings"],
+            'requirements': [f"Minimum {rec['group'].product.moq if rec['group'].product else 10} participants required", "Full payment required to join"]
+        } for rec in recommended_groups[:limit]]
+        
+    except Exception as e:
+        logger.error(f"Error getting similarity-based recommendations: {str(e)}")
+        return []
+
+def get_hybrid_recommendations(user_id: int, db: Session, limit: int = 10) -> List[Dict[str, Any]]:
+    """Get hybrid recommendations combining ML models and user similarity"""
+    try:
+        # Get user and check if they have enough data for ML recommendations
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            return []
+        
+        # Check if user has participated in groups (has transaction history)
+        user_transactions = db.query(Transaction).filter(Transaction.user_id == user_id).count()
+        
+        # If user has transaction history, use ML models
+        if user_transactions > 0:
+            try:
+                ml_recommendations = get_recommendations_for_user(user, db)
+                return ml_recommendations
+            except Exception as e:
+                logger.warning(f"ML recommendations failed, falling back to similarity: {str(e)}")
+        
+        # For new users or when ML fails, use similarity-based recommendations
+        similarity_recommendations = get_user_similarity_based_recommendations(user_id, db, limit)
+        return similarity_recommendations
+        
+    except Exception as e:
+        logger.error(f"Error getting hybrid recommendations: {str(e)}")
+        return []
+
+# API Endpoints
+@router.get("/user-similarity-recommendations/{user_id}")
+async def get_user_similarity_recommendations(
+    user_id: int,
+    limit: int = Query(10, ge=1, le=50),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get group recommendations based on user similarity"""
+    if current_user.id != user_id and current_user.role != 'admin':
+        raise HTTPException(status_code=403, detail="Not authorized to view other users' recommendations")
+    
+    recommendations = get_user_similarity_based_recommendations(user_id, db, limit)
+    return {"recommendations": recommendations}
+
+@router.get("/hybrid-recommendations/{user_id}")
+async def get_hybrid_user_recommendations(
+    user_id: int,
+    limit: int = Query(10, ge=1, le=50),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get hybrid recommendations combining ML and similarity approaches"""
+    if current_user.id != user_id and current_user.role != 'admin':
+        raise HTTPException(status_code=403, detail="Not authorized to view other users' recommendations")
+    
+    recommendations = get_hybrid_recommendations(user_id, db, limit)
+    return {"recommendations": recommendations}
