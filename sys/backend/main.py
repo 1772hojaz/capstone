@@ -16,6 +16,10 @@ import logging
 import logging.config
 import os
 from logging.config import dictConfig
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Centralized logging configuration
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()

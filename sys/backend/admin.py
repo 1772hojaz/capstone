@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from pydantic import BaseModel
@@ -7,6 +7,16 @@ from datetime import datetime, timedelta
 from database import get_db
 from models import User, GroupBuy, Product, Transaction, MLModel, AdminGroup, AdminGroupJoin
 from auth import verify_admin
+import cloudinary
+import cloudinary.uploader
+import os
+
+# Configure Cloudinary
+cloudinary.config(
+    cloud_name=os.getenv('CLOUDINARY_CLOUD_NAME'),
+    api_key=os.getenv('CLOUDINARY_API_KEY'),
+    api_secret=os.getenv('CLOUDINARY_API_SECRET')
+)
 
 router = APIRouter()
 
@@ -53,6 +63,26 @@ class ReportData(BaseModel):
     avg_savings: float
     top_products: List[dict]
     cluster_distribution: List[dict]
+
+class CreateGroupRequest(BaseModel):
+    name: str
+    description: str
+    long_description: Optional[str] = None
+    category: str
+    price: float
+    original_price: float
+    image: str  # URL from Cloudinary
+    max_participants: int
+    end_date: datetime
+    admin_name: Optional[str] = "Admin"
+    shipping_info: Optional[str] = "Free shipping when group goal is reached"
+    estimated_delivery: Optional[str] = "2-3 weeks after group completion"
+    features: Optional[List[str]] = []
+    requirements: Optional[List[str]] = []
+
+class ImageUploadResponse(BaseModel):
+    image_url: str
+    public_id: str
 
 # Routes
 @router.get("/dashboard", response_model=DashboardStats)
@@ -731,3 +761,91 @@ async def get_group_moderation_stats(
     except Exception as e:
         print(f"Error getting moderation stats: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch moderation stats")
+
+@router.post("/upload-image", response_model=ImageUploadResponse)
+async def upload_image(
+    file: UploadFile = File(...),
+    admin = Depends(verify_admin)
+):
+    """Upload an image to Cloudinary and return the URL"""
+    try:
+        # Validate file type
+        if not file.content_type.startswith('image/'):
+            raise HTTPException(status_code=400, detail="File must be an image")
+
+        # Validate file size (5MB limit)
+        file_content = await file.read()
+        if len(file_content) > 5 * 1024 * 1024:  # 5MB
+            raise HTTPException(status_code=400, detail="File size must be less than 5MB")
+
+        # Upload to Cloudinary
+        result = cloudinary.uploader.upload(
+            file_content,
+            folder="groupbuy_products",
+            resource_type="image",
+            quality="auto",
+            format="webp"
+        )
+
+        return ImageUploadResponse(
+            image_url=result['secure_url'],
+            public_id=result['public_id']
+        )
+
+    except cloudinary.exceptions.Error as e:
+        print(f"Cloudinary error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to upload image")
+    except Exception as e:
+        print(f"Error uploading image: {e}")
+        raise HTTPException(status_code=500, detail="Failed to upload image")
+
+@router.post("/groups/create")
+async def create_admin_group(
+    group_data: CreateGroupRequest,
+    admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Create a new admin-managed group buying opportunity"""
+    try:
+        # Create the admin group
+        new_group = AdminGroup(
+            name=group_data.name,
+            description=group_data.description,
+            long_description=group_data.long_description,
+            category=group_data.category,
+            price=group_data.price,
+            original_price=group_data.original_price,
+            image=group_data.image,
+            max_participants=group_data.max_participants,
+            end_date=group_data.end_date,
+            admin_name=group_data.admin_name,
+            shipping_info=group_data.shipping_info,
+            estimated_delivery=group_data.estimated_delivery,
+            features=group_data.features,
+            requirements=group_data.requirements,
+            is_active=True,
+            participants=0  # Start with 0 participants
+        )
+
+        db.add(new_group)
+        db.commit()
+        db.refresh(new_group)
+
+        return {
+            "message": "Group created successfully",
+            "group_id": new_group.id,
+            "group": {
+                "id": new_group.id,
+                "name": new_group.name,
+                "category": new_group.category,
+                "price": new_group.price,
+                "max_participants": new_group.max_participants,
+                "end_date": new_group.end_date.isoformat(),
+                "image": new_group.image
+            }
+        }
+
+    except Exception as e:
+        print(f"Error creating admin group: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to create group")
