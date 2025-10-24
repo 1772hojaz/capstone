@@ -1346,14 +1346,123 @@ async def model_evaluation(
     
     return evaluation
 
-@router.post("/initialize")
-async def initialize_models(
+@router.get("/admin/ml-performance")
+async def get_model_performance_metrics(
     admin = Depends(verify_token),
     db: Session = Depends(get_db)
 ):
-    """Initialize ML models with synthetic data (for testing)"""
-    # This can be used to generate synthetic data for initial testing
-    return {"message": "Initialize with synthetic data endpoint - implement as needed"}
+    """Get dynamic model performance metrics for admin dashboard"""
+    global clustering_model, nmf_model, tfidf_model, feature_store
+    
+    try:
+        # Get latest model metadata
+        latest_model = db.query(MLModel).filter(
+            MLModel.model_type == "hybrid_recommender"
+        ).order_by(MLModel.trained_at.desc()).first()
+        
+        # Get recommendation performance data
+        from models import RecommendationEvent
+        from datetime import timedelta, datetime
+        
+        # Get data from last 30 days
+        end_date = datetime.utcnow()
+        start_date = end_date - timedelta(days=30)
+        
+        events = db.query(RecommendationEvent).filter(
+            RecommendationEvent.shown_at >= start_date
+        ).all()
+        
+        # Calculate basic metrics
+        total_recommendations = len(events)
+        total_clicks = sum(1 for e in events if e.clicked)
+        total_joins = sum(1 for e in events if e.joined)
+        
+        # Calculate rates
+        click_through_rate = (total_clicks / total_recommendations * 100) if total_recommendations > 0 else 0
+        conversion_rate = (total_joins / total_clicks * 100) if total_clicks > 0 else 0
+        
+        # Calculate precision-like metrics based on recommendation scores
+        if events:
+            high_score_recommendations = [e for e in events if e.recommendation_score >= 0.7]
+            high_score_clicks = sum(1 for e in high_score_recommendations if e.clicked)
+            
+            # Precision: proportion of high-score recommendations that led to clicks
+            precision = (high_score_clicks / len(high_score_recommendations) * 100) if high_score_recommendations else 0
+            
+            # Recall: proportion of total clicks that came from high-score recommendations
+            recall = (high_score_clicks / total_clicks * 100) if total_clicks > 0 else 0
+            
+            # F1 Score: harmonic mean of precision and recall
+            if precision + recall > 0:
+                f1_score = 2 * (precision * recall) / (precision + recall)
+            else:
+                f1_score = 0
+            
+            # Accuracy: overall success rate (joins / recommendations)
+            accuracy = (total_joins / total_recommendations * 100) if total_recommendations > 0 else 0
+        else:
+            precision = recall = f1_score = accuracy = 0
+        
+        # Get model health status
+        models_loaded = all([
+            clustering_model is not None,
+            nmf_model is not None,
+            tfidf_model is not None,
+            feature_store is not None
+        ])
+        
+        # Get silhouette score from latest model or feature store
+        silhouette_score = 0
+        if latest_model and latest_model.metrics:
+            silhouette_score = latest_model.metrics.get("silhouette_score", 0)
+        elif feature_store:
+            silhouette_score = feature_store.get("silhouette_score", 0)
+        
+        # Calculate additional metrics
+        coverage_score = 0
+        if feature_store:
+            n_traders = feature_store.get("n_traders", 0)
+            n_products = feature_store.get("n_products", 0)
+            
+            # Coverage: how well the model covers the user-product space
+            if n_traders > 0 and n_products > 0:
+                coverage_score = min(100, (n_traders * n_products) / 1000)  # Normalized coverage
+        
+        return {
+            "accuracy": round(accuracy, 1),
+            "precision": round(precision, 1),
+            "recall": round(recall, 1),
+            "f1_score": round(f1_score, 1),
+            "click_through_rate": round(click_through_rate, 1),
+            "conversion_rate": round(conversion_rate, 1),
+            "silhouette_score": round(silhouette_score * 100, 1),  # Convert to percentage
+            "coverage_score": round(coverage_score, 1),
+            "total_recommendations": total_recommendations,
+            "total_clicks": total_clicks,
+            "total_joins": total_joins,
+            "models_loaded": models_loaded,
+            "last_updated": latest_model.trained_at.isoformat() if latest_model else None
+        }
+        
+    except Exception as e:
+        logger.error(f"Error calculating performance metrics: {str(e)}")
+        # Return fallback metrics
+        return {
+            "accuracy": 0,
+            "precision": 0,
+            "recall": 0,
+            "f1_score": 0,
+            "click_through_rate": 0,
+            "conversion_rate": 0,
+            "silhouette_score": 0,
+            "coverage_score": 0,
+            "total_recommendations": 0,
+            "total_clicks": 0,
+            "total_joins": 0,
+            "models_loaded": False,
+            "last_updated": None,
+            "error": str(e)
+        }
 
 # Load models on startup
 load_models()
