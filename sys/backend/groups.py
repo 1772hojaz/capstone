@@ -10,7 +10,7 @@ import base64
 import io
 from cryptography.fernet import Fernet
 from database import get_db
-from models import User, AdminGroup, Contribution, GroupBuy
+from models import User, AdminGroup, Contribution, GroupBuy, AdminGroupJoin
 from auth import verify_token
 
 router = APIRouter()
@@ -602,3 +602,184 @@ async def update_contribution(
         print(f"Error updating contribution for group {group_id}: {e}")
         db.rollback()
         raise HTTPException(status_code=500, detail="Failed to update contribution")
+
+@router.post("/{group_id}/join")
+async def join_group(
+    group_id: int,
+    request: JoinGroupRequest,
+    user: User = Depends(verify_token),
+    db: Session = Depends(get_db)
+):
+    """Join a group-buy by creating a contribution.
+
+    Allows users to join an active group-buy by specifying quantity and delivery preferences.
+    Creates a contribution record and initial transaction.
+    """
+    try:
+        # Check if group exists and is active
+        group = db.query(AdminGroup).filter(
+            AdminGroup.id == group_id,
+            AdminGroup.is_active
+        ).first()
+
+        if not group:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Group not found or no longer active"
+            )
+
+        # Check if user has already joined this group
+        existing_join = db.query(AdminGroupJoin).filter(
+            AdminGroupJoin.user_id == user.id,
+            AdminGroupJoin.admin_group_id == group_id
+        ).first()
+
+        if existing_join:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="You have already joined this group"
+            )
+
+        # Validate quantity
+        if request.quantity <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Quantity must be greater than 0"
+            )
+
+        # Check if group has space (if max_participants is set)
+        if group.max_participants and group.participants >= group.max_participants:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Group is full"
+            )
+
+        # Calculate contribution amount (upfront payment - typically 50%)
+        contribution_amount = request.quantity * group.price
+        upfront_amount = contribution_amount * 0.5  # 50% upfront
+
+        # Create admin group join record
+        join_record = AdminGroupJoin(
+            user_id=user.id,
+            admin_group_id=group_id,
+            quantity=request.quantity,
+            delivery_method=request.delivery_method,
+            payment_method=request.payment_method,
+            special_instructions=request.special_instructions
+        )
+
+        db.add(join_record)
+
+        # Update group participant count
+        group.participants += 1
+
+        # Create initial transaction record
+        from models import Transaction
+        transaction = Transaction(
+            user_id=user.id,
+            group_buy_id=None,  # Admin groups don't have group_buy_id
+            product_id=None,  # Will be set when group completes
+            quantity=request.quantity,
+            amount=upfront_amount,
+            transaction_type="upfront",
+            location_zone=user.location_zone or "Unknown"
+            # Note: Transaction model doesn't have delivery_method/payment_method fields
+        )
+
+        db.add(transaction)
+        db.commit()
+
+        return {
+            "message": "Successfully joined the group!",
+            "join_id": join_record.id,
+            "quantity": request.quantity,
+            "upfront_amount": round(upfront_amount, 2),
+            "total_amount": round(contribution_amount, 2),
+            "remaining_balance": round(contribution_amount - upfront_amount, 2),
+            "group_progress": f"{group.participants}/{group.max_participants or 'unlimited'}"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error joining group {group_id}: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to join group")
+
+@router.post("/", response_model=GroupResponse)
+async def create_admin_group(
+    request: GroupCreateRequest,
+    user: User = Depends(verify_token),
+    db: Session = Depends(get_db)
+):
+    """Create a new admin-managed group-buy opportunity.
+
+    Only admin users can create admin groups. This creates a new group-buy
+    that traders can join through the regular group browsing interface.
+    """
+    # Check if user is admin
+    if not user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only administrators can create admin groups"
+        )
+
+    try:
+        # Parse end_date
+        from datetime import datetime
+        end_date = datetime.fromisoformat(request.endDate.replace('Z', '+00:00'))
+
+        # Create the admin group
+        admin_group = AdminGroup(
+            name=request.name,
+            description=request.description,
+            long_description=request.longDescription,
+            category=request.category,
+            price=request.price,
+            original_price=request.originalPrice,
+            image=request.image,
+            max_participants=request.maxParticipants,
+            end_date=end_date,
+            admin_name=user.full_name or "Admin",
+            shipping_info=request.shippingInfo,
+            estimated_delivery=request.estimatedDelivery,
+            features=request.features,
+            requirements=request.requirements,
+            is_active=True
+        )
+
+        db.add(admin_group)
+        db.commit()
+        db.refresh(admin_group)
+
+        return GroupResponse(
+            id=admin_group.id,
+            name=admin_group.name,
+            price=admin_group.price,
+            image=admin_group.image,
+            description=admin_group.description,
+            participants=admin_group.participants,
+            category=admin_group.category,
+            created=admin_group.created.isoformat(),
+            maxParticipants=admin_group.max_participants,
+            originalPrice=admin_group.original_price,
+            endDate=admin_group.end_date.isoformat() if admin_group.end_date else None,
+            matchScore=85,  # Default match score for admin groups
+            reason="Admin-created group buy",
+            adminCreated=True,
+            adminName=admin_group.admin_name,
+            savings=admin_group.savings,
+            discountPercentage=admin_group.discount_percentage,
+            shippingInfo=admin_group.shipping_info,
+            estimatedDelivery=admin_group.estimated_delivery,
+            features=admin_group.features or [],
+            requirements=admin_group.requirements or [],
+            longDescription=admin_group.long_description,
+            status="active",
+            orderStatus="Open for joining"
+        )
+
+    except Exception as e:
+        print(f"Error creating admin group: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to create admin group")

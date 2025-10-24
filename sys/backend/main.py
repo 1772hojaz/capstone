@@ -215,6 +215,12 @@ async def ml_training_websocket(websocket: WebSocket):
     except WebSocketDisconnect:
         manager.disconnect(websocket)
 
+# Health check endpoint
+@app.get("/health")
+async def health_check():
+    """Basic health check endpoint"""
+    return {"status": "healthy", "service": "group-buy-api"}
+
 # Include routers
 app.include_router(auth_router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(products_router, prefix="/api/products", tags=["Products"])

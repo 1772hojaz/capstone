@@ -6,7 +6,7 @@ import bcrypt
 from datetime import datetime, timedelta
 import jwt
 import os
-from typing import List
+from typing import List, Optional
 from database import get_db
 from models import User
 
@@ -52,9 +52,27 @@ class UserProfile(BaseModel):
     experience_level: str
     preferred_group_sizes: List[str]
     participation_frequency: str
+    email_notifications: bool
+    push_notifications: bool
+    sms_notifications: bool
+    weekly_summary: bool
+    price_alerts_enabled: bool
+    show_recommendations: bool
+    auto_join_groups: bool
 
     class Config:
         from_attributes = True
+
+class NotificationSettings(BaseModel):
+    email_notifications: bool
+    push_notifications: bool
+    sms_notifications: bool
+    weekly_summary: bool
+    price_alerts_enabled: bool
+
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str
 
 # Helper Functions
 def hash_password(password: str) -> str:
@@ -164,6 +182,14 @@ async def update_profile(
     experience_level: str = None,
     preferred_group_sizes: List[str] = None,
     participation_frequency: str = None,
+    show_recommendations: bool = None,
+    auto_join_groups: bool = None,
+    price_alerts: bool = None,
+    email_notifications: bool = None,
+    push_notifications: bool = None,
+    sms_notifications: bool = None,
+    weekly_summary: bool = None,
+    price_alerts_enabled: bool = None,
     user: User = Depends(verify_token),
     db: Session = Depends(get_db)
 ):
@@ -181,18 +207,62 @@ async def update_profile(
         user.preferred_group_sizes = preferred_group_sizes
     if participation_frequency:
         user.participation_frequency = participation_frequency
+    if show_recommendations is not None:
+        user.show_recommendations = show_recommendations
+    if auto_join_groups is not None:
+        user.auto_join_groups = auto_join_groups
+    if price_alerts is not None:
+        user.price_alerts_enabled = price_alerts
+    if email_notifications is not None:
+        user.email_notifications = email_notifications
+    if push_notifications is not None:
+        user.push_notifications = push_notifications
+    if sms_notifications is not None:
+        user.sms_notifications = sms_notifications
+    if weekly_summary is not None:
+        user.weekly_summary = weekly_summary
+    if price_alerts_enabled is not None:
+        user.price_alerts_enabled = price_alerts_enabled
     
     db.commit()
     db.refresh(user)
     
     return UserProfile.from_orm(user)
 
-@router.post("/logout")
-async def logout():
-    """
-    Logout user by clearing client-side token.
+@router.get("/notifications", response_model=NotificationSettings)
+async def get_notification_settings(user: User = Depends(verify_token)):
+    """Get user's notification settings"""
+    return NotificationSettings(
+        email_notifications=user.email_notifications,
+        push_notifications=user.push_notifications,
+        sms_notifications=user.sms_notifications,
+        weekly_summary=user.weekly_summary,
+        price_alerts_enabled=user.price_alerts_enabled
+    )
+
+@router.put("/password")
+async def change_password(
+    password_data: PasswordChange,
+    user: User = Depends(verify_token),
+    db: Session = Depends(get_db)
+):
+    """Change user's password"""
+    # Verify current password
+    if not verify_password(password_data.current_password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect"
+        )
     
-    Note: Since JWT tokens are stateless, this endpoint primarily serves
-    as a semantic logout endpoint. The client should discard the token.
-    """
-    return {"message": "Successfully logged out"}
+    # Validate new password
+    if len(password_data.new_password) < 6:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password must be at least 6 characters long"
+        )
+    
+    # Hash and update password
+    user.hashed_password = hash_password(password_data.new_password)
+    db.commit()
+    
+    return {"message": "Password changed successfully"}

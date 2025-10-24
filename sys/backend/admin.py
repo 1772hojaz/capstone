@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime, timedelta
 from database import get_db
-from models import User, GroupBuy, Product, Transaction, MLModel
+from models import User, GroupBuy, Product, Transaction, MLModel, AdminGroup, AdminGroupJoin
 from auth import verify_admin
 
 router = APIRouter()
@@ -213,6 +213,94 @@ async def cancel_group_buy(
     db.commit()
     
     return {"message": "Group-buy cancelled"}
+
+@router.post("/groups/{group_id}/process-payment")
+async def process_admin_group_payment(
+    group_id: int,
+    admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Process payment for an admin-managed group that has reached its target.
+
+    This marks the group as completed and handles the payment processing workflow.
+    Only admin users can process payments.
+    """
+    try:
+        # Get the admin group
+        group = db.query(AdminGroup).filter(AdminGroup.id == group_id).first()
+        if not group:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Admin group not found"
+            )
+
+        # Check if group is active and has reached target
+        if not group.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Group is not active"
+            )
+
+        if group.participants < group.max_participants:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Group has not reached target. {group.participants}/{group.max_participants} participants"
+            )
+
+        # Get all joins for this group
+        joins = db.query(AdminGroupJoin).filter(
+            AdminGroupJoin.admin_group_id == group_id
+        ).all()
+
+        if not joins:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No participants found for this group"
+            )
+
+        # Calculate total amount and process payments
+        total_amount = sum(join.quantity * group.price for join in joins)
+        total_participants = len(joins)
+
+        # Here you would integrate with actual payment processing
+        # For now, we'll simulate successful payment processing
+
+        # Mark group as completed (you might want to add a status field to AdminGroup)
+        # For now, we'll just update the participants and mark as inactive
+        group.is_active = False
+
+        # Create transaction records for each participant
+        from models import Transaction
+        for join in joins:
+            transaction = Transaction(
+                user_id=join.user_id,
+                group_buy_id=None,  # Admin groups don't have group_buy_id
+                product_id=None,  # Will be set when product is assigned
+                quantity=join.quantity,
+                amount=join.quantity * group.price,  # Full amount now that payment is processed
+                transaction_type="final",
+                location_zone="Admin Group",  # Placeholder
+                created_at=datetime.utcnow()
+            )
+            db.add(transaction)
+
+        db.commit()
+
+        return {
+            "message": "Payment processed successfully",
+            "group_id": group_id,
+            "total_participants": total_participants,
+            "total_amount": round(total_amount, 2),
+            "status": "completed",
+            "processed_at": datetime.utcnow().isoformat()
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error processing payment for admin group {group_id}: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to process payment")
 
 @router.get("/reports", response_model=ReportData)
 async def get_reports(
@@ -497,3 +585,149 @@ async def get_ml_system_status(
                 "training_infrastructure": False
             }
         }
+
+@router.get("/groups/active", response_model=List[dict])
+async def get_active_groups_for_moderation(
+    admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Get active groups for admin moderation dashboard"""
+    try:
+        # Get all active admin groups
+        active_groups = db.query(AdminGroup).filter(AdminGroup.is_active).all()
+
+        result = []
+        for group in active_groups:
+            # Get participant count from AdminGroupJoin
+            participant_count = db.query(func.count(AdminGroupJoin.id)).filter(
+                AdminGroupJoin.admin_group_id == group.id
+            ).scalar() or 0
+
+            # Calculate total amount
+            total_amount = participant_count * group.price
+
+            result.append({
+                "id": group.id,
+                "name": group.name,
+                "creator": group.admin_name or "Admin",
+                "category": group.category,
+                "members": participant_count,
+                "targetMembers": group.max_participants or 0,
+                "totalAmount": f"${total_amount:.2f}",
+                "dueDate": group.end_date.strftime("%Y-%m-%d") if group.end_date else "No deadline",
+                "description": group.description,
+                "status": "active",
+                "product": {
+                    "name": group.name,  # Using group name as product name for simplicity
+                    "description": group.long_description or group.description,
+                    "regularPrice": f"${group.original_price:.2f}" if group.original_price else f"${group.price:.2f}",
+                    "bulkPrice": f"${group.price:.2f}",
+                    "image": group.image or "/api/placeholder/300/200",
+                    "totalStock": "N/A",  # Admin groups don't have stock limits
+                    "specifications": "Admin managed group buy",
+                    "manufacturer": "Various",
+                    "warranty": "As per product"
+                }
+            })
+
+        return result
+
+    except Exception as e:
+        print(f"Error getting active groups: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch active groups")
+
+@router.get("/groups/ready-for-payment", response_model=List[dict])
+async def get_ready_for_payment_groups(
+    admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Get groups that have reached their target and are ready for payment processing"""
+    try:
+        # Get admin groups that have reached their target (participants >= max_participants)
+        ready_groups = db.query(AdminGroup).filter(
+            AdminGroup.is_active,
+            AdminGroup.max_participants.isnot(None),
+            AdminGroup.participants >= AdminGroup.max_participants
+        ).all()
+
+        result = []
+        for group in ready_groups:
+            # Get participant count from AdminGroupJoin
+            participant_count = db.query(func.count(AdminGroupJoin.id)).filter(
+                AdminGroupJoin.admin_group_id == group.id
+            ).scalar() or 0
+
+            # Calculate total amount
+            total_amount = participant_count * group.price
+
+            result.append({
+                "id": group.id,
+                "name": group.name,
+                "creator": group.admin_name or "Admin",
+                "category": group.category,
+                "members": participant_count,
+                "targetMembers": group.max_participants or 0,
+                "totalAmount": f"${total_amount:.2f}",
+                "dueDate": group.end_date.strftime("%Y-%m-%d") if group.end_date else "No deadline",
+                "description": group.description,
+                "status": "ready_for_payment",
+                "product": {
+                    "name": group.name,
+                    "description": group.long_description or group.description,
+                    "regularPrice": f"${group.original_price:.2f}" if group.original_price else f"${group.price:.2f}",
+                    "bulkPrice": f"${group.price:.2f}",
+                    "image": group.image or "/api/placeholder/300/200",
+                    "totalStock": "N/A",
+                    "specifications": "Admin managed group buy",
+                    "manufacturer": "Various",
+                    "warranty": "As per product"
+                }
+            })
+
+        return result
+
+    except Exception as e:
+        print(f"Error getting ready for payment groups: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch ready for payment groups")
+
+@router.get("/groups/moderation-stats")
+async def get_group_moderation_stats(
+    admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Get statistics for group moderation dashboard"""
+    try:
+        # Active groups count
+        active_groups_count = db.query(func.count(AdminGroup.id)).filter(
+            AdminGroup.is_active
+        ).scalar() or 0
+
+        # Total members across all active groups
+        total_members = db.query(func.sum(AdminGroup.participants)).filter(
+            AdminGroup.is_active
+        ).scalar() or 0
+
+        # Ready for payment groups count
+        ready_for_payment_count = db.query(func.count(AdminGroup.id)).filter(
+            AdminGroup.is_active,
+            AdminGroup.max_participants.isnot(None),
+            AdminGroup.participants >= AdminGroup.max_participants
+        ).scalar() or 0
+
+        # Required action count (groups that need attention - could be expired, problematic, etc.)
+        # For now, let's count groups that are past their deadline but still active
+        required_action_count = db.query(func.count(AdminGroup.id)).filter(
+            AdminGroup.is_active,
+            AdminGroup.end_date < datetime.utcnow()
+        ).scalar() or 0
+
+        return {
+            "active_groups": active_groups_count,
+            "total_members": total_members,
+            "ready_for_payment": ready_for_payment_count,
+            "required_action": required_action_count
+        }
+
+    except Exception as e:
+        print(f"Error getting moderation stats: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch moderation stats")

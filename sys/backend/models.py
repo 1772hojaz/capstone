@@ -21,6 +21,17 @@ class User(Base):
     preferred_group_sizes = Column(JSON, default=list)  # List of preferred group sizes [small, medium, large]
     participation_frequency = Column(String, default="occasional")  # occasional, regular, frequent
     
+    # Notification preferences
+    email_notifications = Column(Boolean, default=True)
+    push_notifications = Column(Boolean, default=True) 
+    sms_notifications = Column(Boolean, default=False)
+    weekly_summary = Column(Boolean, default=True)
+    price_alerts_enabled = Column(Boolean, default=False)
+    
+    # Additional preferences
+    show_recommendations = Column(Boolean, default=True)
+    auto_join_groups = Column(Boolean, default=True)
+    
     created_at = Column(DateTime, default=datetime.utcnow)
     
     # Relationships

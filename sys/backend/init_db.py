@@ -2,7 +2,7 @@
 Database initialization script with sample data
 """
 from database import engine, SessionLocal, Base
-from models import User, Product, GroupBuy, Contribution, Transaction, QRCodePickup, PickupLocation, AdminGroup, AdminGroupJoin
+from models import User, Product, GroupBuy, Contribution, Transaction, PickupLocation, AdminGroup
 from auth import hash_password
 from datetime import datetime, timedelta
 import random
@@ -54,7 +54,16 @@ def init_database():
                 budget_range=random.choice(budget_ranges),
                 experience_level=random.choice(experience_levels),
                 preferred_group_sizes=random.sample(group_sizes, random.randint(1, 2)),
-                participation_frequency=random.choice(participation_freq)
+                participation_frequency=random.choice(participation_freq),
+                # Notification preferences
+                email_notifications=True,
+                push_notifications=True,
+                sms_notifications=random.choice([True, False]),
+                weekly_summary=True,
+                price_alerts_enabled=random.choice([True, False]),
+                # Additional preferences
+                show_recommendations=True,
+                auto_join_groups=random.choice([True, False])
             )
             traders.append(trader)
             db.add(trader)
