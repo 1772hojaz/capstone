@@ -1,6 +1,17 @@
+import uvicorn
+import asyncio
+import logging
+import logging.config
+import os
+from logging.config import dictConfig
+from dotenv import load_dotenv
+
+# Load environment variables FIRST, before any other imports
+load_dotenv()
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from database import engine, Base, SessionLocal
+from database import engine, Base, SessionLocal, get_db
 from auth import router as auth_router
 from products import router as products_router
 from groups import router as groups_router
@@ -10,16 +21,6 @@ from admin import router as admin_router
 from settings import router as settings_router
 from ml_scheduler import scheduler, start_scheduler
 from websocket_manager import manager
-import uvicorn
-import asyncio
-import logging
-import logging.config
-import os
-from logging.config import dictConfig
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
 
 # Centralized logging configuration
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()

@@ -197,6 +197,14 @@ class AdminGroup(Base):
     requirements = Column(JSON)  # List of requirement strings
     is_active = Column(Boolean, default=True)
     
+    # Additional product fields
+    product_name = Column(String)
+    product_description = Column(Text)
+    total_stock = Column(Integer)
+    specifications = Column(Text)
+    manufacturer = Column(String)
+    pickup_location = Column(String)
+    
     @property
     def savings(self):
         return self.original_price - self.price

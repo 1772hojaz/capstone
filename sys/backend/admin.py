@@ -9,6 +9,7 @@ from models import User, GroupBuy, Product, Transaction, MLModel, AdminGroup, Ad
 from auth import verify_admin
 import cloudinary
 import cloudinary.uploader
+import cloudinary.api
 import os
 
 # Configure Cloudinary
@@ -79,6 +80,13 @@ class CreateGroupRequest(BaseModel):
     estimated_delivery: Optional[str] = "2-3 weeks after group completion"
     features: Optional[List[str]] = []
     requirements: Optional[List[str]] = []
+    # Additional product fields
+    product_name: Optional[str] = None
+    product_description: Optional[str] = None
+    total_stock: Optional[int] = None
+    specifications: Optional[str] = None
+    manufacturer: Optional[str] = None
+    pickup_location: Optional[str] = None
 
 class ImageUploadResponse(BaseModel):
     image_url: str
@@ -648,14 +656,14 @@ async def get_active_groups_for_moderation(
                 "description": group.description,
                 "status": "active",
                 "product": {
-                    "name": group.name,  # Using group name as product name for simplicity
-                    "description": group.long_description or group.description,
+                    "name": group.product_name or group.name,  # Use product_name if available, otherwise group name
+                    "description": group.product_description or group.long_description or group.description,
                     "regularPrice": f"${group.original_price:.2f}" if group.original_price else f"${group.price:.2f}",
                     "bulkPrice": f"${group.price:.2f}",
                     "image": group.image or "/api/placeholder/300/200",
-                    "totalStock": "N/A",  # Admin groups don't have stock limits
-                    "specifications": "Admin managed group buy",
-                    "manufacturer": "Various",
+                    "totalStock": group.total_stock or "N/A",
+                    "specifications": group.specifications or "Admin managed group buy",
+                    "manufacturer": group.manufacturer or "Various",
                     "warranty": "As per product"
                 }
             })
@@ -824,7 +832,14 @@ async def create_admin_group(
             features=group_data.features,
             requirements=group_data.requirements,
             is_active=True,
-            participants=0  # Start with 0 participants
+            participants=0,  # Start with 0 participants
+            # Additional product fields
+            product_name=group_data.product_name,
+            product_description=group_data.product_description,
+            total_stock=group_data.total_stock,
+            specifications=group_data.specifications,
+            manufacturer=group_data.manufacturer,
+            pickup_location=group_data.pickup_location
         )
 
         db.add(new_group)
