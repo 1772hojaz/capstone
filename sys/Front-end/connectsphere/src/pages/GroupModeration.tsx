@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
+import apiService from '../services/api';
 import { 
   Search, 
   Shield, 
@@ -60,7 +61,51 @@ const GroupModeration = () => {
     manufacturer: '',
     warranty: ''
   });
-  
+
+  // State for dynamic data
+  const [activeGroups, setActiveGroups] = useState<any[]>([]);
+  const [readyForPaymentGroupsData, setReadyForPaymentGroupsData] = useState<any[]>([]);
+  const [moderationStats, setModerationStats] = useState({
+    active_groups: 0,
+    total_members: 0,
+    ready_for_payment: 0,
+    required_action: 0
+  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [activeGroupsSearch, setActiveGroupsSearch] = useState('');
+  const [readyForPaymentSearch, setReadyForPaymentSearch] = useState('');
+
+  // Fetch data on component mount
+  useEffect(() => {
+    const fetchModerationData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        // Fetch stats
+        const stats = await apiService.getGroupModerationStats();
+        setModerationStats(stats);
+
+        // Fetch active groups
+        const activeData = await apiService.getActiveGroups();
+        setActiveGroups(activeData);
+
+        // Fetch ready for payment groups
+        const readyData = await apiService.getReadyForPaymentGroups();
+        setReadyForPaymentGroupsData(readyData);
+
+      } catch (err) {
+        console.error('Error fetching moderation data:', err);
+        setError('Failed to load group moderation data');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchModerationData();
+  }, []);
+
   const handlePaymentProcess = async (group: any) => {
     setSelectedPaymentGroup(group);
     setShowPaymentModal(true);
@@ -70,72 +115,23 @@ const GroupModeration = () => {
   const processGroupPayment = async () => {
     try {
       setPaymentStatus('processing');
-      // Simulated API call for payment processing
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // API call to process payment
+      await apiService.processGroupPayment(selectedPaymentGroup.id);
+
       setPaymentStatus('completed');
       // Close modal after success feedback
       setTimeout(() => {
         setShowPaymentModal(false);
         setSelectedPaymentGroup(null);
         setPaymentStatus('pending');
+        // Refresh data after payment processing
+        window.location.reload();
       }, 1500);
     } catch (error) {
+      console.error('Error processing payment:', error);
       setPaymentStatus('failed');
     }
   };
-
-  const readyForPaymentGroups = [
-    {
-      id: 1,
-      name: 'Electronics Bulk Buy Group',
-      creator: 'Alice Chen',
-      category: 'Electronics',
-      members: 20,
-      targetMembers: 20,
-      totalAmount: '$5,400.00',
-      dueDate: '2024-01-20',
-      description: 'Group purchase for latest smartphones and accessories.',
-      status: 'ready_for_payment',
-      // Product details
-      product: {
-        name: 'Samsung Galaxy S24',
-        description: 'Latest flagship smartphone with advanced AI features',
-        regularPrice: '$999.99',
-        bulkPrice: '$749.99',
-        image: 'https://example.com/s24.jpg',
-        totalStock: 25,
-        specifications: '8GB RAM, 256GB Storage, Snapdragon 8 Gen 3',
-        manufacturer: 'Samsung',
-        warranty: '1 Year Manufacturer Warranty'
-      }
-    },
-    {
-      id: 2,
-      name: 'Wholesale Clothing Bundle',
-      creator: 'Mark Thompson',
-      category: 'Fashion',
-      members: 15,
-      targetMembers: 15,
-      totalAmount: '$3,750.00',
-      dueDate: '2024-01-22',
-      description: 'Bulk order for winter clothing collection.',
-      status: 'ready_for_payment',
-      // Product details
-      product: {
-        name: 'Winter Collection Bundle',
-        description: 'Premium winter wear collection including jackets, sweaters, and accessories',
-        regularPrice: '$299.99',
-        bulkPrice: '$199.99',
-        image: 'https://example.com/winter-bundle.jpg',
-        totalStock: 20,
-        specifications: 'Premium materials, Multiple sizes available',
-        manufacturer: 'WinterStyle Co.',
-        warranty: '30 Days Return Policy'
-      }
-    }
-  ];
-
-
 
   const reportedContent = [
     {
@@ -178,44 +174,64 @@ const GroupModeration = () => {
         </div>
       </div>
 
+      {/* Loading State */}
+      {loading && (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+          <span className="ml-2 text-gray-600">Loading group moderation data...</span>
+        </div>
+      )}
+
+      {/* Error State */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5 text-red-600" />
+            <span className="text-red-800">{error}</span>
+          </div>
+        </div>
+      )}
+
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg shadow-sm p-4 border border-blue-200">
-          <div className="flex items-center gap-2 mb-1">
-            <ShoppingBag className="w-4 h-4 text-blue-600" />
-            <p className="text-sm text-gray-600">Active Groups</p>
+      {!loading && !error && (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg shadow-sm p-4 border border-blue-200">
+            <div className="flex items-center gap-2 mb-1">
+              <ShoppingBag className="w-4 h-4 text-blue-600" />
+              <p className="text-sm text-gray-600">Active Groups</p>
+            </div>
+            <p className="text-2xl font-bold text-blue-600">{moderationStats.active_groups}</p>
           </div>
-          <p className="text-2xl font-bold text-blue-600">12</p>
-        </div>
-        <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg shadow-sm p-4 border border-green-200">
-          <div className="flex items-center gap-2 mb-1">
-            <Users className="w-4 h-4 text-green-600" />
-            <p className="text-sm text-gray-600">Total Members</p>
+          <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg shadow-sm p-4 border border-green-200">
+            <div className="flex items-center gap-2 mb-1">
+              <Users className="w-4 h-4 text-green-600" />
+              <p className="text-sm text-gray-600">Total Members</p>
+            </div>
+            <p className="text-2xl font-bold text-green-600">{moderationStats.total_members}</p>
           </div>
-          <p className="text-2xl font-bold text-green-600">342</p>
-        </div>
-        <div className="bg-gradient-to-br from-purple-50 to-violet-50 rounded-lg shadow-sm p-4 border border-purple-200">
-          <div className="flex items-center gap-2 mb-1">
-            <Package className="w-4 h-4 text-purple-600" />
-            <p className="text-sm text-gray-600">Ready for Payment</p>
+          <div className="bg-gradient-to-br from-purple-50 to-violet-50 rounded-lg shadow-sm p-4 border border-purple-200">
+            <div className="flex items-center gap-2 mb-1">
+              <Package className="w-4 h-4 text-purple-600" />
+              <p className="text-sm text-gray-600">Ready for Payment</p>
+            </div>
+            <p className="text-2xl font-bold text-purple-600">{moderationStats.ready_for_payment}</p>
           </div>
-          <p className="text-2xl font-bold text-purple-600">{readyForPaymentGroups.length}</p>
-        </div>
-        <div className="bg-gradient-to-br from-red-50 to-rose-50 rounded-lg shadow-sm p-4 border border-red-200">
-          <div className="flex items-center gap-2 mb-1">
-            <AlertTriangle className="w-4 h-4 text-red-600" />
-            <p className="text-sm text-gray-600">Required Action</p>
+          <div className="bg-gradient-to-br from-red-50 to-rose-50 rounded-lg shadow-sm p-4 border border-red-200">
+            <div className="flex items-center gap-2 mb-1">
+              <AlertTriangle className="w-4 h-4 text-red-600" />
+              <p className="text-sm text-gray-600">Required Action</p>
+            </div>
+            <p className="text-2xl font-bold text-red-600">{moderationStats.required_action}</p>
           </div>
-          <p className="text-2xl font-bold text-red-600">2</p>
         </div>
-      </div>
+      )}
 
       {/* Groups List */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         {/* Active Groups */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200">
           <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-blue-100 rounded-lg">
                   <Users className="w-6 h-6 text-blue-600" />
@@ -226,11 +242,47 @@ const GroupModeration = () => {
                 </div>
               </div>
             </div>
+            {/* Search Bar */}
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Search className="h-5 w-5 text-gray-400" />
+              </div>
+              <input
+                type="text"
+                placeholder="Search active groups by name, category, or product..."
+                value={activeGroupsSearch}
+                onChange={(e) => setActiveGroupsSearch(e.target.value)}
+                className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+              />
+            </div>
           </div>
-          <div className="p-6 space-y-4">
-            {readyForPaymentGroups.map((group) => (
+          <div className="p-6 max-h-96 overflow-y-auto space-y-4">
+            {activeGroups
+              .filter((group) => {
+                if (!activeGroupsSearch.trim()) return true;
+                
+                const searchTerm = activeGroupsSearch.toLowerCase();
+                return (
+                  group.name?.toLowerCase().includes(searchTerm) ||
+                  group.description?.toLowerCase().includes(searchTerm) ||
+                  group.category?.toLowerCase().includes(searchTerm) ||
+                  group.product?.name?.toLowerCase().includes(searchTerm) ||
+                  group.product?.description?.toLowerCase().includes(searchTerm) ||
+                  group.product?.manufacturer?.toLowerCase().includes(searchTerm)
+                );
+              })
+              .map((group) => (
               <div key={group.id} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition">
-                <div className="flex items-start justify-between mb-4">
+                <div className="flex items-start gap-4 mb-4">
+                  {/* Thumbnail */}
+                  <div className="flex-shrink-0">
+                    <img
+                      src={group.product?.image || group.image || '/api/placeholder/150/100'}
+                      alt={group.product?.name || group.name}
+                      className="w-28 h-20 object-cover rounded-md border border-gray-200"
+                    />
+                  </div>
+
                   <div className="flex-1">
                     {/* Group Details */}
                     <div className="flex items-center gap-2 mb-2">
@@ -294,7 +346,7 @@ const GroupModeration = () => {
         {/* Ready for Payment */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200">
           <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-green-50 to-emerald-50">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-green-100 rounded-lg">
                   <DollarSign className="w-6 h-6 text-green-600" />
@@ -305,12 +357,39 @@ const GroupModeration = () => {
                 </div>
               </div>
               <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
-                {readyForPaymentGroups.length} Groups
+                {readyForPaymentGroupsData.length} Groups
               </span>
             </div>
+            {/* Search Bar */}
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Search className="h-5 w-5 text-gray-400" />
+              </div>
+              <input
+                type="text"
+                placeholder="Search ready for payment groups by name, category..."
+                value={readyForPaymentSearch}
+                onChange={(e) => setReadyForPaymentSearch(e.target.value)}
+                className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm"
+              />
+            </div>
           </div>
-          <div className="p-6 space-y-4">
-            {readyForPaymentGroups.map((group) => (
+          <div className="p-6 max-h-96 overflow-y-auto space-y-4">
+            {readyForPaymentGroupsData
+              .filter((group: any) => {
+                if (!readyForPaymentSearch.trim()) return true;
+                
+                const searchTerm = readyForPaymentSearch.toLowerCase();
+                return (
+                  group.name?.toLowerCase().includes(searchTerm) ||
+                  group.description?.toLowerCase().includes(searchTerm) ||
+                  group.category?.toLowerCase().includes(searchTerm) ||
+                  group.product?.name?.toLowerCase().includes(searchTerm) ||
+                  group.product?.description?.toLowerCase().includes(searchTerm) ||
+                  group.product?.manufacturer?.toLowerCase().includes(searchTerm)
+                );
+              })
+              .map((group: any) => (
               <div key={group.id} className="border border-green-200 bg-green-50 rounded-lg p-4 hover:bg-green-100 transition">
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex-1">
@@ -577,36 +656,39 @@ const GroupModeration = () => {
                 <button
                   onClick={async () => {
                     try {
-                      const formData = new FormData();
+                      // First, upload the image if provided
+                      let imageUrl = '';
                       if (newGroup.productImage) {
-                        formData.append('productImage', newGroup.productImage);
+                        const uploadResult = await apiService.uploadImage(newGroup.productImage);
+                        imageUrl = uploadResult.image_url;
                       }
 
-                      // First, upload the image to get the URL
-                      const uploadResponse = await fetch('/api/upload-image', {
-                        method: 'POST',
-                        body: formData
-                      });
-                      
-                      if (!uploadResponse.ok) {
-                        throw new Error('Failed to upload image');
-                      }
+                      // Then create the group
+                      const groupData = {
+                        name: newGroup.name,
+                        description: newGroup.description,
+                        long_description: newGroup.productDescription,
+                        category: newGroup.category,
+                        price: parseFloat(newGroup.bulkPrice),
+                        original_price: parseFloat(newGroup.regularPrice),
+                        image: imageUrl,
+                        max_participants: parseInt(newGroup.targetMembers),
+                        end_date: new Date(newGroup.dueDate).toISOString(),
+                        admin_name: "Admin",
+                        shipping_info: "Free shipping when group goal is reached",
+                        estimated_delivery: "2-3 weeks after group completion",
+                        features: [],
+                        requirements: [],
+                        // Additional product fields
+                        product_name: newGroup.productName,
+                        product_description: newGroup.productDescription,
+                        total_stock: parseInt(newGroup.totalStock) || null,
+                        specifications: newGroup.specifications,
+                        manufacturer: newGroup.manufacturer,
+                        pickup_location: newGroup.location
+                      };
 
-                      const { imageUrl } = await uploadResponse.json();
-                      
-                      // Then create the group with the returned image URL
-                      const createGroupResponse = await fetch('/api/groups', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          ...newGroup,
-                          productImage: imageUrl // Use the URL from backend
-                        })
-                      });
-
-                      if (!createGroupResponse.ok) {
-                        throw new Error('Failed to create group');
-                      }
+                      await apiService.createAdminGroup(groupData);
 
                       // Reset form and close modal on success
                       setNewGroup({
@@ -628,9 +710,34 @@ const GroupModeration = () => {
                         warranty: ''
                       });
                       setShowCreateModal(false);
+
+                      // Refresh the data
+                      const fetchModerationData = async () => {
+                        try {
+                          setLoading(true);
+                          setError(null);
+
+                          const stats = await apiService.getGroupModerationStats();
+                          setModerationStats(stats);
+
+                          const activeData = await apiService.getActiveGroups();
+                          setActiveGroups(activeData);
+
+                          const readyData = await apiService.getReadyForPaymentGroups();
+                          setReadyForPaymentGroupsData(readyData);
+
+                        } catch (err) {
+                          console.error('Error fetching moderation data:', err);
+                          setError('Failed to load group moderation data');
+                        } finally {
+                          setLoading(false);
+                        }
+                      };
+
+                      fetchModerationData();
+
                     } catch (error) {
                       console.error('Error:', error);
-                      // Here you would typically show an error message to the user
                       alert('Failed to create group. Please try again.');
                     }
                   }}

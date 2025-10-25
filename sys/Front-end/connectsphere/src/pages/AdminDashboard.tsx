@@ -1,9 +1,10 @@
 import { Zap, Users, Eye, ShoppingBag, TrendingUp, DollarSign, AlertTriangle, RefreshCw, Clock } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Bar, PieChart, Pie, Cell, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts';
 import StatCard from '../components/StatCard';
 import Layout from '../components/Layout';
+import apiService from '../services/api';
 
 interface ManagementCardProps {
   icon: React.ReactNode;
@@ -31,14 +32,16 @@ const ManagementCard = ({ icon, title, description, buttonText, link }: Manageme
   );
 };
 
-type TrainingStage = 'data-collection' | 'preprocessing' | 'training' | 'validation' | 'deployment' | null;
+type TrainingStage = 'data_collection' | 'matrix_building' | 'clustering' | 'nmf_training' | 'tfidf_processing' | 'hybrid_fusion' | 'model_saving' | null;
 
 const trainingStages: { id: TrainingStage; label: string }[] = [
-  { id: 'data-collection', label: 'Data Collection' },
-  { id: 'preprocessing', label: 'Preprocessing' },
-  { id: 'training', label: 'Training' },
-  { id: 'validation', label: 'Validation' },
-  { id: 'deployment', label: 'Deployment' }
+  { id: 'data_collection', label: 'Data Collection' },
+  { id: 'matrix_building', label: 'Matrix Building' },
+  { id: 'clustering', label: 'Clustering' },
+  { id: 'nmf_training', label: 'NMF Training' },
+  { id: 'tfidf_processing', label: 'TF-IDF Processing' },
+  { id: 'hybrid_fusion', label: 'Hybrid Fusion' },
+  { id: 'model_saving', label: 'Model Saving' }
 ];
 
 const AdminDashboard = () => {
@@ -49,6 +52,22 @@ const AdminDashboard = () => {
   const [timeLeft, setTimeLeft] = useState<string>('');
   const [isRetraining, setIsRetraining] = useState(false);
   const [currentStage, setCurrentStage] = useState<TrainingStage>(null);
+  const [trainingProgress, setTrainingProgress] = useState<number>(0);
+  const [trainingMessage, setTrainingMessage] = useState<string>('');
+  const [trainingResults, setTrainingResults] = useState<any>(null);
+  const [trainingError, setTrainingError] = useState<string | null>(null);
+  
+  // WebSocket reference
+  const wsRef = useRef<WebSocket | null>(null);
+  
+  // Dashboard data state
+  const [dashboardStats, setDashboardStats] = useState<any>(null);
+  const [activityData, setActivityData] = useState<any[]>([]);
+  const [modelPerformanceData, setModelPerformanceData] = useState<any[]>([]);
+  const [trainingProgressData, setTrainingProgressData] = useState<any[]>([]);
+  const [mlSystemStatus, setMlSystemStatus] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const calculateTimeLeft = () => {
@@ -72,69 +91,147 @@ const AdminDashboard = () => {
     return () => clearInterval(timer);
   }, [nextRetrainTime]);
 
-  const handleRetrain = () => {
+  // Load dashboard data
+  useEffect(() => {
+    const loadDashboardData = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+        
+        // Load dashboard stats
+        const stats = await apiService.getDashboardStats();
+        setDashboardStats(stats);
+        
+        // Load activity data (mock for now, could be from API)
+        setActivityData([
+          { month: 'Jan', groups: 150, users: 180 },
+          { month: 'Feb', groups: 180, users: 220 },
+          { month: 'Mar', groups: 280, users: 290 },
+          { month: 'Apr', groups: 250, users: 270 },
+          { month: 'May', groups: 320, users: 350 },
+          { month: 'Jun', groups: 380, users: 420 },
+        ]);
+        
+        // Load model performance data from API
+        const performanceData = await apiService.getMLPerformance();
+        setModelPerformanceData([
+          { name: 'Accuracy', value: performanceData.accuracy || 0 },
+          { name: 'Precision', value: performanceData.precision || 0 },
+          { name: 'Recall', value: performanceData.recall || 0 },
+          { name: 'F1 Score', value: performanceData.f1_score || 0 },
+        ]);
+        
+        // Load training progress data (mock for now)
+        setTrainingProgressData([
+          { subject: 'Data Quality', A: 90 },
+          { subject: 'Model Training', A: 85 },
+          { subject: 'Validation', A: 88 },
+          { subject: 'Testing', A: 82 },
+          { subject: 'Deployment', A: 95 },
+        ]);
+        
+        // Load ML system status
+        const mlStatus = await apiService.getMLSystemStatus();
+        setMlSystemStatus(mlStatus);
+        
+      } catch (err) {
+        console.error('Failed to load dashboard data:', err);
+        setError('Failed to load dashboard data. Please try again.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadDashboardData();
+  }, []);
+  useEffect(() => {
+    const connectWebSocket = () => {
+      try {
+        const ws = new WebSocket('ws://localhost:8000/ws/ml-training');
+        
+        ws.onopen = () => {
+          console.log('WebSocket connected for ML training progress');
+        };
+        
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            console.log('WebSocket message received:', data);
+            
+            if (data.type === 'progress') {
+              setIsRetraining(true);
+              setCurrentStage(data.stage as TrainingStage);
+              setTrainingProgress(data.progress);
+              setTrainingMessage(data.message);
+              setTrainingError(null);
+            } else if (data.type === 'completed') {
+              setIsRetraining(false);
+              setCurrentStage(null);
+              setTrainingProgress(100);
+              setTrainingMessage(data.message);
+              setTrainingResults(data.results);
+              setTrainingError(null);
+              setNextRetrainTime(new Date(Date.now() + 24 * 60 * 60 * 1000)); // Reset to 24 hours
+            } else if (data.type === 'error') {
+              setIsRetraining(false);
+              setCurrentStage(null);
+              setTrainingProgress(0);
+              setTrainingError(data.error || data.message);
+              setTrainingMessage('');
+            }
+          } catch (error) {
+            console.error('Error parsing WebSocket message:', error);
+          }
+        };
+        
+        ws.onclose = () => {
+          console.log('WebSocket disconnected');
+          // Attempt to reconnect after a delay
+          setTimeout(connectWebSocket, 5000);
+        };
+        
+        ws.onerror = (error) => {
+          console.error('WebSocket error:', error);
+        };
+        
+        wsRef.current = ws;
+      } catch (error) {
+        console.error('Failed to connect WebSocket:', error);
+      }
+    };
+
+    connectWebSocket();
+
+    // Cleanup on unmount
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+    };
+  }, []);
+
+  const handleRetrain = async () => {
     const shouldRetrain = window.confirm('Are you sure you want to start the model retraining process?');
     if (shouldRetrain) {
-      setIsRetraining(true);
-      
-      // Simulate training pipeline stages
-      const simulateStage = (stage: TrainingStage, delay: number) => {
-        return new Promise<void>((resolve) => {
-          setTimeout(() => {
-            setCurrentStage(stage);
-            resolve();
-          }, delay);
-        });
-      };
-
-      // Execute training pipeline
-      const runTrainingPipeline = async () => {
-        await simulateStage('data-collection', 0);
-        await simulateStage('preprocessing', 3000);
-        await simulateStage('training', 3000);
-        await simulateStage('validation', 3000);
-        await simulateStage('deployment', 3000);
+      try {
+        // Reset training state
+        setTrainingProgress(0);
+        setTrainingMessage('');
+        setTrainingError(null);
+        setTrainingResults(null);
         
-        // Complete training
-        setTimeout(() => {
-          setIsRetraining(false);
-          setCurrentStage(null);
-          setNextRetrainTime(new Date(Date.now() + 12 * 60 * 60 * 1000));
-        }, 2000);
-      };
-
-      runTrainingPipeline();
+        // Call the real API
+        await apiService.retrainMLModels();
+        
+        // The WebSocket will handle progress updates
+      } catch (error) {
+        console.error('Retraining failed:', error);
+        setTrainingError('Failed to start retraining. Please try again.');
+      }
     }
   };
 
-  // Activity Data
-  const activityData = [
-    { month: 'Jan', groups: 150, users: 180 },
-    { month: 'Feb', groups: 180, users: 220 },
-    { month: 'Mar', groups: 280, users: 290 },
-    { month: 'Apr', groups: 250, users: 270 },
-    { month: 'May', groups: 320, users: 350 },
-    { month: 'Jun', groups: 380, users: 420 },
-  ];
-
-  // Model Performance Data
-  const modelPerformanceData = [
-    { name: 'Accuracy', value: 85 },
-    { name: 'Precision', value: 78 },
-    { name: 'Recall', value: 82 },
-    { name: 'F1 Score', value: 80 },
-  ];
-
   const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444'];
-
-  // Training Progress Data
-  const trainingProgressData = [
-    { subject: 'Data Quality', A: 90 },
-    { subject: 'Model Training', A: 85 },
-    { subject: 'Validation', A: 88 },
-    { subject: 'Testing', A: 82 },
-    { subject: 'Deployment', A: 95 },
-  ];
 
   return (
     <Layout title="Admin Dashboard">
@@ -220,32 +317,42 @@ const AdminDashboard = () => {
             {/* Analytics Summary */}
             <div>
               <h2 className="text-lg font-semibold text-gray-900 mb-4">Analytics Summary</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <StatCard
-                  title="Total Users"
-                  value="1,245"
-                  icon={<Users className="w-6 h-6" />}
-                  color="blue"
-                />
-                <StatCard
-                  title="Active Groups"
-                  value="189"
-                  icon={<Eye className="w-6 h-6" />}
-                  color="green"
-                />
-                <StatCard
-                  title="Total Transactions"
-                  value="8,321"
-                  icon={<ShoppingBag className="w-6 h-6" />}
-                  color="blue"
-                />
-                <StatCard
-                  title="Revenue"
-                  value="$24,987"
-                  icon={<DollarSign className="w-6 h-6" />}
-                  color="red"
-                />
-              </div>
+              {isLoading ? (
+                <div className="flex justify-center items-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                </div>
+              ) : error ? (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                  <p className="text-red-700">{error}</p>
+                </div>
+              ) : dashboardStats ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <StatCard
+                    title="Total Users"
+                    value={dashboardStats.total_users?.toString() || "0"}
+                    icon={<Users className="w-6 h-6" />}
+                    color="blue"
+                  />
+                  <StatCard
+                    title="Active Groups"
+                    value={dashboardStats.active_group_buys?.toString() || "0"}
+                    icon={<Eye className="w-6 h-6" />}
+                    color="green"
+                  />
+                  <StatCard
+                    title="Total Transactions"
+                    value={dashboardStats.total_products?.toString() || "0"}
+                    icon={<ShoppingBag className="w-6 h-6" />}
+                    color="blue"
+                  />
+                  <StatCard
+                    title="Revenue"
+                    value={`$${dashboardStats.total_revenue?.toFixed(2) || "0.00"}`}
+                    icon={<DollarSign className="w-6 h-6" />}
+                    color="red"
+                  />
+                </div>
+              ) : null}
             </div>
 
             {/* Platform Activity */}
@@ -298,8 +405,46 @@ const AdminDashboard = () => {
               </div>
 
               {/* Training Progress Line */}
-              {isRetraining && (
+              {(isRetraining || trainingProgress > 0) && (
                 <div className="space-y-4">
+                  {/* Progress Bar */}
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm font-medium text-gray-700">
+                        {trainingMessage || 'Initializing training...'}
+                      </span>
+                      <span className="text-sm font-medium text-blue-600">
+                        {trainingProgress}%
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div 
+                        className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                        style={{ width: `${trainingProgress}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Error Display */}
+                  {trainingError && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                      <p className="text-red-700 text-sm">{trainingError}</p>
+                    </div>
+                  )}
+
+                  {/* Results Display */}
+                  {trainingResults && (
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                      <p className="text-green-700 text-sm font-medium">Training completed successfully!</p>
+                      <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                        <div>Silhouette Score: {trainingResults.silhouette_score?.toFixed(3)}</div>
+                        <div>Clusters: {trainingResults.n_clusters}</div>
+                        <div>NMF Rank: {trainingResults.nmf_rank}</div>
+                        <div>TF-IDF Vocab: {trainingResults.tfidf_vocab_size}</div>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="flex justify-between items-center relative">
                     {/* Progress Line */}
                     <div className="absolute left-0 right-0 top-1/2 h-1 bg-gray-200 -translate-y-1/2" />
@@ -309,7 +454,7 @@ const AdminDashboard = () => {
                         width: `${
                           currentStage
                             ? ((trainingStages.findIndex(s => s.id === currentStage) + 1) / trainingStages.length) * 100
-                            : 0
+                            : trainingProgress
                         }%`
                       }}
                     />
@@ -317,8 +462,8 @@ const AdminDashboard = () => {
                     {/* Stage Markers */}
                     {trainingStages.map((stage, index) => {
                       const isCompleted = currentStage 
-                        ? trainingStages.findIndex(s => s.id === currentStage) >= index
-                        : false;
+                        ? trainingStages.findIndex(s => s.id === currentStage) > index
+                        : trainingProgress >= ((index + 1) / trainingStages.length) * 100;
                       const isCurrent = stage.id === currentStage;
                       
                       return (
@@ -423,9 +568,17 @@ const AdminDashboard = () => {
             {/* System Status */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
               <div className="flex items-center gap-3 mb-6">
-                <div className="p-2 bg-green-100 rounded-lg">
+                <div className={`p-2 rounded-lg ${
+                  mlSystemStatus?.health_status === 'operational' ? 'bg-green-100' :
+                  mlSystemStatus?.health_status === 'warning' ? 'bg-yellow-100' :
+                  mlSystemStatus?.health_status === 'critical' ? 'bg-red-100' : 'bg-gray-100'
+                }`}>
                   <div className="w-6 h-6 flex items-center justify-center">
-                    <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                    <div className={`w-3 h-3 rounded-full ${
+                      mlSystemStatus?.health_status === 'operational' ? 'bg-green-500' :
+                      mlSystemStatus?.health_status === 'warning' ? 'bg-yellow-500' :
+                      mlSystemStatus?.health_status === 'critical' ? 'bg-red-500' : 'bg-gray-500'
+                    }`}></div>
                   </div>
                 </div>
                 <div>
@@ -435,12 +588,28 @@ const AdminDashboard = () => {
               </div>
               
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-4">
-                <div className="bg-green-50 border border-green-200 rounded-lg p-6">
+                <div className={`border rounded-lg p-6 ${
+                  mlSystemStatus?.health_status === 'operational' ? 'bg-green-50 border-green-200' :
+                  mlSystemStatus?.health_status === 'warning' ? 'bg-yellow-50 border-yellow-200' :
+                  mlSystemStatus?.health_status === 'critical' ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200'
+                }`}>
                   <div className="flex items-center gap-2 mb-2">
-                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                    <p className="font-medium text-green-900">System Health</p>
+                    <div className={`w-2 h-2 rounded-full ${
+                      mlSystemStatus?.health_status === 'operational' ? 'bg-green-500' :
+                      mlSystemStatus?.health_status === 'warning' ? 'bg-yellow-500' :
+                      mlSystemStatus?.health_status === 'critical' ? 'bg-red-500' : 'bg-gray-500'
+                    }`}></div>
+                    <p className={`font-medium ${
+                      mlSystemStatus?.health_status === 'operational' ? 'text-green-900' :
+                      mlSystemStatus?.health_status === 'warning' ? 'text-yellow-900' :
+                      mlSystemStatus?.health_status === 'critical' ? 'text-red-900' : 'text-gray-900'
+                    }`}>System Health</p>
                   </div>
-                  <p className="text-sm text-green-800">All systems operational</p>
+                  <p className={`text-sm ${
+                    mlSystemStatus?.health_status === 'operational' ? 'text-green-800' :
+                    mlSystemStatus?.health_status === 'warning' ? 'text-yellow-800' :
+                    mlSystemStatus?.health_status === 'critical' ? 'text-red-800' : 'text-gray-800'
+                  }`}>{mlSystemStatus?.system_health || 'Loading...'}</p>
                 </div>
 
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
@@ -448,7 +617,7 @@ const AdminDashboard = () => {
                     <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
                     <p className="font-medium text-blue-900">Response Time</p>
                   </div>
-                  <p className="text-sm text-blue-800">85ms average</p>
+                  <p className="text-sm text-blue-800">{mlSystemStatus?.response_time_display || 'Loading...'}</p>
                 </div>
 
                 <div className="bg-purple-50 border border-purple-200 rounded-lg p-6">
@@ -456,7 +625,7 @@ const AdminDashboard = () => {
                     <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
                     <p className="font-medium text-purple-900">Model Updates</p>
                   </div>
-                  <p className="text-sm text-purple-800">Last updated 2h ago</p>
+                  <p className="text-sm text-purple-800">{mlSystemStatus?.model_updates || 'Loading...'}</p>
                 </div>
               </div>
 
@@ -464,20 +633,20 @@ const AdminDashboard = () => {
                 <h4 className="font-semibold text-gray-900 mb-4">System Health Checklist</h4>
                 <div className="space-y-3">
                   <div className="flex items-center gap-2 text-sm text-gray-600">
-                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                    <span>Recommendation Engine: Operational</span>
+                    <div className={`w-2 h-2 rounded-full ${mlSystemStatus?.checklist?.recommendation_engine ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                    <span>Recommendation Engine: {mlSystemStatus?.checklist?.recommendation_engine ? 'Operational' : 'Down'}</span>
                   </div>
                   <div className="flex items-center gap-2 text-sm text-gray-600">
-                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                    <span>Data Processing Pipeline: Running</span>
+                    <div className={`w-2 h-2 rounded-full ${mlSystemStatus?.checklist?.data_processing_pipeline ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                    <span>Data Processing Pipeline: {mlSystemStatus?.checklist?.data_processing_pipeline ? 'Running' : 'Stopped'}</span>
                   </div>
                   <div className="flex items-center gap-2 text-sm text-gray-600">
-                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                    <span>Model Serving API: Active</span>
+                    <div className={`w-2 h-2 rounded-full ${mlSystemStatus?.checklist?.model_serving_api ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                    <span>Model Serving API: {mlSystemStatus?.checklist?.model_serving_api ? 'Active' : 'Inactive'}</span>
                   </div>
                   <div className="flex items-center gap-2 text-sm text-gray-600">
-                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                    <span>Training Infrastructure: Available</span>
+                    <div className={`w-2 h-2 rounded-full ${mlSystemStatus?.checklist?.training_infrastructure ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                    <span>Training Infrastructure: {mlSystemStatus?.checklist?.training_infrastructure ? 'Available' : 'Unavailable'}</span>
                   </div>
                 </div>
               </div>
@@ -490,72 +659,25 @@ const AdminDashboard = () => {
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
               <h2 className="text-lg font-semibold text-gray-900 mb-4">QR Code Verification</h2>
               <div className="max-w-xl mx-auto">
-                <div className="aspect-square w-full relative bg-gray-50 rounded-lg overflow-hidden mb-6">
-                  <QrScanner
-                    onDecode={(result: string) => {
-                      setLastScannedCode(result);
-                      setVerificationStatus('loading');
-                      // Simulate verification process
-                      setTimeout(() => {
-                        // Here you would typically make an API call to verify the QR code
-                        // For now, we'll simulate a successful verification
-                        setVerificationStatus('success');
-                      }, 1500);
-                    }}
-                    onError={(error: Error) => {
-                      console.error(error);
-                      setVerificationStatus('error');
-                    }}
-                  />
-                </div>
-
-                {/* Verification Status */}
-                <div className="space-y-4">
-                  {verificationStatus === 'loading' && (
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                      <div className="flex items-center gap-3">
-                        <div className="animate-spin">
-                          <RefreshCw className="w-5 h-5 text-blue-600" />
-                        </div>
-                        <p className="text-blue-700 font-medium">Verifying QR code...</p>
-                      </div>
+                <div className="aspect-square w-full relative bg-gray-50 rounded-lg overflow-hidden mb-6 border-2 border-dashed border-gray-300 flex items-center justify-center">
+                  <div className="text-center">
+                    <div className="w-16 h-16 mx-auto mb-4 text-gray-400">
+                      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M12 15h4.01M12 21h4.01M12 12h4.01M12 15h4.01M12 21h4.01M12 12h4.01M12 15h4.01M12 21h4.01" />
+                      </svg>
                     </div>
-                  )}
-
-                  {verificationStatus === 'success' && (
-                    <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-5 h-5 rounded-full bg-green-100 flex items-center justify-center">
-                          <div className="w-2 h-2 rounded-full bg-green-600" />
-                        </div>
-                        <div>
-                          <p className="text-green-700 font-medium">QR Code Valid</p>
-                          <p className="text-green-600 text-sm mt-1">Code: {lastScannedCode}</p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {verificationStatus === 'error' && (
-                    <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                      <div className="flex items-center gap-3">
-                        <AlertTriangle className="w-5 h-5 text-red-600" />
-                        <div>
-                          <p className="text-red-700 font-medium">Verification Failed</p>
-                          <p className="text-red-600 text-sm mt-1">Please try scanning again</p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
+                    <p className="text-gray-600 font-medium">QR Scanner Coming Soon</p>
+                    <p className="text-sm text-gray-500 mt-1">This feature will allow branch staff to scan QR codes for pickup verification.</p>
+                  </div>
                 </div>
 
                 <div className="mt-6 bg-gray-50 rounded-lg p-4">
-                  <h3 className="text-sm font-medium text-gray-900 mb-2">Instructions:</h3>
+                  <h3 className="text-sm font-medium text-gray-900 mb-2">How it works:</h3>
                   <ul className="text-sm text-gray-600 space-y-2">
-                    <li>1. Position the QR code within the scanner frame</li>
-                    <li>2. Hold the code steady until it's recognized</li>
-                    <li>3. Wait for verification results</li>
-                    <li>4. Check the status message below the scanner</li>
+                    <li>1. Customers receive QR codes when their group buy is ready for pickup</li>
+                    <li>2. Branch staff scan the QR code to verify the customer's order</li>
+                    <li>3. System validates the QR code and marks the pickup as complete</li>
+                    <li>4. Customer receives their products and payment is processed</li>
                   </ul>
                 </div>
               </div>

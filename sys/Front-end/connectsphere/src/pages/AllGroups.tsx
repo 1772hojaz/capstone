@@ -1,6 +1,7 @@
-import { Search, MapPin, User, Users, Filter, SortAsc, Grid, List, X, Zap } from 'lucide-react';
+import { Search, MapPin, User, Users, Filter, SortAsc, Grid, List, X, Eye } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import apiService from '../services/api';
 
 export default function AllGroups() {
   const navigate = useNavigate();
@@ -9,164 +10,58 @@ export default function AllGroups() {
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [sortBy, setSortBy] = useState<'participants' | 'price-low' | 'price-high' | 'newest'>('participants');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-  const [joiningGroup, setJoiningGroup] = useState<number | null>(null);
   const [joinSuccess, setJoinSuccess] = useState<string | null>(null);
-
-  const allGroups = [
-    {
-      id: 1,
-      name: 'Wireless Mechanical Keyboard',
-      price: 89.99,
-      image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
-      description: 'High-performance mechanical keyboard with customizable RGB backlighting and durable switches.',
-      participants: 35,
-      category: 'Electronics',
-      created: '2024-01-10',
-    },
-    {
-      id: 2,
-      name: 'Smart Home Assistant Speaker',
-      price: 49.99,
-      image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
-      description: 'Voice-controlled smart speaker with premium sound and integrated AI assistant for home automation.',
-      participants: 50,
-      category: 'Electronics',
-      created: '2024-01-09',
-    },
-    {
-      id: 3,
-      name: 'Portable Espresso Maker',
-      price: 34.50,
-      image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
-      description: 'Enjoy rich, creamy espresso anywhere with this compact and easy-to-use portable maker. Ideal for travel.',
-      participants: 22,
-      category: 'Appliances',
-      created: '2024-01-08',
-    },
-    {
-      id: 4,
-      name: 'Ergonomic Office Chair',
-      price: 199.00,
-      image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
-      description: 'Designed for ultimate comfort and support during long work hours. Features adjustable height and lumbar support.',
-      participants: 15,
-      category: 'Furniture',
-      created: '2024-01-07',
-    },
-    {
-      id: 5,
-      name: 'Premium Coffee Beans (Brazil)',
-      price: 24.99,
-      image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
-      description: 'Rich, aromatic coffee beans sourced directly from Brazilian farms. Perfect for morning brewing.',
-      participants: 8,
-      category: 'Food & Beverages',
-      created: '2024-01-06',
-    },
-    {
-      id: 6,
-      name: 'Smart LED Light Strips',
-      price: 45.00,
-      image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
-      description: 'RGB LED strips with app control and voice assistant compatibility. Create the perfect ambiance.',
-      participants: 27,
-      category: 'Electronics',
-      created: '2024-01-05',
-    },
-    {
-      id: 7,
-      name: 'High-Speed USB-C Hub',
-      price: 59.99,
-      image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
-      description: 'Multi-port USB-C hub with 4K HDMI output, USB 3.0 ports, and SD card reader for maximum connectivity.',
-      participants: 19,
-      category: 'Electronics',
-      created: '2024-01-04',
-    },
-    {
-      id: 8,
-      name: 'Organic Snack Variety Pack',
-      price: 32.50,
-      image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
-      description: 'Assorted organic snacks including nuts, dried fruits, and healthy treats. Perfect for sharing.',
-      participants: 42,
-      category: 'Food & Beverages',
-      created: '2024-01-03',
-    },
-    {
-      id: 9,
-      name: 'Noise-Cancelling Headphones',
-      price: 149.99,
-      image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
-      description: 'Premium over-ear headphones with active noise cancellation and 30-hour battery life.',
-      participants: 31,
-      category: 'Electronics',
-      created: '2024-01-02',
-    },
-    {
-      id: 10,
-      name: 'Gaming Mouse Pad XL',
-      price: 29.99,
-      image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
-      description: 'Extra-large gaming mouse pad with smooth surface and anti-slip rubber base.',
-      participants: 18,
-      category: 'Gaming',
-      created: '2024-01-01',
-    },
-    {
-      id: 11,
-      name: 'Designer Succulent Planter',
-      price: 39.00,
-      image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
-      description: 'Modern ceramic planter set perfect for small succulents and desk decoration.',
-      participants: 12,
-      category: 'Home & Garden',
-      created: '2023-12-30',
-    },
-    {
-      id: 12,
-      name: 'Resistance Band Set',
-      price: 24.99,
-      image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
-      description: 'Complete resistance band set with multiple strength levels for home workouts.',
-      participants: 25,
-      category: 'Sports & Fitness',
-      created: '2023-12-29',
-    },
-  ];
+  const [groups, setGroups] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Categories for filtering
   const categories = ['All', 'Electronics', 'Appliances', 'Furniture', 'Food & Beverages', 'Gaming', 'Home & Garden', 'Sports & Fitness'];
 
-  // Join group handler
-  const handleJoinGroup = async (groupId: number, groupName: string) => {
-    setJoiningGroup(groupId);
+  // Fetch groups data on component mount
+  useEffect(() => {
+    const fetchGroups = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const groupsData = await apiService.getAllGroups();
+        setGroups(groupsData);
+      } catch (err) {
+        console.error('Failed to fetch groups:', err);
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchGroups();
+  }, []);
+
+  // View group handler - pass the full group data with view mode
+  const handleViewGroup = (group: any) => {
+    navigate(`/group/${group.id}`, { state: { group, mode: 'view' } });
+  };
+
+  // Join group handler - pass the full group data with join mode
+  const handleJoinGroup = async (group: any) => {
     try {
-      // TODO: Replace with actual API call to join group
-      // const response = await fetch(`/api/groups/${groupId}/join`, {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify({ quantity: 1 }) // Default quantity
-      // });
-      
-      // Simulate API call delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      setJoinSuccess(`Successfully joined "${groupName}"! Check My Groups to track progress.`);
-      setTimeout(() => setJoinSuccess(null), 5000);
-    } catch (error) {
-      console.error('Failed to join group:', error);
-      // TODO: Show error message
-    } finally {
-      setJoiningGroup(null);
+      // For now, just navigate to group details and show success message
+      // TODO: Implement actual join API call when backend endpoint is available
+      setJoinSuccess(`Successfully joined group! Redirecting to group details...`);
+      setTimeout(() => {
+        navigate(`/group/${group.id}`, { state: { group, mode: 'join' } });
+      }, 1500);
+    } catch (err) {
+      console.error('Failed to join group:', err);
+      setJoinSuccess(null);
+      // For now, still navigate on error
+      navigate(`/group/${group.id}`, { state: { group, mode: 'join' } });
     }
   };
 
-
-
   // Filtered and sorted groups
   const filteredAndSortedGroups = useMemo(() => {
-    let filtered = allGroups.filter(group => {
+    let filtered = groups.filter(group => {
       const matchesSearch = group.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                            group.description.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesCategory = selectedCategory === 'All' || group.category === selectedCategory;
@@ -190,7 +85,7 @@ export default function AllGroups() {
     });
 
     return filtered;
-  }, [allGroups, searchQuery, selectedCategory, sortBy]);
+  }, [groups, searchQuery, selectedCategory, sortBy]);
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -442,13 +337,41 @@ export default function AllGroups() {
 
           {/* Results Count */}
           <div className="mb-4">
-            <p className="text-sm text-gray-600">
-              Showing {filteredAndSortedGroups.length} of {allGroups.length} groups
-            </p>
+            {loading ? (
+              <p className="text-sm text-gray-600">Loading groups...</p>
+            ) : error ? (
+              <p className="text-sm text-red-600">Error loading groups</p>
+            ) : (
+              <p className="text-sm text-gray-600">
+                Showing {filteredAndSortedGroups.length} of {groups.length} groups
+              </p>
+            )}
           </div>
 
           {/* Groups Display */}
-          {filteredAndSortedGroups.length === 0 ? (
+          {loading ? (
+            <div className="text-center py-12">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">Loading groups...</h3>
+              <p className="text-gray-600">Fetching available group buy opportunities</p>
+            </div>
+          ) : error ? (
+            <div className="text-center py-12">
+              <div className="text-red-500 mb-4">
+                <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">Failed to load groups</h3>
+              <p className="text-gray-600 mb-4">{error}</p>
+              <button
+                onClick={() => window.location.reload()}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
+              >
+                Try Again
+              </button>
+            </div>
+          ) : filteredAndSortedGroups.length === 0 ? (
             <div className="text-center py-12">
               <div className="text-gray-400 mb-4">
                 <Search className="w-12 h-12 mx-auto" />
@@ -459,83 +382,49 @@ export default function AllGroups() {
           ) : viewMode === 'grid' ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {filteredAndSortedGroups.map((group) => (
-                <div key={group.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-lg hover:border-blue-300 transition-all duration-200 group">
+                <div key={group.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-lg transition-all duration-200">
                   {/* Product Image - Larger and more prominent */}
                   <div className="h-56 bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center relative">
-                    {group.image.startsWith('http') ? (
+                    {group.image && group.image.startsWith('http') ? (
                       <img src={group.image} alt={group.name} className="h-40 object-contain" />
                     ) : (
-                      <span className="text-7xl">{group.image}</span>
+                      <span className="text-7xl">📦</span>
                     )}
                     {/* Category badge on image */}
                     <div className="absolute top-3 left-3 bg-blue-600 text-white text-xs font-semibold px-3 py-1 rounded-full shadow-sm">
                       {group.category}
                     </div>
-                    {/* Discount badge for visual appeal */}
-                    <div className="absolute top-3 right-3 bg-green-500 text-white text-xs font-bold px-2 py-1 rounded-full shadow-sm">
-                      Save 30%
-                    </div>
                   </div>
 
-                  {/* Product Info - Clear hierarchy */}
+                  {/* Product Info - Simplified */}
                   <div className="p-5">
-                {/* Recommendation reason - kept for visual parity with recommendations */}
-                <div className="flex items-center gap-1.5 mb-2">
-                  <Zap className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />
-                  <p className="text-xs text-blue-600 font-medium">Popular in {group.category}</p>
-                </div>
-
-                <h3 className="text-lg font-semibold text-gray-900 mb-2 line-clamp-2 min-h-[3.5rem]">{group.name}</h3>
-                
-                {/* Price with visual emphasis */}
-                    <div className="mb-3">
-                      <div className="flex items-baseline gap-2">
-                        <span className="text-2xl font-bold text-blue-600">${group.price}</span>
-                        <span className="text-sm text-gray-400 line-through">${(group.price / 0.7).toFixed(2)}</span>
-                      </div>
-                      <p className="text-xs text-green-600 font-medium">Group Buy Price</p>
-                    </div>
+                    <h3 className="text-lg font-bold text-gray-900 mb-2 line-clamp-2 leading-tight">{group.name}</h3>
                     
-                    <p className="text-sm text-gray-600 mb-4 line-clamp-2">{group.description}</p>
-                    
-                    {/* Progress indicator - Clear feedback */}
-                    <div className="mb-4">
-                      <div className="flex items-center justify-between text-sm mb-1">
-                        <span className="flex items-center gap-1 text-gray-700">
-                          <Users className="w-4 h-4" />
-                          <span className="font-medium">{group.participants} joined</span>
-                        </span>
-                        <span className="text-gray-500">50 needed</span>
-                      </div>
-                      <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
-                        <div 
-                          className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                          style={{ width: `${(group.participants / 50) * 100}%` }}
-                          role="progressbar"
-                          aria-valuenow={group.participants}
-                          aria-valuemin={0}
-                          aria-valuemax={50}
-                        ></div>
+                    {/* Price and participants in one line */}
+                    <div className="flex items-center justify-between mb-4">
+                      <span className="text-2xl font-bold text-blue-600">${group.price}</span>
+                      <div className="flex items-center gap-1 text-sm text-gray-600 bg-gray-50 px-2 py-1 rounded-full">
+                        <Users className="w-4 h-4" />
+                        <span className="font-medium">{group.participants}</span>
                       </div>
                     </div>
 
-                    {/* Clear call-to-action (View + Join) */}
-                    <div className="flex gap-3">
+                    {/* Simplified buttons */}
+                    <div className="flex gap-2">
                       <button
-                        onClick={() => navigate(`/group/${group.id}`)}
-                        aria-label={`View details for ${group.name}`}
-                        className="py-3 px-4 text-sm font-medium rounded-lg border border-gray-200 text-gray-700 bg-white hover:bg-gray-50"
+                        onClick={() => handleViewGroup(group)}
+                        className="flex-1 py-3 text-sm font-semibold text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors flex items-center justify-center gap-1"
                       >
+                        <Eye className="w-4 h-4" />
                         View
                       </button>
-
-                      <button 
-                        onClick={() => handleJoinGroup(group.id, group.name)}
-                        className={`flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 active:bg-blue-800 transition-colors duration-150 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 shadow-sm ${joiningGroup === group.id ? 'opacity-60 cursor-not-allowed' : ''}`}
-                        aria-label={`Join ${group.name} group buy`}
-                        disabled={joiningGroup === group.id}
+                      <button
+                        onClick={() => handleJoinGroup(group)}
+                        className={`flex-1 py-3 text-sm font-semibold rounded-lg transition-colors ${
+                          'bg-blue-600 text-white hover:bg-blue-700'
+                        }`}
                       >
-                        {joiningGroup === group.id ? 'Joining...' : 'Join'}
+                        Join
                       </button>
                     </div>
                   </div>
@@ -545,83 +434,51 @@ export default function AllGroups() {
           ) : (
             <div className="space-y-3">
               {filteredAndSortedGroups.map((group) => (
-                <div key={group.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-lg hover:border-blue-300 transition-all duration-200">
+                <div key={group.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-lg transition-all duration-200">
                   <div className="flex">
                     {/* Product Image - Compact */}
-                    <div className="w-32 h-32 bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center relative flex-shrink-0">
-                      {group.image.startsWith('http') ? (
+                    <div className="w-32 h-32 bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center flex-shrink-0">
+                      {group.image && group.image.startsWith('http') ? (
                         <img src={group.image} alt={group.name} className="h-20 object-contain" />
                       ) : (
-                        <span className="text-4xl">{group.image}</span>
+                        <span className="text-4xl">📦</span>
                       )}
-                      {/* Category badge on image */}
-                      <div className="absolute top-2 left-2 bg-blue-600 text-white text-xs font-semibold px-2 py-1 rounded-full shadow-sm">
-                        {group.category}
-                      </div>
-                      {/* Discount badge for visual appeal */}
-                      <div className="absolute top-2 right-2 bg-green-500 text-white text-xs font-bold px-2 py-1 rounded-full shadow-sm">
-                        Save 30%
-                      </div>
                     </div>
 
                     {/* Product Info - Streamlined */}
                     <div className="flex-1 p-4">
                       <div className="flex items-start justify-between mb-2">
-                        <div className="flex-1">
+                        <div>
                           <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded-full mb-2 inline-block">
                             {group.category}
                           </span>
-                          <h3 className="text-lg font-semibold text-gray-900 mb-2 line-clamp-2 min-h-[3.5rem]">{group.name}</h3>
+                          <h3 className="text-lg font-bold text-gray-900 leading-tight">{group.name}</h3>
                         </div>
-                        <div className="text-right ml-4">
-                          <div className="flex items-baseline gap-2 mb-1">
-                            <span className="text-xl font-bold text-blue-600">${group.price}</span>
-                            <span className="text-sm text-gray-400 line-through">${(group.price / 0.7).toFixed(2)}</span>
-                          </div>
-                          <p className="text-xs text-green-600 font-medium">Group Buy Price</p>
-                        </div>
-                      </div>
-
-                      <p className="text-sm text-gray-600 mb-3 line-clamp-2">{group.description}</p>
-
-                      {/* Progress indicator - Clear feedback */}
-                      <div className="mb-3">
-                        <div className="flex items-center justify-between text-sm mb-1">
-                          <span className="flex items-center gap-1 text-gray-700">
+                        <div className="text-right">
+                          <span className="text-xl font-bold text-blue-600">${group.price}</span>
+                          <div className="flex items-center gap-1 text-sm text-gray-600 mt-1">
                             <Users className="w-4 h-4" />
-                            <span className="font-medium">{group.participants} joined</span>
-                          </span>
-                          <span className="text-gray-500">50 needed</span>
-                        </div>
-                        <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
-                          <div 
-                            className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                            style={{ width: `${(group.participants / 50) * 100}%` }}
-                            role="progressbar"
-                            aria-valuenow={group.participants}
-                            aria-valuemin={0}
-                            aria-valuemax={50}
-                          ></div>
+                            <span>{group.participants}</span>
+                          </div>
                         </div>
                       </div>
 
-                      {/* Clear call-to-action (View + Join) */}
-                      <div className="flex gap-3">
+                      {/* Simplified buttons */}
+                      <div className="flex gap-2 mt-3">
                         <button
-                          onClick={() => navigate(`/group/${group.id}`)}
-                          aria-label={`View details for ${group.name}`}
-                          className="py-3 px-4 text-sm font-medium rounded-lg border border-gray-200 text-gray-700 bg-white hover:bg-gray-50"
+                          onClick={() => handleViewGroup(group)}
+                          className="flex-1 py-2 text-sm font-semibold text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors flex items-center justify-center gap-1"
                         >
+                          <Eye className="w-4 h-4" />
                           View
                         </button>
-
-                        <button 
-                          onClick={() => handleJoinGroup(group.id, group.name)}
-                          className={`flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 active:bg-blue-800 transition-colors duration-150 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 shadow-sm ${joiningGroup === group.id ? 'opacity-60 cursor-not-allowed' : ''}`}
-                          aria-label={`Join ${group.name} group buy`}
-                          disabled={joiningGroup === group.id}
+                        <button
+                          onClick={() => handleJoinGroup(group)}
+                          className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-colors ${
+                            'bg-blue-600 text-white hover:bg-blue-700'
+                          }`}
                         >
-                          {joiningGroup === group.id ? 'Joining...' : 'Join'}
+                          Join
                         </button>
                       </div>
                     </div>

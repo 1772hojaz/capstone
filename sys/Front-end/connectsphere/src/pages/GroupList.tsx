@@ -1,28 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  Search, 
-  MapPin, 
-  User, 
-  X, 
-  Eye, 
-  Clock, 
-  Users, 
-  DollarSign, 
-  AlertTriangle,
-  Calendar,
-  ArrowUpRight,
-  ShoppingBag,
-  ChevronRight,
-  CheckCircle2,
-  Loader2,
-  HelpCircle,
-  LifeBuoy,
-  Phone,
-  QrCode,
-  LineChart,
-  Package
-} from 'lucide-react';
+import { Search, MapPin, User, X, Eye } from 'lucide-react';
+import apiService from '../services/api';
 
 export default function GroupList() {
   const navigate = useNavigate();
@@ -31,199 +10,60 @@ export default function GroupList() {
   const [selectedQRGroup, setSelectedQRGroup] = useState<any>(null);
   const [showGroupDetails, setShowGroupDetails] = useState(false);
   const [selectedGroupDetails, setSelectedGroupDetails] = useState<any>(null);
+  const [updatingQuantity, setUpdatingQuantity] = useState(false);
+  const [newQuantity, setNewQuantity] = useState<number>(1);
+  const [activeGroups, setActiveGroups] = useState<any[]>([]);
+  const [pastGroupsSummary, setPastGroupsSummary] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const activeGroups = [
-    {
-      id: 1,
-      name: 'Premium Coffee Beans (Brazil)',
-      status: 'ready_for_pickup',
-      progress: '10/10',
-      dueDate: '2024-01-15',
-      description: 'High-quality Brazilian coffee beans sourced from sustainable farms. Perfect for espresso and drip coffee.',
-      price: '$45.00',
-      members: 3,
-      targetMembers: 10,
-      savings: '$12.00 per member',
-      pickupLocation: 'Harare Central Branch',
-      orderStatus: 'Waiting for more participants'
-    },
-    {
-      id: 2,
-      name: 'Smart LED Light Strips',
-      status: 'active',
-      progress: '8/20',
-      dueDate: '2024-07-20',
-      description: 'RGB LED light strips with smart home integration. Control via app or voice commands.',
-      price: '$28.99',
-      members: 8,
-      targetMembers: 20,
-      savings: '$8.00 per member',
-      pickupLocation: 'Harare Central Branch',
-      orderStatus: 'Group active - more participants welcome'
-    },
-    {
-      id: 3,
-      name: 'High-Speed USB-C Hub',
-      status: 'payment_pending',
-      progress: '12/12',
-      dueDate: '2024-07-01',
-      description: 'Multi-port USB-C hub with HDMI, USB 3.0, and power delivery. Ideal for laptops and tablets.',
-      price: '$35.00',
-      members: 12,
-      targetMembers: 12,
-      savings: '$15.00 per member',
-      pickupLocation: 'Harare Central Branch',
-      orderStatus: 'Payment required - complete to proceed'
-    },
-    {
-      id: 4,
-      name: 'Organic Snack Variety Pack',
-      status: 'processing',
-      progress: '15/15',
-      dueDate: '2024-01-18',
-      description: 'Assorted organic snacks including nuts, dried fruits, and healthy bars. Perfect for office or home.',
-      price: '$32.50',
-      members: 15,
-      targetMembers: 15,
-      savings: '$10.50 per member',
-      pickupLocation: 'Harare Central Branch',
-      orderStatus: 'Order confirmed - being prepared'
-    },
-    {
-      id: 5,
-      name: 'Noise-Cancelling Headphones',
-      status: 'ready_for_pickup',
-      progress: '25/25',
-      dueDate: '2024-08-30',
-      description: 'Premium wireless headphones with active noise cancellation and 30-hour battery life.',
-      price: '$149.99',
-      members: 25,
-      targetMembers: 25,
-      savings: '$50.00 per member',
-      pickupLocation: 'Harare Central Branch',
-      orderStatus: 'Ready for pickup - show QR code at branch'
-    },
-    {
-      id: 6,
-      name: 'Solar Power Bank Bundle',
-      status: 'ready_for_pickup',
-      progress: '15/15',
-      dueDate: '2024-08-25',
-      description: 'High-capacity solar power banks with fast charging capability and multiple ports. Perfect for outdoor activities.',
-      price: '$89.99',
-      members: 15,
-      targetMembers: 15,
-      savings: '$30.00 per member',
-      pickupLocation: 'Harare Central Branch',
-      orderStatus: 'Ready for pickup - show QR code at branch'
-    },
-    {
-      id: 7,
-      name: 'Smart Home Security Kit',
-      status: 'ready_for_pickup',
-      progress: '20/20',
-      dueDate: '2024-08-28',
-      description: 'Complete home security system with cameras, sensors, and smart notifications. Easy DIY installation.',
-      price: '$199.99',
-      members: 20,
-      targetMembers: 20,
-      savings: '$45.00 per member',
-      pickupLocation: 'Harare Central Branch',
-      orderStatus: 'Ready for pickup - show QR code at branch'
-    },
-    {
-      id: 8,
-      name: 'Premium Yoga Set Collection',
-      status: 'forming',
-      progress: '5/25',
-      dueDate: '2024-09-15',
-      description: 'High-quality yoga mats, blocks, straps, and carrying bags. Perfect for both beginners and experienced practitioners.',
-      price: '$75.00',
-      members: 5,
-      targetMembers: 25,
-      savings: '$25.00 per member',
-      pickupLocation: 'Harare Central Branch',
-      orderStatus: 'Waiting for more participants'
-    },
-    {
-      id: 9,
-      name: 'Gourmet Spice Collection',
-      status: 'active',
-      progress: '12/30',
-      dueDate: '2024-09-20',
-      description: 'Premium spice collection from around the world, including rare and exotic varieties. Perfect for cooking enthusiasts.',
-      price: '$65.00',
-      members: 12,
-      targetMembers: 30,
-      savings: '$20.00 per member',
-      pickupLocation: 'Harare Central Branch',
-      orderStatus: 'Group active - more participants welcome'
-    },
-    {
-      id: 10,
-      name: 'Smart Watch Series X',
-      status: 'payment_pending',
-      progress: '18/18',
-      dueDate: '2024-09-25',
-      description: 'Latest smartwatch with health monitoring, GPS, and extended battery life. Compatible with all smartphones.',
-      price: '$199.99',
-      members: 18,
-      targetMembers: 18,
-      savings: '$50.00 per member',
-      pickupLocation: 'Harare Central Branch',
-      orderStatus: 'Payment required - complete to proceed'
-    },
-    {
-      id: 11,
-      name: 'Professional Camera Lens Kit',
-      status: 'ready_for_pickup',
-      progress: '12/12',
-      dueDate: '2024-09-30',
-      description: 'Professional-grade camera lenses including wide-angle, telephoto, and macro options. Compatible with major brands.',
-      price: '$499.99',
-      members: 12,
-      targetMembers: 12,
-      savings: '$100.00 per member',
-      pickupLocation: 'Harare Central Branch',
-      orderStatus: 'Ready for pickup - show QR code at branch'
-    },
-    {
-      id: 12,
-      name: 'Premium Kitchen Knife Set',
-      status: 'processing',
-      progress: '20/20',
-      dueDate: '2024-10-05',
-      description: 'Professional chef-quality knife set with Japanese steel. Includes knife block and sharpening tools.',
-      price: '$299.99',
-      members: 20,
-      targetMembers: 20,
-      savings: '$75.00 per member',
-      pickupLocation: 'Harare Central Branch',
-      orderStatus: 'Order confirmed - being prepared'
-    },
-    {
-      id: 13,
-      name: 'Outdoor Camping Package',
-      status: 'forming',
-      progress: '8/25',
-      dueDate: '2024-10-10',
-      description: '4-person tent, sleeping bags, camping stove, and essential outdoor gear. Perfect for family adventures.',
-      price: '$249.99',
-      members: 8,
-      targetMembers: 25,
-      savings: '$60.00 per member',
-      pickupLocation: 'Harare Central Branch',
-      orderStatus: 'Waiting for more participants'
+  // Fetch user's groups and past groups summary on component mount
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        // Fetch user's groups and past groups summary in parallel
+        const [groupsResponse, summaryResponse] = await Promise.all([
+          apiService.getMyGroups(),
+          apiService.getPastGroupsSummary()
+        ]);
+
+        setActiveGroups(groupsResponse);
+        setPastGroupsSummary(summaryResponse);
+      } catch (err) {
+        console.error('Failed to fetch data:', err);
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  const handleShowQRCode = async (group: any) => {
+    try {
+      // Fetch QR code data from API
+      const qrData = await apiService.getGroupQRCode(group.id);
+      setSelectedQRGroup({
+        ...group,
+        qrCode: qrData.qr_code, // Base64 encoded QR code image
+        qrData: qrData // Additional QR data if needed
+      });
+      setShowQRCode(true);
+    } catch (err) {
+      console.error('Failed to fetch QR code:', err);
+      // For now, still show the modal with placeholder
+      setSelectedQRGroup(group);
+      setShowQRCode(true);
     }
-  ];
-
-  const handleShowQRCode = (group: any) => {
-    setSelectedQRGroup(group);
-    setShowQRCode(true);
   };
 
   const handleViewGroupDetails = (group: any) => {
     setSelectedGroupDetails(group);
+    setNewQuantity(group.quantity || 1); // Initialize with current quantity
     setShowGroupDetails(true);
   };
 
@@ -235,6 +75,34 @@ export default function GroupList() {
   const closeGroupDetailsModal = () => {
     setShowGroupDetails(false);
     setSelectedGroupDetails(null);
+  };
+
+  const handleUpdateQuantity = async () => {
+    if (!selectedGroupDetails || newQuantity <= 0) return;
+
+    try {
+      setUpdatingQuantity(true);
+      await apiService.updateContribution(selectedGroupDetails.id, newQuantity);
+      
+      // Refresh the groups data
+      const [groupsResponse] = await Promise.all([
+        apiService.getMyGroups()
+      ]);
+      setActiveGroups(groupsResponse);
+      
+      // Update the selected group details with new quantity
+      setSelectedGroupDetails({
+        ...selectedGroupDetails,
+        // The quantity will be reflected in the refreshed data
+      });
+      
+      alert('Quantity updated successfully!');
+    } catch (err) {
+      console.error('Failed to update quantity:', err);
+      alert('Failed to update quantity. Please try again.');
+    } finally {
+      setUpdatingQuantity(false);
+    }
   };
 
   return (
@@ -353,91 +221,81 @@ export default function GroupList() {
       </div>
 
       {/* Main Content - Responsive */}
-      <main className="flex-1 px-3 sm:px-6 py-6 sm:py-10">
-        <div className="max-w-7xl mx-auto space-y-10">
-          {/* Page Title */}
-          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-2">
-            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900">My Groups</h1>
-            <div className="flex items-center gap-1 bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-xs sm:text-sm font-medium w-fit">
-              <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              <span>Your Group Activity</span>
-            </div>
-          </div>
-          
+      <main className="flex-1 px-3 sm:px-6 py-4 sm:py-8">
+        <div className="max-w-7xl mx-auto space-y-6">
           {/* Two Column Layout for Ready for Collection and My Active Groups */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Ready for Collection Section */}
-            <div className="bg-white rounded-xl shadow-lg border border-gray-200 transition-all duration-300 hover:shadow-xl transform hover:-translate-y-1">
-              <div className="p-6 sm:p-8 border-b border-gray-200 bg-gradient-to-r from-green-50 via-emerald-50 to-teal-50">
-                <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 flex items-center gap-2">
-                  <CheckCircle2 className="w-7 h-7 text-green-600" />
-                  Ready for Collection
-                </h2>
-                <p className="text-sm text-gray-600 mt-2 ml-9">Groups that are ready for pickup at your selected location</p>
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 max-h-[400px] overflow-y-auto overflow-x-hidden">
+              <div className="p-4 sm:p-6 border-b border-gray-200 sticky top-0 bg-white z-10">
+                <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Ready for Collection</h2>
+                <p className="text-sm text-gray-600 mt-1">Groups that are ready for pickup at your selected location</p>
               </div>
               
-              <div className="p-6 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 300px)' }}>
-                {activeGroups.filter(group => group.status === 'ready_for_pickup').length === 0 ? (
-                  <div className="text-center py-12">
-                    <div className="text-gray-400 mb-6 bg-gray-50 w-24 h-24 rounded-full flex items-center justify-center mx-auto">
-                      <ShoppingBag className="w-12 h-12" />
+              <div className="p-4 sm:p-6">
+                {loading ? (
+                  <div className="text-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600 mx-auto"></div>
+                    <h3 className="text-lg font-medium text-gray-900 mt-4">Loading ready for collection...</h3>
+                    <p className="text-gray-600">Checking for groups ready for pickup</p>
+                  </div>
+                ) : error ? (
+                  <div className="text-center py-8">
+                    <div className="text-red-500 mb-4">
+                      <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
                     </div>
-                    <h3 className="text-xl font-semibold text-gray-900 mb-3">No groups ready for collection</h3>
-                    <p className="text-gray-600 max-w-sm mx-auto">Groups will appear here when they're ready for pickup at your location</p>
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">Failed to load groups</h3>
+                    <p className="text-gray-600">{error}</p>
+                  </div>
+                ) : activeGroups.filter(group => group.status === 'ready_for_pickup').length === 0 ? (
+                  <div className="text-center py-8">
+                    <div className="text-gray-400 mb-4">
+                      <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                      </svg>
+                    </div>
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">No groups ready for collection</h3>
+                    <p className="text-gray-600">Groups will appear here when they're ready for pickup</p>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 gap-6">
+                  <div className="grid grid-cols-1 gap-4">
                     {activeGroups.filter(group => group.status === 'ready_for_pickup').map((group) => (
-                      <div key={group.id} className="bg-gradient-to-br from-green-50 via-emerald-50 to-blue-50 border border-green-200 rounded-xl p-6 hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1 group">
-                        <div className="flex items-start justify-between mb-4">
+                      <div key={group.id} className="bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded-lg p-4 hover:shadow-md transition">
+                        <div className="flex items-start justify-between mb-3">
                           <div className="flex-1">
-                            <div className="flex items-center gap-3 mb-3">
-                              <div className="p-2 bg-white rounded-lg shadow-sm">
-                                <ShoppingBag className="w-5 h-5 text-green-600" />
-                              </div>
-                              <div>
-                                <h3 className="text-lg font-semibold text-gray-900 group-hover:text-green-700 transition-colors">{group.name}</h3>
-                                <div className="flex items-center gap-2 mt-1">
-                                  <span className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-full bg-green-100 text-green-700 border border-green-200">
-                                    <CheckCircle2 className="w-3.5 h-3.5" />
-                                    Ready for Pickup
-                                  </span>
-                                </div>
-                              </div>
+                            <h3 className="font-semibold text-gray-900 mb-1">{group.name}</h3>
+                            <p className="text-sm text-gray-600 mb-2 line-clamp-2">{group.description}</p>
+                            <div className="flex items-center gap-4 text-sm text-gray-600">
+                              <span className="flex items-center gap-1">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                                {group.pickupLocation}
+                              </span>
                             </div>
-                            <div className="grid grid-cols-3 gap-6 mt-4">
-                              <div className="bg-white p-4 rounded-lg shadow-sm">
-                                <p className="text-sm text-gray-500 mb-1">Location</p>
-                                <div className="flex items-center gap-2">
-                                  <MapPin className="w-4 h-4 text-gray-600" />
-                                  <p className="text-sm font-medium text-gray-900">{group.pickupLocation}</p>
-                                </div>
-                              </div>
-                              <div className="bg-white p-4 rounded-lg shadow-sm">
-                                <p className="text-sm text-gray-500 mb-1">Total Items</p>
-                                <div className="flex items-center gap-2">
-                                  <Package className="w-4 h-4 text-gray-600" />
-                                  <p className="text-sm font-medium text-gray-900">3 items</p>
-                                </div>
-                              </div>
-                              <div className="bg-white p-4 rounded-lg shadow-sm">
-                                <p className="text-sm text-gray-500 mb-1">Price</p>
-                                <div className="flex items-center gap-2">
-                                  <DollarSign className="w-4 h-4 text-gray-600" />
-                                  <p className="text-sm font-medium text-gray-900">{group.price}</p>
-                                </div>
-                              </div>
-                            </div>
+                          </div>
+                          <div className="flex-shrink-0 ml-4">
+                            <span className="inline-flex px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-700">
+                              Ready for Pickup
+                            </span>
                           </div>
                         </div>
                         
-                        <div className="flex justify-between items-center mt-6 pt-4 border-t border-gray-100">
-                          <button 
+                        <div className="flex items-center justify-between">
+                          <div className="text-sm text-gray-600">
+                            <span className="font-medium text-gray-900">{group.price}</span> per person
+                          </div>
+                          <button
                             onClick={() => handleShowQRCode(group)}
-                            className="flex-1 bg-gradient-to-r from-green-600 to-emerald-600 text-white px-6 py-3 rounded-xl hover:shadow-lg hover:from-green-700 hover:to-emerald-700 transition-all duration-300 font-medium flex items-center justify-center gap-2"
+                            className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition font-medium flex items-center gap-2"
                           >
-                            <QrCode className="w-5 h-5" />
-                            Show QR Code for Pickup
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M12 12l3-3m-3 3l-3-3m-3 6h2.01M12 12l-3 3m3-3l3 3M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            Show QR Code
                           </button>
                         </div>
                       </div>
@@ -448,155 +306,149 @@ export default function GroupList() {
             </div>
 
             {/* My Active Groups Section */}
-            <div className="bg-white rounded-xl shadow-lg border border-gray-200 transition-all duration-300 hover:shadow-xl transform hover:-translate-y-1">
-              <div className="p-6 sm:p-8 border-b border-gray-200 sticky top-0 bg-gradient-to-r from-blue-50 via-indigo-50 to-violet-50 z-10 backdrop-blur-sm backdrop-filter">
-                <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 flex items-center gap-3">
-                  <div className="p-2 bg-blue-100 rounded-lg">
-                    <Users className="w-7 h-7 text-blue-600" />
-                  </div>
-                  My Active Groups
-                </h2>
-                <p className="text-sm text-gray-600 mt-3">Groups you've joined that are currently active</p>
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 max-h-[700px] overflow-y-auto overflow-x-hidden scrollable-container">
+              <div className="p-4 sm:p-6 border-b border-gray-200 sticky top-0 bg-white z-10">
+                <h2 className="text-xl sm:text-2xl font-bold text-gray-900">My Active Groups</h2>
+                <p className="text-sm text-gray-600 mt-1">Groups you've joined that are currently active</p>
               </div>
               
               {/* My Active Groups - Responsive Table */}
-              <div className="p-6">
-                <div className="rounded-xl border border-gray-200 overflow-hidden">
-                  <div>
-                    {/* Header - Fixed */}
-                    <div className="sticky top-0 bg-gradient-to-r from-gray-50 to-gray-100 border-b border-gray-200">
-                      <div className="grid grid-cols-12 gap-2 px-3 py-3">
-                        <div className="col-span-3 text-xs font-semibold text-gray-600 uppercase">Group Name</div>
-                        <div className="col-span-2 text-xs font-semibold text-gray-600 uppercase">Status</div>
-                        <div className="col-span-3 text-xs font-semibold text-gray-600 uppercase">Progress</div>
-                        <div className="col-span-2 text-xs font-semibold text-gray-600 uppercase">Due Date</div>
-                        <div className="col-span-2 text-xs font-semibold text-gray-600 uppercase">Actions</div>
-                      </div>
+              <div className="p-4 sm:p-6">
+                {loading ? (
+                  <div className="text-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                    <h3 className="text-lg font-medium text-gray-900 mt-4">Loading your active groups...</h3>
+                    <p className="text-gray-600">Fetching your group participation data</p>
+                  </div>
+                ) : error ? (
+                  <div className="text-center py-8">
+                    <div className="text-red-500 mb-4">
+                      <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
                     </div>
-                    {/* Body - Scrollable */}
-                    <div className="overflow-y-auto overflow-x-hidden" style={{ maxHeight: 'calc(100vh - 300px)' }}>
-                      <div className="divide-y divide-gray-200">
-                        {activeGroups.filter(group => group.status !== 'ready_for_pickup').map((group) => (
-                          <div key={group.id} className="grid grid-cols-12 gap-2 px-3 py-4 hover:bg-gray-50 transition-colors duration-150">
-                            <div className="col-span-3">
-                              <div className="flex flex-col min-w-0">
-                                <span className="font-medium text-gray-900 truncate">{group.name}</span>
-                                <span className="text-xs text-gray-500 mt-1 truncate">{group.description}</span>
-                              </div>
-                            </div>
-                            <div className="col-span-2">
-                              <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full items-center gap-1 ${
-                                group.status === 'forming' ? 'bg-blue-100 text-blue-700 border border-blue-200' :
-                                group.status === 'active' ? 'bg-green-100 text-green-700 border border-green-200' :
-                                group.status === 'payment_pending' ? 'bg-yellow-100 text-yellow-700 border border-yellow-200' :
-                                group.status === 'processing' ? 'bg-purple-100 text-purple-700 border border-purple-200' :
-                                group.status === 'ready_for_pickup' ? 'bg-orange-100 text-orange-700 border border-orange-200' :
-                                group.status === 'completed' ? 'bg-blue-100 text-blue-700 border border-blue-200' :
-                                'bg-red-100 text-red-700 border border-red-200'
-                              }`}>
-                                {group.status === 'forming' && <Users className="w-3 h-3" />}
-                                {group.status === 'active' && <CheckCircle2 className="w-3 h-3" />}
-                                {group.status === 'payment_pending' && <DollarSign className="w-3 h-3" />}
-                                {group.status === 'processing' && <Loader2 className="w-3 h-3" />}
-                                {group.status === 'ready_for_pickup' && <ShoppingBag className="w-3 h-3" />}
-                                {group.status === 'completed' && <CheckCircle2 className="w-3 h-3" />}
-                                {group.status === 'forming' ? 'Forming Group' :
-                                 group.status === 'active' ? 'Active' :
-                                 group.status === 'payment_pending' ? 'Payment Due' :
-                                 group.status === 'processing' ? 'Processing' :
-                                 group.status === 'ready_for_pickup' ? 'Ready for Pickup' :
-                                 group.status === 'completed' ? 'Completed' :
-                                 'Cancelled'}
-                              </span>
-                            </div>
-                            <div className="col-span-3">
-                              <div className="flex items-center">
-                                <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
-                                  <div 
-                                    className="h-full bg-blue-600 rounded-full transition-all duration-500"
-                                    style={{ 
-                                      width: `${(parseInt(group.progress.split('/')[0]) / parseInt(group.progress.split('/')[1])) * 100}%` 
-                                    }}
-                                  ></div>
-                                </div>
-                                <span className="ml-3 text-sm text-gray-600">{group.progress}</span>
-                              </div>
-                            </div>
-                            <div className="col-span-2">
-                              <div className="flex items-center gap-2">
-                                <Calendar className="w-4 h-4 text-gray-400" />
-                                <span className="text-sm text-gray-700">{group.dueDate}</span>
-                              </div>
-                            </div>
-                            <div className="col-span-2">
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">Failed to load groups</h3>
+                    <p className="text-gray-600">{error}</p>
+                  </div>
+                ) : activeGroups.filter(group => group.status !== 'ready_for_pickup').length === 0 ? (
+                  <div className="text-center py-8">
+                    <div className="text-gray-400 mb-4">
+                      <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                      </svg>
+                    </div>
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">No active groups</h3>
+                    <p className="text-gray-600">You haven't joined any active groups yet</p>
+                  </div>
+                ) : (
+                  <div>
+                    <table className="w-full">
+                    <thead className="bg-gray-50 border-b border-gray-200 sticky top-[73px] z-10">
+                      <tr>
+                        <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50">Group Name</th>
+                        <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50">Status</th>
+                        <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50">Progress</th>
+                        <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50">Due Date</th>
+                        <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {activeGroups.filter(group => group.status !== 'ready_for_pickup').map((group) => (
+                        <tr key={group.id} className="hover:bg-gray-50">
+                          <td className="px-3 sm:px-6 py-3 sm:py-4 text-sm text-gray-900">{group.name}</td>
+                          <td className="px-3 sm:px-6 py-3 sm:py-4">
+                            <span className={`inline-flex px-2 sm:px-2.5 py-0.5 sm:py-1 text-xs font-medium rounded-full ${
+                              group.status === 'forming' ? 'bg-blue-100 text-blue-700' :
+                              group.status === 'active' ? 'bg-green-100 text-green-700' :
+                              group.status === 'payment_pending' ? 'bg-yellow-100 text-yellow-700' :
+                              group.status === 'processing' ? 'bg-purple-100 text-purple-700' :
+                              group.status === 'ready_for_pickup' ? 'bg-orange-100 text-orange-700' :
+                              group.status === 'completed' ? 'bg-blue-100 text-blue-700' :
+                              'bg-red-100 text-red-700'
+                            }`}>
+                              {group.status === 'forming' ? 'Forming Group' :
+                               group.status === 'active' ? 'Active' :
+                               group.status === 'payment_pending' ? 'Payment Due' :
+                               group.status === 'processing' ? 'Processing' :
+                               group.status === 'ready_for_pickup' ? 'Ready for Pickup' :
+                               group.status === 'completed' ? 'Completed' :
+                               'Cancelled'}
+                            </span>
+                          </td>
+                          <td className="px-3 sm:px-6 py-3 sm:py-4 text-sm text-gray-700">{group.progress}</td>
+                          <td className="px-3 sm:px-6 py-3 sm:py-4 text-sm text-gray-700">{group.dueDate}</td>
+                          <td className="px-3 sm:px-6 py-3 sm:py-4">
+                            <div className="flex gap-2">
                               <button
                                 onClick={() => handleViewGroupDetails(group)}
-                                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-all duration-200"
+                                className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 bg-blue-50 rounded-md hover:bg-blue-100 transition"
                               >
-                                <Eye className="w-3.5 h-3.5" />
-                                Details
+                                <Eye className="w-3 h-3" />
+                                View Group
                               </button>
                             </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                   </div>
-                </div>
+                )}
               </div>
             </div>
           </div>
 
           {/* Past Groups - Full Width Below */}
-
-          {/* Past Groups - Full Width Below */}
-          <div className="bg-white rounded-xl shadow-lg border border-gray-200 transition-all duration-300 hover:shadow-xl">
-            <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-indigo-50 to-purple-50">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-                    <Clock className="w-7 h-7 text-indigo-600" />
-                    Past Groups
-                  </h3>
-                  <p className="text-sm text-gray-600 mt-2 ml-9">Summary of your completed admin-created group buys.</p>
-                </div>
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200 px-4 py-2">
-                  <span className="text-xs text-gray-500 block">All Time Savings</span>
-                  <span className="text-2xl font-bold text-green-600">$1,250.00</span>
-                </div>
-              </div>
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+            <div className="p-4 sm:p-6 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900">Past Groups</h3>
+              <p className="text-sm text-gray-600 mt-1">Summary of your completed admin-created group buys.</p>
             </div>
-            <div className="p-6 grid grid-cols-1 sm:grid-cols-3 gap-6">
-              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-4 border border-blue-100">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm text-gray-600">Completed Groups</span>
-                  <CheckCircle2 className="w-5 h-5 text-blue-600" />
+            <div className="p-4 sm:p-6 space-y-3">
+              {loading ? (
+                <div className="text-center py-4">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                  <p className="text-sm text-gray-600 mt-2">Loading past groups summary...</p>
                 </div>
-                <div className="flex items-baseline">
-                  <span className="text-3xl font-bold text-gray-900">32</span>
-                  <span className="text-sm text-gray-500 ml-2">groups</span>
+              ) : error ? (
+                <div className="text-center py-4">
+                  <p className="text-sm text-red-600">Failed to load past groups summary</p>
                 </div>
-              </div>
-              <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg p-4 border border-green-100">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm text-gray-600">Success Rate</span>
-                  <LineChart className="w-5 h-5 text-green-600" />
-                </div>
-                <div className="flex items-baseline">
-                  <span className="text-3xl font-bold text-gray-900">92</span>
-                  <span className="text-sm text-gray-500 ml-2">%</span>
-                </div>
-              </div>
-              <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-lg p-4 border border-purple-100">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm text-gray-600">Avg. Savings/Group</span>
-                  <DollarSign className="w-5 h-5 text-purple-600" />
-                </div>
-                <div className="flex items-baseline">
-                  <span className="text-3xl font-bold text-gray-900">39</span>
-                  <span className="text-sm text-gray-500 ml-2">USD</span>
-                </div>
-              </div>
+              ) : pastGroupsSummary ? (
+                <>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Completed Groups:</span>
+                    <span className="font-semibold text-gray-900">{pastGroupsSummary.completed_groups || 0}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Total Savings:</span>
+                    <span className="font-semibold text-gray-900">${pastGroupsSummary.all_time_savings?.toFixed(2) || '0.00'}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Success Rate:</span>
+                    <span className="font-semibold text-gray-900">{pastGroupsSummary.success_rate ? `${(pastGroupsSummary.success_rate * 100).toFixed(1)}%` : '0%'}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Avg Savings per Group:</span>
+                    <span className="font-semibold text-gray-900">${pastGroupsSummary.avg_savings_per_group?.toFixed(2) || '0.00'}</span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Completed Groups:</span>
+                    <span className="font-semibold text-gray-900">0</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Total Savings:</span>
+                    <span className="font-semibold text-gray-900">$0.00</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Success Rate:</span>
+                    <span className="font-semibold text-gray-900">0%</span>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -606,20 +458,31 @@ export default function GroupList() {
       <footer className="bg-white border-t border-gray-200 mt-auto">
         <div className="px-3 sm:px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-4 sm:gap-0 text-sm text-gray-600">
           <div className="flex gap-4 sm:gap-6">
-            <button className="hover:text-gray-900 flex items-center gap-1.5">
-              <HelpCircle className="w-4 h-4" />
-              <span>Help</span>
-            </button>
-            <button className="hover:text-gray-900 flex items-center gap-1.5">
-              <LifeBuoy className="w-4 h-4" />
-              <span>Support</span>
-            </button>
-            <button className="hover:text-gray-900 flex items-center gap-1.5">
-              <Phone className="w-4 h-4" />
-              <span>Contact</span>
-            </button>
+            <button className="hover:text-gray-900">Product</button>
+            <button className="hover:text-gray-900">Resources</button>
+            <button className="hover:text-gray-900">Company</button>
           </div>
           <div className="flex items-center gap-4">
+            <button className="hover:text-gray-900">
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+              </svg>
+            </button>
+            <button className="hover:text-gray-900">
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M23.953 4.57a10 10 0 01-2.825.775 4.958 4.958 0 002.163-2.723c-.951.555-2.005.959-3.127 1.184a4.92 4.92 0 00-8.384 4.482C7.69 8.095 4.067 6.13 1.64 3.162a4.822 4.822 0 00-.666 2.475c0 1.71.87 3.213 2.188 4.096a4.904 4.904 0 01-2.228-.616v.06a4.923 4.923 0 003.946 4.827 4.996 4.996 0 01-2.212.085 4.936 4.936 0 004.604 3.417 9.867 9.867 0 01-6.102 2.105c-.39 0-.779-.023-1.17-.067a13.995 13.995 0 007.557 2.209c9.053 0 13.998-7.496 13.998-13.985 0-.21 0-.42-.015-.63A9.935 9.935 0 0024 4.59z"/>
+              </svg>
+            </button>
+            <button className="hover:text-gray-900">
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 0C8.74 0 8.333.015 7.053.072 5.775.132 4.905.333 4.14.63c-.789.306-1.459.717-2.126 1.384S.935 3.35.63 4.14C.333 4.905.131 5.775.072 7.053.012 8.333 0 8.74 0 12s.015 3.667.072 4.947c.06 1.277.261 2.148.558 2.913.306.788.717 1.459 1.384 2.126.667.666 1.336 1.079 2.126 1.384.766.296 1.636.499 2.913.558C8.333 23.988 8.74 24 12 24s3.667-.015 4.947-.072c1.277-.06 2.148-.262 2.913-.558.788-.306 1.459-.718 2.126-1.384.666-.667 1.079-1.335 1.384-2.126.296-.765.499-1.636.558-2.913.06-1.28.072-1.687.072-4.947s-.015-3.667-.072-4.947c-.06-1.277-.262-2.149-.558-2.913-.306-.789-.718-1.459-1.384-2.126C21.319 1.347 20.651.935 19.86.63c-.765-.297-1.636-.499-2.913-.558C15.667.012 15.26 0 12 0zm0 2.16c3.203 0 3.585.016 4.85.071 1.17.055 1.805.249 2.227.415.562.217.96.477 1.382.896.419.42.679.819.896 1.381.164.422.36 1.057.413 2.227.057 1.266.07 1.646.07 4.85s-.015 3.585-.074 4.85c-.061 1.17-.256 1.805-.421 2.227-.224.562-.479.96-.899 1.382-.419.419-.824.679-1.38.896-.42.164-1.065.36-2.235.413-1.274.057-1.649.07-4.859.07-3.211 0-3.586-.015-4.859-.074-1.171-.061-1.816-.256-2.236-.421-.569-.224-.96-.479-1.379-.899-.421-.419-.69-.824-.9-1.38-.165-.42-.359-1.065-.42-2.235-.045-1.26-.061-1.649-.061-4.844 0-3.196.016-3.586.061-4.861.061-1.17.255-1.814.42-2.234.21-.57.479-.96.9-1.381.419-.419.81-.689 1.379-.898.42-.166 1.051-.361 2.221-.421 1.275-.045 1.65-.06 4.859-.06l.045.03zm0 3.678c-3.405 0-6.162 2.76-6.162 6.162 0 3.405 2.76 6.162 6.162 6.162 3.405 0 6.162-2.76 6.162-6.162 0-3.405-2.76-6.162-6.162-6.162zM12 16c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4-1.79 4-4 4zm7.846-10.405c0 .795-.646 1.44-1.44 1.44-.795 0-1.44-.646-1.44-1.44 0-.794.646-1.439 1.44-1.439.793-.001 1.44.645 1.44 1.439z"/>
+              </svg>
+            </button>
+            <button className="hover:text-gray-900">
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
+              </svg>
+            </button>
           </div>
         </div>
       </footer>
@@ -627,15 +490,15 @@ export default function GroupList() {
       {/* QR Code Modal */}
       {showQRCode && selectedQRGroup && (
         <div 
-          className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-start sm:items-center justify-center z-50 p-4 overflow-auto"
+          className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
           onClick={closeQRCodeModal}
         >
           <div 
-            className="bg-white rounded-lg shadow-xl max-w-full sm:max-w-md w-full max-h-[calc(100vh-3.5rem)] sm:max-h-[calc(100vh-4rem)] overflow-y-auto"
+            className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Modal Header */}
-            <div className="bg-gradient-to-r from-green-600 to-green-700 p-6 text-white relative">
+            {/* Modal Header - Fixed at top */}
+            <div className="bg-gradient-to-r from-green-600 to-green-700 p-6 text-white relative flex-shrink-0">
               <button
                 onClick={closeQRCodeModal}
                 className="absolute top-4 right-4 text-white hover:bg-white hover:bg-opacity-20 rounded-lg p-1 transition"
@@ -648,18 +511,27 @@ export default function GroupList() {
               </div>
             </div>
 
-            {/* QR Code Display */}
-            <div className="p-6 space-y-4">
+            {/* Scrollable Content */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
               <div className="bg-gray-50 border-2 border-dashed border-gray-300 rounded-lg p-8 flex items-center justify-center">
                 <div className="text-center">
-                  {/* Placeholder QR Code - in real app this would be generated */}
-                  <div className="w-40 h-40 sm:w-48 sm:h-48 md:w-56 md:h-56 bg-white border-2 border-gray-200 rounded-lg flex items-center justify-center mx-auto mb-4">
-                    <div className="text-center text-gray-400">
-                      <div className="text-6xl mb-2">📱</div>
-                      <div className="text-sm">QR Code</div>
-                      <div className="text-xs mt-1">Order #{selectedQRGroup.id.toString().padStart(6, '0')}</div>
+                  {selectedQRGroup?.qrCode ? (
+                    // Display actual QR code from API
+                    <img
+                      src={`data:image/png;base64,${selectedQRGroup.qrCode}`}
+                      alt="QR Code for pickup"
+                      className="w-48 h-48 mx-auto mb-4 border-2 border-gray-200 rounded-lg"
+                    />
+                  ) : (
+                    // Fallback placeholder
+                    <div className="w-48 h-48 bg-white border-2 border-gray-200 rounded-lg flex items-center justify-center mx-auto mb-4">
+                      <div className="text-center text-gray-400">
+                        <div className="text-6xl mb-2"></div>
+                        <div className="text-sm">Loading QR Code...</div>
+                        <div className="text-xs mt-1">Order #{selectedQRGroup?.id?.toString().padStart(6, '0')}</div>
+                      </div>
                     </div>
-                  </div>
+                  )}
                   <p className="text-sm text-gray-600">Scan this QR code at the pickup location</p>
                 </div>
               </div>
@@ -697,16 +569,16 @@ export default function GroupList() {
                   <li>• Sign receipt upon pickup</li>
                 </ul>
               </div>
+            </div>
 
-              {/* Action Buttons */}
-              <div className="flex gap-3 pt-2">
-                <button
-                  onClick={closeQRCodeModal}
-                  className="flex-1 bg-green-600 text-white py-3 px-6 rounded-lg hover:bg-green-700 transition font-medium"
-                >
-                  Got it - Ready to Pickup
-                </button>
-              </div>
+            {/* Action Buttons - Fixed at bottom */}
+            <div className="flex-shrink-0 border-t border-gray-200 p-6">
+              <button
+                onClick={closeQRCodeModal}
+                className="w-full bg-green-600 text-white py-3 px-6 rounded-lg hover:bg-green-700 transition font-medium"
+              >
+                Got it - Ready to Pickup
+              </button>
             </div>
           </div>
         </div>
@@ -715,15 +587,15 @@ export default function GroupList() {
       {/* Group Details Modal */}
       {showGroupDetails && selectedGroupDetails && (
         <div 
-          className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-start sm:items-center justify-center z-50 p-4 overflow-auto"
+          className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
           onClick={closeGroupDetailsModal}
         >
           <div 
-            className="bg-white rounded-lg shadow-xl max-w-full sm:max-w-lg w-full max-h-[calc(100vh-3.5rem)] sm:max-h-[calc(100vh-4rem)] overflow-y-auto"
+            className="bg-white rounded-lg shadow-xl max-w-lg w-full max-h-[90vh] flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Modal Header */}
-            <div className="bg-gradient-to-r from-blue-600 to-blue-700 p-6 text-white relative">
+            {/* Modal Header - Fixed at top */}
+            <div className="bg-gradient-to-r from-blue-600 to-blue-700 p-6 text-white relative flex-shrink-0">
               <button
                 onClick={closeGroupDetailsModal}
                 className="absolute top-4 right-4 text-white hover:bg-white hover:bg-opacity-20 rounded-lg p-1 transition"
@@ -736,8 +608,8 @@ export default function GroupList() {
               </div>
             </div>
 
-            {/* Group Details */}
-            <div className="p-6 space-y-4">
+            {/* Scrollable Content */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
               {/* Group Name and Status */}
               <div className="flex items-start justify-between">
                 <div className="flex-1">
@@ -777,7 +649,7 @@ export default function GroupList() {
                 <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                   <h4 className="font-semibold text-green-900 mb-1">Price</h4>
                   <p className="text-sm text-green-800">{selectedGroupDetails.price}</p>
-                </    div>
+                </div>
                 <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
                   <h4 className="font-semibold text-purple-900 mb-1">Due Date</h4>
                   <p className="text-sm text-purple-800">{selectedGroupDetails.dueDate}</p>
@@ -806,8 +678,43 @@ export default function GroupList() {
                 <p className="text-sm text-indigo-800">{selectedGroupDetails.orderStatus}</p>
               </div>
 
-              {/* Action Buttons */}
-              <div className="flex gap-3 pt-2">
+              {/* Add More Products - Only for active groups */}
+              {selectedGroupDetails.status === 'active' && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <h4 className="font-semibold text-green-900 mb-2">Add More Products</h4>
+                  <p className="text-sm text-green-800 mb-3">Increase your quantity commitment to this group</p>
+                  
+                  <div className="flex items-center gap-3">
+                    <label className="text-sm font-medium text-green-900">New Quantity:</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={newQuantity}
+                      onChange={(e) => setNewQuantity(parseInt(e.target.value) || 1)}
+                      className="flex-1 px-3 py-2 border border-green-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm"
+                      placeholder="Enter quantity"
+                    />
+                    <button
+                      onClick={handleUpdateQuantity}
+                      disabled={updatingQuantity || newQuantity <= 0}
+                      className="px-4 py-2 bg-green-600 text-white text-sm rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition font-medium"
+                    >
+                      {updatingQuantity ? 'Updating...' : 'Update'}
+                    </button>
+                  </div>
+                  
+                  <p className="text-xs text-green-700 mt-2">
+                    Current quantity: {selectedGroupDetails.quantity || 'N/A'} | 
+                    Unit price: {selectedGroupDetails.originalPrice} | 
+                    Bulk price: {selectedGroupDetails.price}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Action Buttons - Fixed at bottom */}
+            <div className="flex-shrink-0 border-t border-gray-200 p-6">
+              <div className="flex gap-3">
                 <button
                   onClick={closeGroupDetailsModal}
                   className="flex-1 bg-blue-600 text-white py-3 px-6 rounded-lg hover:bg-blue-700 transition font-medium"

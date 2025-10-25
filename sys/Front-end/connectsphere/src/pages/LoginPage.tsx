@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Mail, Lock, User, Eye, EyeOff, AlertCircle, CheckCircle, Loader } from 'lucide-react';
+import apiService from '../services/api';
 
 const LoginPage = () => {
   const navigate = useNavigate();
@@ -54,16 +55,40 @@ const LoginPage = () => {
     setIsLoading(true);
 
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      let response;
+      if (isLogin) {
+        // Login with existing account
+        response = await apiService.login({
+          email: formData.email,
+          password: formData.password
+        });
+      } else {
+        // Register new account
+        response = await apiService.register({
+          email: formData.email,
+          password: formData.password,
+          full_name: formData.name,
+          location_zone: 'Mbare', // Default location, could be made configurable
+          preferred_categories: [],
+          budget_range: 'medium',
+          experience_level: 'beginner',
+          preferred_group_sizes: [],
+          participation_frequency: 'occasional'
+        });
+      }
 
-      // Simple navigation logic
+      // Success - navigate based on user role
       setSuccessMessage(isLogin ? 'Login successful!' : 'Account created successfully!');
       setTimeout(() => {
-        navigate('/admin');
+        if (response.is_admin) {
+          navigate('/admin');
+        } else {
+          navigate('/trader');
+        }
       }, 1000);
     } catch (error) {
-      setErrors({ general: 'An error occurred. Please try again.' });
+      const errorMessage = error instanceof Error ? error.message : 'An error occurred. Please try again.';
+      setErrors({ general: errorMessage });
     } finally {
       setIsLoading(false);
     }

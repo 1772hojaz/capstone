@@ -1,36 +1,206 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { User, Camera, Mail, Phone, MapPin as Location, Calendar, Edit2, Save, X, ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import apiService from '../services/api';
 
 export default function ProfilePage() {
   const navigate = useNavigate();
   const [isEditing, setIsEditing] = useState(false);
   const [activeTab, setActiveTab] = useState('profile');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  
+  // Password change state
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   
   const [profileData, setProfileData] = useState({
-    name: 'Sarah Parker',
-    email: 'sarah.p@example.com',
-    phone: '+1 (555) 123-4567',
-    location: 'Harare, Zimbabwe',
-    joinDate: 'January 2024',
-    bio: 'Passionate about finding great deals and organizing group buys. Love coffee, tech gadgets, and eco-friendly products.',
+    full_name: '',
+    email: '',
+    location_zone: '',
+    bio: '',
+    joinDate: '',
+    preferred_categories: [],
+    budget_range: 'medium',
+    experience_level: 'beginner',
+    preferred_group_sizes: [],
+    participation_frequency: 'occasional',
+    // Additional preferences
+    show_recommendations: true,
+    auto_join_groups: true,
+    price_alerts: false,
+    // Notification settings
+    email_notifications: true,
+    push_notifications: true,
+    sms_notifications: false,
+    weekly_summary: true,
+    price_alerts_enabled: false
   });
 
-  const stats = [
-    { label: 'Groups Joined', value: '32' },
-    { label: 'Active Deals', value: '5' },
-    { label: 'Total Savings', value: '$1,250' },
-    { label: 'Success Rate', value: '92%' },
-  ];
+  const [stats, setStats] = useState([
+    { label: 'Groups Joined', value: '0' },
+    { label: 'Active Deals', value: '0' },
+    { label: 'Total Savings', value: '$0' },
+    { label: 'Success Rate', value: '0%' },
+  ]);
 
-  const handleSave = () => {
-    setIsEditing(false);
-    // Here you would typically save to backend
+  // Fetch user profile and stats on component mount
+  useEffect(() => {
+    const fetchUserData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        // Fetch user profile
+        const userProfile = await apiService.getCurrentUser();
+        
+        // Fetch user stats
+        const userStats = await apiService.getPastGroupsSummary();
+        const userGroups = await apiService.getMyGroups();
+
+        // Update profile data
+        setProfileData({
+          ...userProfile,
+          joinDate: 'January 2024', // This would come from backend if available
+          bio: `Experienced ${userProfile.experience_level} trader specializing in ${userProfile.preferred_categories.join(', ')}.` // Generate bio from profile data
+        });
+
+        // Update stats
+        const activeGroups = userGroups.filter((group: any) => group.status === 'active').length;
+        setStats([
+          { label: 'Groups Joined', value: userStats.completed_groups?.toString() || '0' },
+          { label: 'Active Deals', value: activeGroups.toString() },
+          { label: 'Total Savings', value: `$${userStats.all_time_savings?.toString() || '0'}` },
+          { label: 'Success Rate', value: `${userStats.success_rate?.toString() || '0'}%` },
+        ]);
+
+      } catch (err) {
+        console.error('Failed to load user data:', err);
+        setError(err instanceof Error ? err.message : 'Failed to load profile data');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUserData();
+  }, []);
+
+  const handleSave = async () => {
+    try {
+      setSaving(true);
+      setError(null);
+
+      // Prepare data for backend (only send fields that can be updated)
+      const updateData = {
+        full_name: profileData.full_name,
+        location_zone: profileData.location_zone,
+        preferred_categories: profileData.preferred_categories,
+        budget_range: profileData.budget_range,
+        experience_level: profileData.experience_level,
+        preferred_group_sizes: profileData.preferred_group_sizes,
+        participation_frequency: profileData.participation_frequency,
+        show_recommendations: profileData.show_recommendations,
+        auto_join_groups: profileData.auto_join_groups,
+        price_alerts: profileData.price_alerts,
+        email_notifications: profileData.email_notifications,
+        push_notifications: profileData.push_notifications,
+        sms_notifications: profileData.sms_notifications,
+        weekly_summary: profileData.weekly_summary,
+        price_alerts_enabled: profileData.price_alerts_enabled
+      };
+
+      await apiService.updateProfile(updateData);
+      setIsEditing(false);
+    } catch (err) {
+      console.error('Failed to save profile:', err);
+      setError(err instanceof Error ? err.message : 'Failed to save profile');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleCancel = () => {
     setIsEditing(false);
-    // Reset to original data
+    setError(null);
+    // Reset to original data by refetching
+    fetchUserData();
+  };
+
+  const handleChangePassword = async () => {
+    if (newPassword !== confirmPassword) {
+      setError('New passwords do not match');
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      setError('New password must be at least 6 characters long');
+      return;
+    }
+
+    try {
+      setSaving(true);
+      setError(null);
+
+      await apiService.changePassword({
+        current_password: currentPassword,
+        new_password: newPassword
+      });
+
+      // Clear form
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+
+      // Show success message
+      alert('Password changed successfully!');
+    } catch (err) {
+      console.error('Failed to change password:', err);
+      setError(err instanceof Error ? err.message : 'Failed to change password');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const fetchUserData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Fetch user profile
+      const userProfile = await apiService.getCurrentUser();
+      
+      // Fetch user stats
+      const userStats = await apiService.getPastGroupsSummary();
+      const userGroups = await apiService.getMyGroups();
+
+      // Update profile data
+      setProfileData({
+        ...userProfile,
+        joinDate: 'January 2024', // This would come from backend if available
+        bio: `Experienced ${userProfile.experience_level} trader specializing in ${userProfile.preferred_categories.join(', ')}.`, // Generate bio from profile data
+        // Initialize additional preferences with defaults if not set
+        show_recommendations: userProfile.show_recommendations !== undefined ? userProfile.show_recommendations : true,
+        auto_join_groups: userProfile.auto_join_groups !== undefined ? userProfile.auto_join_groups : true,
+        price_alerts: userProfile.price_alerts !== undefined ? userProfile.price_alerts : false
+      });
+
+      // Update stats
+      const activeGroups = userGroups.filter((group: any) => group.status === 'active').length;
+      setStats([
+        { label: 'Groups Joined', value: userStats.completed_groups?.toString() || '0' },
+        { label: 'Active Deals', value: activeGroups.toString() },
+        { label: 'Total Savings', value: `$${userStats.all_time_savings?.toString() || '0'}` },
+        { label: 'Success Rate', value: `${userStats.success_rate?.toString() || '0'}%` },
+      ]);
+
+    } catch (err) {
+      console.error('Failed to load user data:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load profile data');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -75,8 +245,33 @@ export default function ProfilePage() {
       {/* Main Content */}
       <main className="flex-1 px-3 sm:px-6 py-4 sm:py-8">
         <div className="max-w-5xl mx-auto">
+          {/* Loading State */}
+          {loading && (
+            <div className="flex justify-center items-center py-12">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+            </div>
+          )}
+
+          {/* Error State */}
+          {error && !loading && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+              <div className="flex items-center gap-2">
+                <div className="text-red-500"></div>
+                <p className="text-red-700">{error}</p>
+                <button
+                  onClick={() => fetchUserData()}
+                  className="ml-auto bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700"
+                >
+                  Retry
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Profile Header */}
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8 mb-6">
+          {!loading && !error && (
+            <>
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8 mb-6">
             <div className="flex items-start gap-6">
               {/* Profile Picture */}
               <div className="relative">
@@ -92,7 +287,7 @@ export default function ProfilePage() {
               <div className="flex-1">
                 <div className="flex items-start justify-between mb-4">
                   <div>
-                    <h1 className="text-3xl font-bold text-gray-900 mb-2">{profileData.name}</h1>
+                    <h1 className="text-3xl font-bold text-gray-900 mb-2">{profileData.full_name}</h1>
                     <p className="text-gray-600 flex items-center gap-2">
                       <Calendar className="w-4 h-4" />
                       Member since {profileData.joinDate}
@@ -142,29 +337,16 @@ export default function ProfilePage() {
                     )}
                   </div>
                   <div className="flex items-center gap-3">
-                    <Phone className="w-5 h-5 text-gray-400" />
-                    {isEditing ? (
-                      <input
-                        type="tel"
-                        value={profileData.phone}
-                        onChange={(e) => setProfileData({ ...profileData, phone: e.target.value })}
-                        className="flex-1 px-3 py-1.5 border border-gray-300 rounded-lg text-sm"
-                      />
-                    ) : (
-                      <span className="text-gray-700">{profileData.phone}</span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-3">
                     <Location className="w-5 h-5 text-gray-400" />
                     {isEditing ? (
                       <input
                         type="text"
-                        value={profileData.location}
-                        onChange={(e) => setProfileData({ ...profileData, location: e.target.value })}
+                        value={profileData.location_zone}
+                        onChange={(e) => setProfileData({ ...profileData, location_zone: e.target.value })}
                         className="flex-1 px-3 py-1.5 border border-gray-300 rounded-lg text-sm"
                       />
                     ) : (
-                      <span className="text-gray-700">{profileData.location}</span>
+                      <span className="text-gray-700">{profileData.location_zone}</span>
                     )}
                   </div>
                 </div>
@@ -311,21 +493,61 @@ export default function ProfilePage() {
                   </div>
                   <div className="space-y-4">
                     <label className="flex items-center gap-3">
-                      <input type="checkbox" defaultChecked className="w-4 h-4 text-blue-600 rounded" />
+                      <input 
+                        type="checkbox" 
+                        checked={profileData.email_notifications}
+                        onChange={(e) => setProfileData({ ...profileData, email_notifications: e.target.checked })}
+                        className="w-4 h-4 text-blue-600 rounded" 
+                      />
                       <span className="text-sm text-gray-700">Email notifications for new group deals</span>
                     </label>
                     <label className="flex items-center gap-3">
-                      <input type="checkbox" defaultChecked className="w-4 h-4 text-blue-600 rounded" />
+                      <input 
+                        type="checkbox" 
+                        checked={profileData.push_notifications}
+                        onChange={(e) => setProfileData({ ...profileData, push_notifications: e.target.checked })}
+                        className="w-4 h-4 text-blue-600 rounded" 
+                      />
                       <span className="text-sm text-gray-700">Push notifications for deal updates</span>
                     </label>
                     <label className="flex items-center gap-3">
-                      <input type="checkbox" className="w-4 h-4 text-blue-600 rounded" />
+                      <input 
+                        type="checkbox" 
+                        checked={profileData.sms_notifications}
+                        onChange={(e) => setProfileData({ ...profileData, sms_notifications: e.target.checked })}
+                        className="w-4 h-4 text-blue-600 rounded" 
+                      />
                       <span className="text-sm text-gray-700">SMS alerts for closing deals</span>
                     </label>
                     <label className="flex items-center gap-3">
-                      <input type="checkbox" defaultChecked className="w-4 h-4 text-blue-600 rounded" />
+                      <input 
+                        type="checkbox" 
+                        checked={profileData.weekly_summary}
+                        onChange={(e) => setProfileData({ ...profileData, weekly_summary: e.target.checked })}
+                        className="w-4 h-4 text-blue-600 rounded" 
+                      />
                       <span className="text-sm text-gray-700">Weekly summary emails</span>
                     </label>
+                    <label className="flex items-center gap-3">
+                      <input 
+                        type="checkbox" 
+                        checked={profileData.price_alerts_enabled}
+                        onChange={(e) => setProfileData({ ...profileData, price_alerts_enabled: e.target.checked })}
+                        className="w-4 h-4 text-blue-600 rounded" 
+                      />
+                      <span className="text-sm text-gray-700">Price alerts for favorite products</span>
+                    </label>
+                  </div>
+
+                  {/* Save Button for Notifications */}
+                  <div className="pt-4 border-t border-gray-200">
+                    <button
+                      onClick={handleSave}
+                      disabled={saving}
+                      className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {saving ? 'Saving...' : 'Save Notification Settings'}
+                    </button>
                   </div>
                 </div>
               )}
@@ -338,28 +560,75 @@ export default function ProfilePage() {
                       Manage your account security and authentication.
                     </p>
                   </div>
-                  <div className="space-y-4">
-                    <div>
-                      <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm">
-                        Change Password
+                  
+                  {/* Change Password Section */}
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <h4 className="text-md font-semibold text-gray-900 mb-3">Change Password</h4>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Current Password</label>
+                        <input
+                          type="password"
+                          value={currentPassword}
+                          onChange={(e) => setCurrentPassword(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          placeholder="Enter current password"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
+                        <input
+                          type="password"
+                          value={newPassword}
+                          onChange={(e) => setNewPassword(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          placeholder="Enter new password"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Confirm New Password</label>
+                        <input
+                          type="password"
+                          value={confirmPassword}
+                          onChange={(e) => setConfirmPassword(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          placeholder="Confirm new password"
+                        />
+                      </div>
+                      <button
+                        onClick={handleChangePassword}
+                        disabled={saving || !currentPassword || !newPassword || !confirmPassword}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                      >
+                        {saving ? 'Changing...' : 'Change Password'}
                       </button>
                     </div>
+                  </div>
+
+                  {/* Two-Factor Authentication (placeholder for now) */}
+                  <div className="space-y-4">
                     <div>
                       <label className="flex items-center gap-3">
                         <input type="checkbox" className="w-4 h-4 text-blue-600 rounded" />
                         <span className="text-sm text-gray-700">Enable two-factor authentication</span>
                       </label>
+                      <p className="text-xs text-gray-500 mt-1">Add an extra layer of security to your account</p>
                     </div>
+                    
+                    {/* Login History (placeholder) */}
                     <div>
                       <button className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition text-sm">
                         View Login History
                       </button>
+                      <p className="text-xs text-gray-500 mt-1">See recent login activity on your account</p>
                     </div>
                   </div>
                 </div>
               )}
             </div>
           </div>
+        </>
+        )}
         </div>
       </main>
 
