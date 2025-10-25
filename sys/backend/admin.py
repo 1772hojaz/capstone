@@ -80,13 +80,13 @@ class CreateGroupRequest(BaseModel):
     estimated_delivery: Optional[str] = "2-3 weeks after group completion"
     features: Optional[List[str]] = []
     requirements: Optional[List[str]] = []
-    # Additional product fields
+
+class UpdateGroupRequest(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    category: Optional[str] = None
     product_name: Optional[str] = None
-    product_description: Optional[str] = None
-    total_stock: Optional[int] = None
-    specifications: Optional[str] = None
-    manufacturer: Optional[str] = None
-    pickup_location: Optional[str] = None
+    regular_price: Optional[float] = None
 
 class ImageUploadResponse(BaseModel):
     image_url: str
@@ -656,14 +656,14 @@ async def get_active_groups_for_moderation(
                 "description": group.description,
                 "status": "active",
                 "product": {
-                    "name": group.product_name or group.name,  # Use product_name if available, otherwise group name
-                    "description": group.product_description or group.long_description or group.description,
+                    "name": group.name,  # Using group name as product name for simplicity
+                    "description": group.long_description or group.description,
                     "regularPrice": f"${group.original_price:.2f}" if group.original_price else f"${group.price:.2f}",
                     "bulkPrice": f"${group.price:.2f}",
                     "image": group.image or "/api/placeholder/300/200",
-                    "totalStock": group.total_stock or "N/A",
-                    "specifications": group.specifications or "Admin managed group buy",
-                    "manufacturer": group.manufacturer or "Various",
+                    "totalStock": "N/A",  # Admin groups don't have stock limits
+                    "specifications": "Admin managed group buy",
+                    "manufacturer": "Various",
                     "warranty": "As per product"
                 }
             })
@@ -832,14 +832,7 @@ async def create_admin_group(
             features=group_data.features,
             requirements=group_data.requirements,
             is_active=True,
-            participants=0,  # Start with 0 participants
-            # Additional product fields
-            product_name=group_data.product_name,
-            product_description=group_data.product_description,
-            total_stock=group_data.total_stock,
-            specifications=group_data.specifications,
-            manufacturer=group_data.manufacturer,
-            pickup_location=group_data.pickup_location
+            participants=0  # Start with 0 participants
         )
 
         db.add(new_group)
@@ -864,3 +857,55 @@ async def create_admin_group(
         print(f"Error creating admin group: {e}")
         db.rollback()
         raise HTTPException(status_code=500, detail="Failed to create group")
+
+@router.put("/groups/{group_id}/update")
+async def update_admin_group(
+    group_id: int,
+    group_data: UpdateGroupRequest,
+    admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Update an admin-managed group buying opportunity"""
+    try:
+        # Get the group
+        group = db.query(AdminGroup).filter(AdminGroup.id == group_id).first()
+        if not group:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Group not found"
+            )
+
+        # Update fields if provided
+        if group_data.name is not None:
+            group.name = group_data.name
+        if group_data.description is not None:
+            group.description = group_data.description
+        if group_data.category is not None:
+            group.category = group_data.category
+        if group_data.product_name is not None:
+            # For admin groups, we use the name as product name
+            group.name = group_data.product_name
+        if group_data.regular_price is not None:
+            group.original_price = group_data.regular_price
+
+        db.commit()
+        db.refresh(group)
+
+        return {
+            "message": "Group updated successfully",
+            "group_id": group.id,
+            "group": {
+                "id": group.id,
+                "name": group.name,
+                "description": group.description,
+                "category": group.category,
+                "original_price": group.original_price
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error updating admin group {group_id}: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to update group")
