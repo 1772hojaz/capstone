@@ -428,13 +428,19 @@ def init_database():
         # Auto-train ML models with initial data
         print("\n🤖 Training ML models...")
         try:
-            from ml import train_clustering_model
-            training_results = train_clustering_model(db)
-            print(f"✅ ML models trained successfully!")
-            print(f"   - Silhouette Score: {training_results['silhouette_score']:.3f}")
-            print(f"   - Clusters: {training_results['n_clusters']}")
+            # Use the async training coroutine by running it in an event loop
+            import asyncio
+            from ml import train_clustering_model_with_progress
+            try:
+                training_results = asyncio.run(train_clustering_model_with_progress(db))
+                print(f"✅ ML models trained successfully!")
+                print(f"   - Silhouette Score: {training_results['silhouette_score']:.3f}")
+                print(f"   - Clusters: {training_results['n_clusters']}")
+            except Exception as inner_ml_error:
+                print(f"⚠️  Warning: Could not train ML models: {inner_ml_error}")
+                print("   You can train them manually from the admin dashboard")
         except Exception as ml_error:
-            print(f"⚠️  Warning: Could not train ML models: {ml_error}")
+            print(f"⚠️  Warning: Could not import training routine: {ml_error}")
             print("   You can train them manually from the admin dashboard")
         
         print("\n✅ Database initialized successfully!")

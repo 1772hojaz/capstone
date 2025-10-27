@@ -159,13 +159,14 @@ async def startup_event():
         if not latest_model and transaction_count >= 10 and trader_count >= 4:
             print("\n🤖 No trained hybrid model found. Auto-training with database data...")
             try:
-                training_results = train_clustering_model_with_progress(db)
+                # train_clustering_model_with_progress is an async coroutine; await it in the startup event
+                training_results = await train_clustering_model_with_progress(db)
                 print("✅ Hybrid models trained successfully on startup!")
                 print(f"   - Silhouette Score: {training_results['silhouette_score']:.3f}")
                 print(f"   - Clusters: {training_results['n_clusters']}")
                 print(f"   - NMF Rank: {training_results.get('nmf_rank', 'N/A')}")
                 print(f"   - TF-IDF Vocabulary: {training_results.get('tfidf_vocab_size', 'N/A')}")
-                
+
                 # Reload models
                 load_models()
             except Exception as e:

@@ -19,6 +19,7 @@ from database import get_db
 from models import User, GroupBuy, Transaction, Product, MLModel, Contribution, AdminGroup
 from auth import verify_token, get_current_user
 from websocket_manager import manager
+from explainability import explain_recommendation, explain_cluster_assignment, generate_counterfactual_explanation
 import logging
 
 logger = logging.getLogger(__name__)
@@ -44,7 +45,8 @@ scaler = None
 feature_store = None
 
 # Hybrid model weights (CF, CBF, Popularity Boost)
-ALPHA, BETA, GAMMA = 0.6, 0.4, 0.1
+# Aligned with notebook: CF=60%, CBF=30%, Popularity=10%
+ALPHA, BETA, GAMMA = 0.6, 0.3, 0.1
 
 # Pydantic Models
 class MLScores(BaseModel):
@@ -462,7 +464,14 @@ async def train_clustering_model_with_progress(db: Session):
         print(f"   - Clusters: {best_k}")
         print(f"   - NMF Rank: {rank}")
         print(f"   - TF-IDF Vocab: {len(tfidf_model.vocabulary_)}")
-        
+        # Prepare results to return to callers that await this coroutine
+        training_results = {
+            "silhouette_score": float(best_score),
+            "n_clusters": int(best_k),
+            "nmf_rank": int(rank),
+            "tfidf_vocab_size": int(len(tfidf_model.vocabulary_))
+        }
+        return training_results
     except Exception as e:
         training_status["status"] = "failed"
         training_status["error"] = str(e)
@@ -1690,3 +1699,143 @@ async def get_hybrid_user_recommendations(
     
     recommendations = get_hybrid_recommendations(user_id, db, limit)
     return {"recommendations": recommendations}
+
+# ===== EXPLAINABILITY ENDPOINTS (Research Objective 4) =====
+
+@router.get("/explain/{group_buy_id}")
+async def explain_group_buy_recommendation(
+    group_buy_id: int,
+    user: User = Depends(verify_token),
+    db: Session = Depends(get_db)
+):
+    """
+    Generate explainable recommendation for a specific group-buy.
+    
+    Implements Research Objective 4: Integrate explainable AI techniques (SHAP or LIME)
+    to generate interpretable recommendations and build trust.
+    
+    Returns:
+        - Component contributions (CF, CBF, Popularity)
+        - Feature importance rankings
+        - Natural language explanation
+        - Counterfactual scenarios
+    """
+    try:
+        # Get group-buy
+        group_buy = db.query(GroupBuy).filter(GroupBuy.id == group_buy_id).first()
+        if not group_buy:
+            raise HTTPException(status_code=404, detail="Group-buy not found")
+        
+        # Get recommendations for this user to find ML scores
+        recommendations = get_recommendations_for_user(user, db)
+        
+        # Find the specific recommendation
+        rec = next((r for r in recommendations if r['group_buy_id'] == group_buy_id), None)
+        
+        if not rec:
+            # Generate explanation even if not in top recommendations
+            ml_scores = {
+                "collaborative_filtering": 0.3,
+                "content_based": 0.3,
+                "popularity": 0.2,
+                "hybrid": 0.25
+            }
+        else:
+            ml_scores = rec.get('ml_scores', {
+                "collaborative_filtering": 0.3,
+                "content_based": 0.3,
+                "popularity": 0.2,
+                "hybrid": rec.get('recommendation_score', 0.25)
+            })
+        
+        # Generate comprehensive explanation
+        explanation = explain_recommendation(user, group_buy, ml_scores, db)
+        
+        # Add counterfactual explanations
+        counterfactuals = generate_counterfactual_explanation(
+            user, group_buy, ml_scores.get('hybrid', 0.25), db
+        )
+        
+        return {
+            "group_buy_id": group_buy_id,
+            "product_name": group_buy.product.name,
+            "explanation": explanation,
+            "counterfactuals": counterfactuals,
+            "model_type": "hybrid_recommender",
+            "explainability_method": "component_decomposition"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error generating explanation: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate explanation: {str(e)}")
+
+@router.get("/explain-cluster")
+async def explain_user_cluster(
+    user: User = Depends(verify_token),
+    db: Session = Depends(get_db)
+):
+    """
+    Explain why the user was assigned to their current cluster.
+    
+    Provides transparency about the clustering algorithm's decisions.
+    """
+    try:
+        explanation = explain_cluster_assignment(user, db)
+        return explanation
+        
+    except Exception as e:
+        logger.error(f"Error explaining cluster: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to explain cluster assignment: {str(e)}")
+
+@router.get("/explain-all-recommendations")
+async def explain_all_user_recommendations(
+    user: User = Depends(verify_token),
+    db: Session = Depends(get_db),
+    limit: int = Query(5, ge=1, le=10)
+):
+    """
+    Generate explanations for all top recommendations for the user.
+    
+    Returns comprehensive explainability report including:
+    - Individual recommendation explanations
+    - Cluster assignment explanation
+    - Model component weights
+    """
+    try:
+        # Get recommendations
+        recommendations = get_recommendations_for_user(user, db)[:limit]
+        
+        # Generate explanations for each
+        explanations = []
+        for rec in recommendations:
+            group_buy = db.query(GroupBuy).filter(GroupBuy.id == rec['group_buy_id']).first()
+            if group_buy:
+                ml_scores = rec.get('ml_scores', {})
+                explanation = explain_recommendation(user, group_buy, ml_scores, db)
+                explanations.append(explanation)
+        
+        # Get cluster explanation
+        cluster_explanation = explain_cluster_assignment(user, db)
+        
+        # Overall model information
+        model_info = {
+            "model_type": "hybrid_recommender",
+            "components": {
+                "collaborative_filtering": {"weight": ALPHA, "description": "Based on similar traders"},
+                "content_based_filtering": {"weight": BETA, "description": "Based on product similarity"},
+                "popularity_boost": {"weight": GAMMA, "description": "Based on market demand"}
+            },
+            "explainability_approach": "Component decomposition + Feature importance + Counterfactual reasoning"
+        }
+        
+        return {
+            "user_id": user.id,
+            "cluster_explanation": cluster_explanation,
+            "recommendation_explanations": explanations,
+            "model_information": model_info,
+            "transparency_score": sum(e.get('transparency_score', 0) for e in explanations) / len(explanations) if explanations else 0
+        }
+        
+    except Exception as e:
+        logger.error(f"Error generating comprehensive explanation: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate explanations: {str(e)}")
