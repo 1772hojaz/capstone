@@ -11,21 +11,16 @@ load_dotenv()
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from db.database import engine, Base, SessionLocal, get_db
-from api.v1.endpoints.auth import router as auth_router
-from api.v1.endpoints.products import router as products_router
-from api.v1.endpoints.groups import router as groups_router
-from services.websocket.manager import WebSocketManager
-from services.ml import router as ml_router
-from api.v1.endpoints.admin import router as admin_router
-from core.settings import router as settings_router
+from database import engine, Base, SessionLocal, get_db
+from auth import router as auth_router
+from products import router as products_router
+from groups import router as groups_router
+from chat import router as chat_router
+from ml import router as ml_router
+from admin import router as admin_router
+from settings import router as settings_router
 from ml_scheduler import scheduler, start_scheduler
-
-# Initialize WebSocket manager
-manager = WebSocketManager()
-
-# Import models package to ensure model modules are loaded and SQLAlchemy models are registered
-import models
+from websocket_manager import manager
 
 # Centralized logging configuration
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -97,6 +92,13 @@ app = FastAPI(
     * `GET /openapi.json` - OpenAPI JSON schema
     """,
     version="1.0.0",
+    contact={
+        "name": "Group-Buy System Support",
+        "email": "support@groupbuy.com",
+    },
+    license_info={
+        "name": "MIT",
+    },
 )
 
 # CORS middleware
@@ -115,18 +117,18 @@ async def startup_event():
     db = SessionLocal()
     try:
         from models import MLModel, Transaction, User, Product
-        from services.ml.service import train_clustering_model_with_progress, load_models
+        from ml import train_clustering_model_with_progress, load_models
         
         print("\n" + "="*60)
-        print(" Hybrid Recommender System Initialization")
+        print("🚀 Hybrid Recommender System Initialization")
         print("="*60)
         
         # Check if we have products
         product_count = db.query(Product).count()
-        print(f"\n Products in database: {product_count}")
+        print(f"\n📦 Products in database: {product_count}")
         
         if product_count < 5:
-            print("  Not enough products! Please seed Mbare products first.")
+            print("⚠️  Not enough products! Please seed Mbare products first.")
             print("   Run: python backend/update_mbare_prices.py")
             return
         
@@ -134,19 +136,19 @@ async def startup_event():
         trader_count = db.query(User).filter(~User.is_admin).count()
         transaction_count = db.query(Transaction).count()
         
-        print(f" Traders in database: {trader_count}")
-        print(f" Transactions in database: {transaction_count}")
+        print(f"👥 Traders in database: {trader_count}")
+        print(f"💳 Transactions in database: {transaction_count}")
         
         # Auto-seed if database is empty
         if trader_count < 10 or transaction_count < 20:
-            print("\n Database needs seeding for hybrid recommender...")
+            print("\n🌾 Database needs seeding for hybrid recommender...")
             print("   Run: python backend/seed_mbare_data.py")
             print("   This will create 100 realistic Mbare traders with 12 weeks of transaction history")
         
         # Load hybrid recommender models
-        print("\n Loading Hybrid Recommender Models...")
+        print("\n📦 Loading Hybrid Recommender Models...")
         load_models()
-        print(" Models loaded successfully")
+        print("✅ Models loaded successfully")
         
         # Check if we have a trained hybrid model
         latest_model = db.query(MLModel).filter(
@@ -155,10 +157,10 @@ async def startup_event():
         
         # Auto-train if needed
         if not latest_model and transaction_count >= 10 and trader_count >= 4:
-            print("\n No trained hybrid model found. Auto-training with database data...")
+            print("\n🤖 No trained hybrid model found. Auto-training with database data...")
             try:
                 training_results = train_clustering_model_with_progress(db)
-                print(" Hybrid models trained successfully on startup!")
+                print("✅ Hybrid models trained successfully on startup!")
                 print(f"   - Silhouette Score: {training_results['silhouette_score']:.3f}")
                 print(f"   - Clusters: {training_results['n_clusters']}")
                 print(f"   - NMF Rank: {training_results.get('nmf_rank', 'N/A')}")
@@ -167,18 +169,18 @@ async def startup_event():
                 # Reload models
                 load_models()
             except Exception as e:
-                print(f"  Warning: Auto-training failed: {e}")
+                print(f"⚠️  Warning: Auto-training failed: {e}")
                 print("   Models can be trained manually via: POST /api/ml/retrain")
         elif latest_model:
             score = latest_model.metrics.get('silhouette_score', 0)
-            print("\n Loaded existing hybrid model")
+            print("\n✅ Loaded existing hybrid model")
             print(f"   - Trained at: {latest_model.trained_at}")
             print(f"   - Silhouette Score: {score:.3f}")
             print(f"   - Clusters: {latest_model.metrics.get('n_clusters', 'N/A')}")
             print(f"   - NMF Rank: {latest_model.metrics.get('nmf_rank', 'N/A')}")
             print(f"   - Model Type: {latest_model.model_type}")
         else:
-            print("\n Not enough data for hybrid training yet")
+            print("\n⚠️  Not enough data for hybrid training yet")
             print("   Need: ≥10 transactions, ≥4 traders, ≥5 products")
             print(f"   Have: {transaction_count} transactions, {trader_count} traders, {product_count} products")
         
@@ -189,11 +191,11 @@ async def startup_event():
         print("   - Minimum new data: 5 transactions")
         print("   - Data source: Live database (no synthetic data)")
         asyncio.create_task(start_scheduler())
-        print(" Scheduler started successfully")
+        print("✅ Scheduler started successfully")
         print("="*60 + "\n")
         
     except Exception as e:
-        print(f"  Startup ML check failed: {e}")
+        print(f"⚠️  Startup ML check failed: {e}")
         import traceback
         traceback.print_exc()
     finally:
@@ -202,7 +204,7 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     """Stop the scheduler on shutdown"""
-    print("\n Stopping ML scheduler...")
+    print("\n🛑 Stopping ML scheduler...")
     await scheduler.stop()
 
 # WebSocket endpoint for ML training progress
@@ -228,6 +230,7 @@ async def health_check():
 app.include_router(auth_router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(products_router, prefix="/api/products", tags=["Products"])
 app.include_router(groups_router, prefix="/api/groups", tags=["Group-Buys"])
+app.include_router(chat_router, prefix="/api/chat", tags=["Chat"])
 app.include_router(ml_router, prefix="/api/ml", tags=["Machine Learning"])
 app.include_router(admin_router, prefix="/api/admin", tags=["Admin"])
 app.include_router(settings_router, prefix="/api/settings", tags=["Settings"])

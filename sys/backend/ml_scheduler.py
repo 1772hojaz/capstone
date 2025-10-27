@@ -4,9 +4,9 @@ ML Model Scheduler - Auto-retrain daily and maintain best models only
 import asyncio
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
-from db.database import SessionLocal
+from database import SessionLocal
 from models import MLModel, Transaction
-from services.ml.service import train_clustering_model_with_progress
+from ml import train_clustering_model_with_progress
 import os
 
 class MLModelScheduler:
@@ -76,7 +76,7 @@ class MLModelScheduler:
             
             # Reload models in memory
             print("🔄 Reloading models in memory...")
-            from services.ml.service import load_models
+            from ml import load_models
             load_models()
             
         except Exception as e:

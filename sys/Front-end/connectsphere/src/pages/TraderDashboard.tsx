@@ -1,29 +1,36 @@
-import { Search, MapPin, User, Zap, Users, Eye, RefreshCw } from 'lucide-react';
+import { Search, MapPin, User, Zap, Users, Eye } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { useState } from 'react';
-import { useAuth } from '../contexts/AuthContext';
-import useRecommendations from '../hooks/useRecommendations';
-import PageLoader from '../components/PageLoader';
-import ErrorAlert from '../components/ErrorAlert';
-import CardSkeleton from '../components/CardSkeleton';
-import toast from 'react-hot-toast';
+import { useState, useEffect } from 'react';
+import apiService from '../services/api';
 
 const TraderDashboard = () => {
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
-  const { recommendations, isLoading, error, refetch } = useRecommendations();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCurrency, setSelectedCurrency] = useState<'USD' | 'ZIG'>('USD');
+  const [recommendations, setRecommendations] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleLogout = async () => {
-    try {
-      await logout();
-      toast.success('Logged out successfully');
-      navigate('/login');
-    } catch (error) {
-      toast.error('Failed to logout');
-    }
-  };
+  // Load recommendations on component mount
+  useEffect(() => {
+    const loadRecommendations = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+        const response = await apiService.getRecommendations();
+        setRecommendations(response);
+      } catch (err) {
+        console.error('Failed to load recommendations:', err);
+        setError('Failed to load recommendations. Please try again.');
+        // Fallback to empty array
+        setRecommendations([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadRecommendations();
+  }, []);
 
   // View group handler - pass the full recommendation data with view mode
   const handleViewGroup = (recommendation: any) => {
@@ -117,7 +124,14 @@ const TraderDashboard = () => {
               ZIG
             </button>
             <button 
-              onClick={handleLogout}
+              onClick={async () => {
+                try {
+                  await apiService.logout();
+                } catch (error) {
+                  console.warn('Logout API call failed, but clearing local session anyway');
+                }
+                navigate('/login');
+              }}
               className="px-3 sm:px-4 py-2 bg-red-500 text-white text-xs sm:text-sm rounded-lg hover:bg-red-600 transition whitespace-nowrap"
             >
               Logout
@@ -163,27 +177,12 @@ const TraderDashboard = () => {
       <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
         {/* Clear, prominent heading - Responsive */}
         <div className="mb-6 sm:mb-8">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-3 mb-2">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-              <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900">Recommended For You</h1>
-              <div className="flex items-center gap-1 bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-xs sm:text-sm font-medium w-fit">
-                <Zap className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                <span>AI Powered</span>
-              </div>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-2">
+            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900">Recommended For You</h1>
+            <div className="flex items-center gap-1 bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-xs sm:text-sm font-medium w-fit">
+              <Zap className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span>AI Powered</span>
             </div>
-            <button
-              onClick={() => {
-                toast.promise(refetch(), {
-                  loading: 'Refreshing recommendations...',
-                  success: 'Recommendations updated!',
-                  error: 'Failed to refresh'
-                });
-              }}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition"
-            >
-              <RefreshCw className="w-4 h-4" />
-              Refresh
-            </button>
           </div>
           <p className="text-sm sm:text-base text-gray-600">Personalized group buys created by admins based on your interests and activity · Save up to 40%</p>
         </div>
