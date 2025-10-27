@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey, Text, JSON
 from sqlalchemy.orm import relationship
-from database import Base
+from db.database import Base
 from datetime import datetime
 
 class User(Base):
@@ -49,8 +49,6 @@ class Product(Base):
     image_url = Column(String)
     unit_price = Column(Float, nullable=False)  # USD
     bulk_price = Column(Float, nullable=False)  # USD
-    unit_price_zig = Column(Float)  # ZiG currency
-    bulk_price_zig = Column(Float)  # ZiG currency
     moq = Column(Integer, nullable=False)  # Minimum Order Quantity
     category = Column(String)
     is_active = Column(Boolean, default=True)

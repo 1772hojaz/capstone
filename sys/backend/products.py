@@ -2,9 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import List, Optional
-from database import get_db
+from db.database import get_db
 from models import Product
-from auth import verify_token, verify_admin
+from api.v1.endpoints.auth import verify_token, verify_admin
 
 router = APIRouter()
 
@@ -15,8 +15,6 @@ class ProductCreate(BaseModel):
     image_url: Optional[str] = None
     unit_price: float
     bulk_price: float
-    unit_price_zig: Optional[float] = None
-    bulk_price_zig: Optional[float] = None
     moq: int
     category: Optional[str] = None
 
@@ -26,8 +24,6 @@ class ProductUpdate(BaseModel):
     image_url: Optional[str] = None
     unit_price: Optional[float] = None
     bulk_price: Optional[float] = None
-    unit_price_zig: Optional[float] = None
-    bulk_price_zig: Optional[float] = None
     moq: Optional[int] = None
     category: Optional[str] = None
     is_active: Optional[bool] = None
@@ -39,8 +35,6 @@ class ProductResponse(BaseModel):
     image_url: Optional[str]
     unit_price: float
     bulk_price: float
-    unit_price_zig: Optional[float]
-    bulk_price_zig: Optional[float]
     moq: int
     category: Optional[str]
     is_active: bool
@@ -89,8 +83,6 @@ async def create_product(
         image_url=product_data.image_url,
         unit_price=product_data.unit_price,
         bulk_price=product_data.bulk_price,
-        unit_price_zig=product_data.unit_price_zig,
-        bulk_price_zig=product_data.bulk_price_zig,
         moq=product_data.moq,
         category=product_data.category
     )

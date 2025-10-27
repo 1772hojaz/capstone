@@ -1,11 +1,23 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Mail, Lock, User, Eye, EyeOff, AlertCircle, CheckCircle, Loader } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
+import toast from 'react-hot-toast';
 import apiService from '../services/api';
 
 const LoginPage = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const { login, user, isAuthenticated } = useAuth();
   const [isLogin, setIsLogin] = useState(true);
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      const from = (location.state as any)?.from?.pathname || (user.is_admin ? '/admin' : '/trader');
+      navigate(from, { replace: true });
+    }
+  }, [isAuthenticated, user, navigate, location]);
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<{[key: string]: string}>({});
@@ -16,6 +28,20 @@ const LoginPage = () => {
     name: '',
     rememberMe: false,
   });
+
+  // Restore email and remember me preference on component mount
+  useEffect(() => {
+    const savedEmail = localStorage.getItem('rememberedEmail');
+    const savedRememberMe = localStorage.getItem('rememberMe') === 'true';
+
+    if (savedEmail && savedRememberMe) {
+      setFormData(prev => ({
+        ...prev,
+        email: savedEmail,
+        rememberMe: true,
+      }));
+    }
+  }, []);
 
   const validateForm = () => {
     const newErrors: {[key: string]: string} = {};
@@ -30,8 +56,8 @@ const LoginPage = () => {
     // Password validation
     if (!formData.password) {
       newErrors.password = 'Password is required';
-    } else if (formData.password.length < 6) {
-      newErrors.password = 'Password must be at least 6 characters';
+    } else if (formData.password.length < 8) {
+      newErrors.password = 'Password must be at least 8 characters';
     }
 
     // Name validation for registration
@@ -55,40 +81,48 @@ const LoginPage = () => {
     setIsLoading(true);
 
     try {
-      let response;
       if (isLogin) {
-        // Login with existing account
-        response = await apiService.login({
+        // Login with existing account using AuthContext
+        await login({
           email: formData.email,
-          password: formData.password
+          password: formData.password,
+          rememberMe: formData.rememberMe,
         });
+
+        // Save email preference
+        if (formData.rememberMe) {
+          localStorage.setItem('rememberedEmail', formData.email);
+          localStorage.setItem('rememberMe', 'true');
+        } else {
+          localStorage.removeItem('rememberedEmail');
+          localStorage.removeItem('rememberMe');
+        }
+
+        toast.success('Login successful!');
+        // Navigation happens automatically via useEffect above
       } else {
         // Register new account
-        response = await apiService.register({
+        const response = await apiService.register({
           email: formData.email,
           password: formData.password,
           full_name: formData.name,
           location_zone: 'Mbare', // Default location, could be made configurable
-          preferred_categories: [],
-          budget_range: 'medium',
-          experience_level: 'beginner',
-          preferred_group_sizes: [],
-          participation_frequency: 'occasional'
+        });
+
+        setSuccessMessage('Account created successfully!');
+        toast.success('Account created! Logging you in...');
+
+        // After registration, log the user in
+        await login({
+          email: formData.email,
+          password: formData.password,
+          rememberMe: false,
         });
       }
-
-      // Success - navigate based on user role
-      setSuccessMessage(isLogin ? 'Login successful!' : 'Account created successfully!');
-      setTimeout(() => {
-        if (response.is_admin) {
-          navigate('/admin');
-        } else {
-          navigate('/trader');
-        }
-      }, 1000);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'An error occurred. Please try again.';
       setErrors({ general: errorMessage });
+      toast.error(errorMessage);
     } finally {
       setIsLoading(false);
     }

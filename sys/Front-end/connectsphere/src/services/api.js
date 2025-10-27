@@ -8,7 +8,8 @@ class ApiService {
 
   // Helper method to get auth token
   getAuthToken() {
-    return localStorage.getItem('token');
+    // Check localStorage first (for remembered sessions), then sessionStorage
+    return localStorage.getItem('token') || sessionStorage.getItem('token');
   }
 
   // Helper method to make authenticated requests
@@ -53,14 +54,19 @@ class ApiService {
 
   // Authentication methods
   async login(credentials) {
+    const { rememberMe, ...loginData } = credentials;
     const response = await this.request('/api/auth/login', {
       method: 'POST',
-      body: JSON.stringify(credentials),
+      body: JSON.stringify(loginData),
     });
 
     // Store token on successful login
     if (response.access_token) {
-      localStorage.setItem('token', response.access_token);
+      const storage = rememberMe ? localStorage : sessionStorage;
+      storage.setItem('token', response.access_token);
+      // Clear the token from the other storage to avoid conflicts
+      const otherStorage = rememberMe ? sessionStorage : localStorage;
+      otherStorage.removeItem('token');
     }
 
     return response;
@@ -72,9 +78,10 @@ class ApiService {
       body: JSON.stringify(userData),
     });
 
-    // Store token on successful registration
+    // Store token on successful registration (default to localStorage for new users)
     if (response.access_token) {
       localStorage.setItem('token', response.access_token);
+      sessionStorage.removeItem('token'); // Clear session storage to avoid conflicts
     }
 
     return response;
@@ -87,6 +94,7 @@ class ApiService {
       console.warn('Logout API call failed, but clearing local token anyway');
     } finally {
       localStorage.removeItem('token');
+      sessionStorage.removeItem('token');
     }
   }
 
@@ -267,6 +275,10 @@ class ApiService {
       method: 'POST',
       body: JSON.stringify(groupData),
     });
+  }
+
+  async getCategories() {
+    return this.request('/api/admin/categories');
   }
 
   // Utility methods
