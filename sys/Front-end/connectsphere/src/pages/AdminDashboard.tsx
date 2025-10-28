@@ -1,10 +1,11 @@
-import { Zap, Users, Eye, ShoppingBag, TrendingUp, DollarSign, AlertTriangle, RefreshCw, Clock } from 'lucide-react';
+import { Zap, Users, Eye, ShoppingBag, TrendingUp, DollarSign, RefreshCw, Clock } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useState, useEffect, useRef } from 'react';
-import { ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Bar, PieChart, Pie, Cell, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts';
+import { ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Bar, PieChart, Pie, Cell } from 'recharts';
 import StatCard from '../components/StatCard';
 import Layout from '../components/Layout';
 import apiService from '../services/api';
+import QrScanner from 'qr-scanner';
 
 interface ManagementCardProps {
   icon: React.ReactNode;
@@ -45,7 +46,7 @@ const trainingStages: { id: TrainingStage; label: string }[] = [
 ];
 
 const AdminDashboard = () => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'analytics' | 'management' | 'qr-verify'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'ml-visualisations' | 'management' | 'qr-verify'>('overview');
   const [lastScannedCode, setLastScannedCode] = useState<string | null>(null);
   const [verificationStatus, setVerificationStatus] = useState<'none' | 'success' | 'error' | 'loading'>('none');
   const [nextRetrainTime, setNextRetrainTime] = useState<Date>(new Date(Date.now() + 12 * 60 * 60 * 1000));
@@ -60,11 +61,106 @@ const AdminDashboard = () => {
   // WebSocket reference
   const wsRef = useRef<WebSocket | null>(null);
   
+  // QR Scanner state
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanResult, setScanResult] = useState<any>(null);
+  const [errorMessage, setErrorMessage] = useState<string>('');
+  const qrScannerRef = useRef<QrScanner | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  
+    // QR Code helper functions
+  const handleQRScan = async (qrCodeData: string) => {
+    if (!qrCodeData) return;
+    
+    setVerificationStatus('loading');
+    setErrorMessage('');
+    
+    try {
+      const result = await apiService.scanQRCode(qrCodeData);
+      setScanResult(result);
+      setVerificationStatus('success');
+      setLastScannedCode(qrCodeData);
+    } catch (error: any) {
+      setErrorMessage(error.message || 'Failed to scan QR code');
+      setVerificationStatus('error');
+      setScanResult(null);
+    }
+  };
+
+  // QR Scanner functions
+  const startScanning = async () => {
+    if (!videoRef.current) return;
+
+    try {
+      setIsScanning(true);
+      setErrorMessage('');
+      setScanResult(null);
+
+      const scanner = new QrScanner(
+        videoRef.current,
+        (result) => {
+          console.log('QR Code detected:', result.data);
+          handleQRScan(result.data);
+          stopScanning();
+        },
+        {
+          onDecodeError: (error) => {
+            console.log('QR decode error:', error);
+          },
+          highlightScanRegion: true,
+          highlightCodeOutline: true,
+        }
+      );
+
+      qrScannerRef.current = scanner;
+      await scanner.start();
+    } catch (error: any) {
+      console.error('Failed to start QR scanner:', error);
+      setErrorMessage('Failed to access camera. Please ensure camera permissions are granted.');
+      setIsScanning(false);
+    }
+  };
+
+  const stopScanning = () => {
+    if (qrScannerRef.current) {
+      qrScannerRef.current.stop();
+      qrScannerRef.current.destroy();
+      qrScannerRef.current = null;
+    }
+    setIsScanning(false);
+  };
+
+  // Cleanup scanner on unmount
+  useEffect(() => {
+    return () => {
+      stopScanning();
+    };
+  }, []);
+  
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+    }).format(amount);
+  };
+  
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleString();
+  };
+  
+  const calculateSavings = (unitPrice: number, bulkPrice: number) => {
+    return unitPrice - bulkPrice;
+  };
+  
+  const calculateSavingsPercentage = (unitPrice: number, bulkPrice: number) => {
+    if (unitPrice <= 0) return 0;
+    return ((unitPrice - bulkPrice) / unitPrice) * 100;
+  };
+  
   // Dashboard data state
   const [dashboardStats, setDashboardStats] = useState<any>(null);
   const [activityData, setActivityData] = useState<any[]>([]);
   const [modelPerformanceData, setModelPerformanceData] = useState<any[]>([]);
-  const [trainingProgressData, setTrainingProgressData] = useState<any[]>([]);
   const [mlSystemStatus, setMlSystemStatus] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -102,39 +198,42 @@ const AdminDashboard = () => {
         const stats = await apiService.getDashboardStats();
         setDashboardStats(stats);
         
-        // Load activity data (mock for now, could be from API)
-        setActivityData([
-          { month: 'Jan', groups: 150, users: 180 },
-          { month: 'Feb', groups: 180, users: 220 },
-          { month: 'Mar', groups: 280, users: 290 },
-          { month: 'Apr', groups: 250, users: 270 },
-          { month: 'May', groups: 320, users: 350 },
-          { month: 'Jun', groups: 380, users: 420 },
-        ]);
+        // Load activity data from backend (last 6 months)
+        try {
+          const activity = await apiService.getActivityData({ months: 6 });
+          // activity is expected as [{ month, month_key, groups, users }, ...]
+          setActivityData((activity || []).map((d: any) => ({ month: d.month, groups: d.groups, users: d.users })));
+        } catch (err) {
+          console.warn('Failed to load activity data from API, falling back to empty array', err);
+          setActivityData([]);
+        }
         
-        // Load model performance data from API
-        const performanceData = await apiService.getMLPerformance();
-        setModelPerformanceData([
-          { name: 'Accuracy', value: performanceData.accuracy || 0 },
-          { name: 'Precision', value: performanceData.precision || 0 },
-          { name: 'Recall', value: performanceData.recall || 0 },
-          { name: 'F1 Score', value: performanceData.f1_score || 0 },
-        ]);
-        
-        // Load training progress data (mock for now)
-        setTrainingProgressData([
-          { subject: 'Data Quality', A: 90 },
-          { subject: 'Model Training', A: 85 },
-          { subject: 'Validation', A: 88 },
-          { subject: 'Testing', A: 82 },
-          { subject: 'Deployment', A: 95 },
-        ]);
+        // Load model performance data from API (pick latest model if array)
+        try {
+          const perfArray: any = await apiService.getMLPerformance();
+          const latest: any = Array.isArray(perfArray) && perfArray.length > 0 ? perfArray[0] : null;
+          const silhouette = latest ? (latest.silhouette_score || 0) : 0;
+          const n_clusters = latest ? (latest.n_clusters || 0) : 0;
+          const nmf_rank = latest ? (latest.nmf_rank || 0) : 0;
+          const tfidf_vocab = latest ? (latest.tfidf_vocab_size || 0) : 0;
+
+          // Represent silhouette as percentage for readability (e.g., 3.8%)
+          const silhouettePct = +(silhouette * 100).toFixed(2);
+
+          setModelPerformanceData([
+            { name: 'Silhouette', value: silhouettePct, unit: '%' },
+            { name: 'Clusters', value: n_clusters, unit: '' },
+            { name: 'NMF Rank', value: nmf_rank, unit: '' },
+            { name: 'TF-IDF Vocab', value: tfidf_vocab, unit: '' },
+          ]);
+        } catch (err) {
+          console.warn('Failed to load ML performance from API', err);
+          setModelPerformanceData([]);
+        }
         
         // Load ML system status
         const mlStatus = await apiService.getMLSystemStatus();
-        setMlSystemStatus(mlStatus);
-        
-      } catch (err) {
+        setMlSystemStatus(mlStatus);      } catch (err) {
         console.error('Failed to load dashboard data:', err);
         setError('Failed to load dashboard data. Please try again.');
       } finally {
@@ -255,17 +354,17 @@ const AdminDashboard = () => {
               Overview
             </button>
             <button
-              onClick={() => setActiveTab('analytics')}
+              onClick={() => setActiveTab('ml-visualisations')}
               className={`py-4 text-sm font-medium border-b-2 transition focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-                activeTab === 'analytics' 
+                activeTab === 'ml-visualisations' 
                   ? 'border-blue-600 text-blue-600 font-semibold' 
                   : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300'
               }`}
               role="tab"
-              aria-selected={activeTab === 'analytics'}
+              aria-selected={activeTab === 'ml-visualisations'}
               aria-controls="analytics-panel"
             >
-              Analytics
+              ML Visualisations
             </button>
             <button
               onClick={() => setActiveTab('management')}
@@ -341,7 +440,7 @@ const AdminDashboard = () => {
                   />
                   <StatCard
                     title="Total Transactions"
-                    value={dashboardStats.total_products?.toString() || "0"}
+                    value={dashboardStats.total_transactions?.toString() || "0"}
                     icon={<ShoppingBag className="w-6 h-6" />}
                     color="blue"
                   />
@@ -377,7 +476,7 @@ const AdminDashboard = () => {
           </div>
         )}
 
-        {activeTab === 'analytics' && (
+        {activeTab === 'ml-visualisations' && (
           <div className="space-y-12">
             {/* Retrain Button and Timer */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6 space-y-6">
@@ -531,37 +630,14 @@ const AdminDashboard = () => {
                 </ResponsiveContainer>
               </div>
               <div className="grid grid-cols-4 gap-4 mt-8">
-                {modelPerformanceData.map((metric, index) => (
+                {modelPerformanceData.map((metric: any, index: number) => (
                   <div key={index} className="bg-gray-50 rounded-lg p-4">
                     <p className="text-sm text-gray-600">{metric.name}</p>
-                    <p className="text-xl font-semibold text-gray-900 mt-1">{metric.value}%</p>
+                    <p className="text-xl font-semibold text-gray-900 mt-1">
+                      {metric.unit === '%' ? `${metric.value}${metric.unit}` : `${metric.value}`}
+                    </p>
                   </div>
                 ))}
-              </div>
-            </div>
-
-            {/* Training Stage Progress */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="p-2 bg-blue-100 rounded-lg">
-                  <Zap className="w-6 h-6 text-blue-600" />
-                </div>
-                <div>
-                  <h3 className="text-xl font-semibold text-gray-900">Training Stage Progress</h3>
-                  <p className="text-sm text-gray-600 mt-1">Current progress across different training stages</p>
-                </div>
-              </div>
-              <div className="h-[400px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <RadarChart cx="50%" cy="50%" outerRadius="80%" data={trainingProgressData}>
-                    <PolarGrid stroke="#E5E7EB" />
-                    <PolarAngleAxis dataKey="subject" stroke="#6B7280" />
-                    <PolarRadiusAxis angle={30} domain={[0, 100]} stroke="#6B7280" />
-                    <Radar name="Progress" dataKey="A" stroke="#3B82F6" fill="#3B82F6" fillOpacity={0.4} />
-                    <Legend verticalAlign="bottom" height={36} />
-                    <Tooltip />
-                  </RadarChart>
-                </ResponsiveContainer>
               </div>
             </div>
 
@@ -658,28 +734,145 @@ const AdminDashboard = () => {
           <div className="space-y-6">
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
               <h2 className="text-lg font-semibold text-gray-900 mb-4">QR Code Verification</h2>
-              <div className="max-w-xl mx-auto">
-                <div className="aspect-square w-full relative bg-gray-50 rounded-lg overflow-hidden mb-6 border-2 border-dashed border-gray-300 flex items-center justify-center">
-                  <div className="text-center">
-                    <div className="w-16 h-16 mx-auto mb-4 text-gray-400">
-                      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M12 15h4.01M12 21h4.01M12 12h4.01M12 15h4.01M12 21h4.01M12 12h4.01M12 15h4.01M12 21h4.01" />
-                      </svg>
+              <div className="max-w-2xl mx-auto">
+                {/* QR Scanner */}
+                <div className="aspect-square w-full relative bg-gray-50 rounded-lg overflow-hidden mb-6 border-2 border-dashed border-gray-300">
+                  <video
+                    ref={videoRef}
+                    className="w-full h-full object-cover"
+                    playsInline
+                    muted
+                  />
+                  {!isScanning && (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="text-center">
+                        <div className="w-16 h-16 mx-auto mb-4 text-gray-400">
+                          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M12 15h4.01M12 21h4.01M12 12h4.01M12 15h4.01M12 21h4.01M12 12h4.01M12 15h4.01M12 21h4.01" />
+                          </svg>
+                        </div>
+                        <p className="text-gray-600 font-medium">Camera Ready</p>
+                        <p className="text-sm text-gray-500 mt-1">Click start to begin scanning</p>
+                      </div>
                     </div>
-                    <p className="text-gray-600 font-medium">QR Scanner Coming Soon</p>
-                    <p className="text-sm text-gray-500 mt-1">This feature will allow branch staff to scan QR codes for pickup verification.</p>
-                  </div>
+                  )}
                 </div>
 
+                {/* Controls */}
+                <div className="flex gap-3 mb-6">
+                  <button
+                    onClick={isScanning ? stopScanning : startScanning}
+                    className={`flex-1 py-3 px-4 rounded-lg font-medium transition-colors ${
+                      isScanning
+                        ? 'bg-red-600 hover:bg-red-700 text-white'
+                        : 'bg-blue-600 hover:bg-blue-700 text-white'
+                    }`}
+                  >
+                    {isScanning ? 'Stop Scanning' : 'Start Scanning'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setScanResult(null);
+                      setErrorMessage('');
+                      setVerificationStatus('none');
+                      setLastScannedCode(null);
+                    }}
+                    className="px-4 py-3 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg font-medium transition-colors"
+                  >
+                    Clear
+                  </button>
+                </div>
+
+                {/* Error Message */}
+                {errorMessage && (
+                  <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-4">
+                    <div className="flex items-center gap-2">
+                      <div className="text-red-500">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </div>
+                      <p className="text-red-700 font-medium">{errorMessage}</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Scan Results */}
+                {scanResult && (
+                  <div className="mb-6 bg-green-50 border border-green-200 rounded-lg p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="text-green-500">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                      </div>
+                      <p className="text-green-700 font-medium">QR Code Verified Successfully!</p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* User Info */}
+                      <div className="bg-white rounded-lg p-3">
+                        <h4 className="font-medium text-gray-900 mb-2">Customer Information</h4>
+                        <div className="space-y-1 text-sm">
+                          <p><span className="font-medium">Name:</span> {scanResult.user_info?.full_name || 'N/A'}</p>
+                          <p><span className="font-medium">Email:</span> {scanResult.user_info?.email || 'N/A'}</p>
+                          <p><span className="font-medium">Location:</span> {scanResult.user_info?.location_zone || 'N/A'}</p>
+                        </div>
+                      </div>
+
+                      {/* Product Info */}
+                      <div className="bg-white rounded-lg p-3">
+                        <h4 className="font-medium text-gray-900 mb-2">Product Information</h4>
+                        <div className="space-y-1 text-sm">
+                          <p><span className="font-medium">Product:</span> {scanResult.product_info?.name || 'N/A'}</p>
+                          <p><span className="font-medium">Price:</span> ${scanResult.product_info?.unit_price || 'N/A'}</p>
+                          <p><span className="font-medium">Category:</span> {scanResult.product_info?.category || 'N/A'}</p>
+                        </div>
+                      </div>
+
+                      {/* Purchase Info */}
+                      <div className="bg-white rounded-lg p-3">
+                        <h4 className="font-medium text-gray-900 mb-2">Purchase Details</h4>
+                        <div className="space-y-1 text-sm">
+                          <p><span className="font-medium">Quantity:</span> {scanResult.purchase_info?.quantity || 'N/A'}</p>
+                          <p><span className="font-medium">Amount:</span> ${scanResult.purchase_info?.amount || 'N/A'}</p>
+                          <p><span className="font-medium">Date:</span> {scanResult.purchase_info?.purchase_date ? new Date(scanResult.purchase_info.purchase_date).toLocaleDateString() : 'N/A'}</p>
+                        </div>
+                      </div>
+
+                      {/* QR Status */}
+                      <div className="bg-white rounded-lg p-3">
+                        <h4 className="font-medium text-gray-900 mb-2">QR Code Status</h4>
+                        <div className="space-y-1 text-sm">
+                          <p><span className="font-medium">Used:</span> {scanResult.qr_status?.is_used ? 'Yes' : 'No'}</p>
+                          <p><span className="font-medium">Generated:</span> {scanResult.qr_status?.generated_at ? new Date(scanResult.qr_status.generated_at).toLocaleDateString() : 'N/A'}</p>
+                          <p><span className="font-medium">Expires:</span> {scanResult.qr_status?.expires_at ? new Date(scanResult.qr_status.expires_at).toLocaleDateString() : 'N/A'}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Instructions */}
                 <div className="mt-6 bg-gray-50 rounded-lg p-4">
                   <h3 className="text-sm font-medium text-gray-900 mb-2">How it works:</h3>
                   <ul className="text-sm text-gray-600 space-y-2">
-                    <li>1. Customers receive QR codes when their group buy is ready for pickup</li>
-                    <li>2. Branch staff scan the QR code to verify the customer's order</li>
-                    <li>3. System validates the QR code and marks the pickup as complete</li>
-                    <li>4. Customer receives their products and payment is processed</li>
+                    <li>1. Click "Start Scanning" to activate the camera</li>
+                    <li>2. Point the camera at a customer's QR code</li>
+                    <li>3. The system will automatically scan and verify the QR code</li>
+                    <li>4. Review the customer and purchase information</li>
+                    <li>5. Complete the pickup process and mark the QR code as used</li>
                   </ul>
                 </div>
+
+                {/* Last Scanned Code */}
+                {lastScannedCode && (
+                  <div className="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-3">
+                    <p className="text-sm text-blue-700">
+                      <span className="font-medium">Last scanned:</span> {lastScannedCode.substring(0, 20)}...
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -721,26 +914,6 @@ const AdminDashboard = () => {
           </div>
         )}
       </main>
-
-      {/* Admin Helper Message */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mt-8 mx-4 sm:mx-6 lg:mx-8 mb-8">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="p-2 bg-blue-100 rounded-lg">
-            <AlertTriangle className="w-6 h-6 text-blue-600" />
-          </div>
-          <div>
-            <h3 className="text-lg font-semibold text-blue-900">Admin Guidelines</h3>
-            <p className="text-sm text-blue-700 mt-1">Important information for managing groups</p>
-          </div>
-        </div>
-        <div className="space-y-3 text-sm text-blue-800">
-          <p>• As an admin, you are responsible for creating new group buying opportunities for traders</p>
-          <p>• Set realistic target member counts and deadlines to ensure group success</p>
-          <p>• Monitor active groups and process payments promptly when targets are reached</p>
-          <p>• Ensure accurate product descriptions and pricing information</p>
-          <p>• Coordinate with local pickup locations for smooth delivery process</p>
-        </div>
-      </div>
     </Layout>
   );
 };

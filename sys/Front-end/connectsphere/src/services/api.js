@@ -145,7 +145,26 @@ class ApiService {
   async getAllGroups(params = {}) {
     const queryString = new URLSearchParams(params).toString();
     const endpoint = queryString ? `/api/groups?${queryString}` : '/api/groups';
-    return this.request(endpoint);
+    // Public endpoint - don't send auth token
+    const url = `${this.baseURL}${endpoint}`;
+    
+    try {
+      const response = await fetch(url, {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || `API Error: ${response.status}`);
+      }
+
+      return response.json();
+    } catch (error) {
+      console.error(`API request failed: ${endpoint}`, error);
+      throw error;
+    }
   }
 
   // Past groups summary
@@ -190,6 +209,12 @@ class ApiService {
     return this.request('/api/admin/dashboard');
   }
 
+  async getActivityData(params = {}) {
+    const queryString = new URLSearchParams(params).toString();
+    const endpoint = queryString ? `/api/admin/activity?${queryString}` : '/api/admin/activity';
+    return this.request(endpoint);
+  }
+
   async getAdminGroups() {
     return this.request('/api/admin/groups');
   }
@@ -221,7 +246,7 @@ class ApiService {
   }
 
   async retrainMLModels() {
-    return this.request('/api/ml/retrain', {
+    return this.request('/api/admin/retrain', {
       method: 'POST',
     });
   }
@@ -267,6 +292,30 @@ class ApiService {
       method: 'POST',
       body: JSON.stringify(groupData),
     });
+  }
+
+  // QR Code methods
+  async generateQRCode(qrData) {
+    return this.request('/api/admin/qr/generate', {
+      method: 'POST',
+      body: JSON.stringify(qrData),
+    });
+  }
+
+  async scanQRCode(qrCodeData) {
+    // Use POST to send QR data in the request body to avoid URL encoding/truncation
+    return this.request('/api/admin/qr/scan', {
+      method: 'POST',
+      body: JSON.stringify({ qr_code_data: qrCodeData })
+    });
+  }
+
+  async getUserPurchases(userId) {
+    return this.request(`/api/admin/qr/user/${userId}/purchases`);
+  }
+
+  async getProductPurchasers(productId) {
+    return this.request(`/api/admin/qr/product/${productId}/purchasers`);
   }
 
   // Utility methods

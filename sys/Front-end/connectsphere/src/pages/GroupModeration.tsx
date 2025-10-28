@@ -885,25 +885,6 @@ const GroupModeration = () => {
           </div>
         </div>
       )}
-      {/* Admin Helper Message */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="p-2 bg-blue-100 rounded-lg">
-            <AlertTriangle className="w-6 h-6 text-blue-600" />
-          </div>
-          <div>
-            <h3 className="text-lg font-semibold text-blue-900">Admin Guidelines</h3>
-            <p className="text-sm text-blue-700 mt-1">Important information for managing groups</p>
-          </div>
-        </div>
-        <div className="space-y-3 text-sm text-blue-800">
-          <p>• As an admin, you are responsible for creating new group buying opportunities for traders</p>
-          <p>• Set realistic target member counts and deadlines to ensure group success</p>
-          <p>• Monitor active groups and process payments promptly when targets are reached</p>
-          <p>• Ensure accurate product descriptions and pricing information</p>
-          <p>• Coordinate with local pickup locations for smooth delivery process</p>
-        </div>
-      </div>
     </Layout>
   );
 };
