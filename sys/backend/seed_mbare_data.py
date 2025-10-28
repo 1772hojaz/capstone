@@ -9,7 +9,7 @@ Seed Database with Mbare Musika Realistic Data
 import random
 from datetime import datetime, timedelta
 from database import SessionLocal
-from models import User, Product, Transaction, GroupBuy
+from models import User, GroupBuy, Transaction, Product, Contribution, AdminGroup, AdminGroupJoin
 from auth import hash_password
 import numpy as np
 
@@ -33,7 +33,7 @@ def seed_mbare_traders(db, n_traders=100):
         "restaurant", "grocer", "fruit_vendor", "vegetable_vendor"
     ]
     
-    print(f"\n📊 Creating {n_traders} Mbare traders with diverse profiles...")
+    print("\n📊 Creating {} Mbare traders with diverse profiles...".format(n_traders))
     
     traders = []
     for i in range(n_traders):
@@ -90,7 +90,7 @@ def generate_trader_preferences(business_type):
 def seed_mbare_transactions(db, traders_info, weeks=16):
     """Generate realistic transaction history for Mbare traders - RICHER DATA"""
     
-    print(f"\n💳 Generating {weeks} weeks of rich transaction history...")
+    print("\n💳 Generating {} weeks of rich transaction history...".format(weeks))
     
     # Get all products
     products = db.query(Product).all()
@@ -106,7 +106,7 @@ def seed_mbare_transactions(db, traders_info, weeks=16):
             product_by_category[cat] = []
         product_by_category[cat].append(p)
     
-    print(f"📦 Using {len(products)} products across {len(product_by_category)} categories")
+    print("📦 Using {} products across {} categories".format(len(products), len(product_by_category)))
     
     start_date = datetime.utcnow() - timedelta(weeks=weeks)
     transactions_created = 0
@@ -163,11 +163,11 @@ def seed_mbare_transactions(db, traders_info, weeks=16):
         # Commit every week to avoid huge memory usage
         if (week + 1) % 4 == 0:
             db.commit()
-            print(f"  Week {week + 1}/{weeks}: {transactions_created} transactions...")
+            print("  Week {}/{}: {} transactions...".format(week + 1, weeks, transactions_created))
     
     db.commit()
-    print(f"✅ Created {transactions_created} transactions over {weeks} weeks")
-    print(f"   Average per trader: {transactions_created / len(traders_info):.1f} transactions")
+    print("✅ Created {} transactions over {} weeks".format(transactions_created, weeks))
+    print("   Average per trader: {:.1f} transactions".format(transactions_created / len(traders_info)))
     
     return transactions_created
 
@@ -215,7 +215,7 @@ def select_products_by_preference(products, product_by_category, preferences, co
 def create_active_group_buys(db, n_groupbuys=20):
     """Create some active group-buys for testing recommendations"""
     
-    print(f"\n🛍️  Creating {n_groupbuys} active group-buys...")
+    print("\n🛍️  Creating {} active group-buys...".format(n_groupbuys))
     
     products = db.query(Product).all()
     traders = db.query(User).filter(~User.is_admin).all()
@@ -245,7 +245,243 @@ def create_active_group_buys(db, n_groupbuys=20):
         created += 1
     
     db.commit()
-    print(f"✅ Created {created} active group-buys")
+    print("✅ Created {} active group-buys".format(created))
+
+def create_admin_groups_with_contributions(db, traders_info):
+    """Create AdminGroups with Mbare products and realistic contributions"""
+    
+    print("\n👥 Creating AdminGroups with Mbare products and contributions...")
+    
+    # Select popular Mbare products for AdminGroups
+    popular_products = [
+        ("Strawberries", "Fruits"),
+        ("Okra", "Vegetables"), 
+        ("Carrots (Bulk)", "Vegetables"),
+        ("Sugar Beans", "Legumes"),
+        ("Oyster Mushroom", "Vegetables"),
+        ("Tomatoes", "Vegetables"),
+        ("Cabbage", "Vegetables"),
+        ("Apples", "Fruits")
+    ]
+    
+    admin_groups_data = []
+    for product_name, category in popular_products:
+        product = db.query(Product).filter(Product.name == product_name).first()
+        if product:
+            # Calculate group pricing (bulk discount)
+            discount_pct = random.uniform(0.15, 0.25)  # 15-25% discount
+            group_price = product.bulk_price * (1 - discount_pct)
+            original_price = product.unit_price
+            
+            # Group size based on product type
+            if category in ["Fruits", "Vegetables"]:
+                max_participants = random.randint(15, 25)
+            else:
+                max_participants = random.randint(10, 20)
+            
+            admin_groups_data.append({
+                "name": product_name,
+                "description": "Premium {} from Mbare Musika market".format(product_name),
+                "long_description": "Fresh {} sourced directly from Mbare Musika. High-quality produce with bulk pricing for serious traders. Perfect for retail and wholesale.".format(product_name),
+                "category": category,
+                "price": round(group_price, 2),
+                "original_price": round(original_price, 2),
+                "image": "https://via.placeholder.com/300x200?text={}".format(product_name.replace(' ', '+')),
+                "max_participants": max_participants,
+                "end_date": datetime.utcnow() + timedelta(days=random.randint(5, 14)),
+                "admin_name": "ConnectSphere Admin",
+                "shipping_info": "Free delivery within Harare metropolitan area",
+                "estimated_delivery": "2-3 weeks after group completion",
+                "features": ["Fresh from Mbare", "Bulk pricing", "Quality guaranteed", "Market ready"],
+                "requirements": ["Valid trading license", "Minimum order commitment"],
+                "is_active": True,
+                "created": datetime.utcnow()
+            })
+    
+    # Create AdminGroups
+    admin_groups = []
+    for ag_data in admin_groups_data:
+        admin_group = AdminGroup(**ag_data)
+        db.add(admin_group)
+        admin_groups.append(admin_group)
+    
+    db.commit()
+    print("✅ Created {} AdminGroups".format(len(admin_groups)))
+    
+    # Create realistic contributions to AdminGroups
+    contributions_created = 0
+    for admin_group in admin_groups:
+        # Each AdminGroup gets 40-80% participation
+        target_participants = int(admin_group.max_participants * random.uniform(0.4, 0.8))
+        
+        # Select random traders who might be interested
+        interested_traders = []
+        for trader_info in traders_info:
+            # Higher chance for traders in Mbare or nearby zones
+            if trader_info["zone"] in ["Mbare", "Glen View", "Highfield"]:
+                if random.random() < 0.7:  # 70% chance
+                    interested_traders.append(trader_info)
+            else:
+                if random.random() < 0.4:  # 40% chance
+                    interested_traders.append(trader_info)
+        
+        # Limit to target participants
+        selected_traders = interested_traders[:target_participants]
+        
+        for trader_info in selected_traders:
+            # Create AdminGroupJoin record (not Contribution)
+            admin_group_join = AdminGroupJoin(
+                admin_group_id=admin_group.id,
+                user_id=trader_info["id"],
+                quantity=random.randint(5, 20),  # Realistic quantities
+                delivery_method=random.choice(["pickup", "delivery"]),
+                payment_method=random.choice(["cash", "card"])
+            )
+            db.add(admin_group_join)
+            contributions_created += 1
+        
+        # Update AdminGroup participant count
+        admin_group.participants = len(selected_traders)
+    
+    db.commit()
+    print("✅ Created {} AdminGroupJoin records to AdminGroups".format(contributions_created))
+    
+    return len(admin_groups), contributions_created
+
+def create_completed_groupbuy_for_trader1(db, traders_info):
+    """Create at least one completed group-buy specifically for trader1@mbare.co.zw"""
+    
+    print("\n🎯 Creating completed group-buy for trader1@mbare.co.zw...")
+    
+    # Find trader1 (user_id=1)
+    trader1_info = next((t for t in traders_info if t["id"] == 1), None)
+    if not trader1_info:
+        print("❌ Trader1 not found in traders_info")
+        return 0
+    
+    # Get a popular Mbare product
+    products = db.query(Product).all()
+    popular_products = [p for p in products if p.name in [
+        "Strawberries", "Okra", "Carrots (Bulk)", "Sugar Beans", 
+        "Oyster Mushroom", "Tomatoes", "Cabbage", "Apples"
+    ]]
+    
+    if not popular_products:
+        popular_products = products[:5]  # Fallback to first 5 products
+    
+    selected_product = random.choice(popular_products)
+    
+    # Create completed group-buy
+    completed_date = datetime.utcnow() - timedelta(days=random.randint(1, 7))
+    
+    completed_gb = GroupBuy(
+        product_id=selected_product.id,
+        creator_id=1,  # trader1
+        location_zone=trader1_info["zone"],
+        total_quantity=selected_product.moq,  # Full MOQ achieved
+        deadline=completed_date + timedelta(days=random.randint(3, 7)),  # Deadline was in future
+        status="completed",
+        completed_at=completed_date
+    )
+    db.add(completed_gb)
+    db.commit()  # Need to commit to get the ID
+    
+    # Create contributions from multiple traders including trader1
+    contributions_created = 0
+    total_quantity = 0
+    
+    # Trader1 contributes first
+    trader1_quantity = random.randint(10, min(30, selected_product.moq // 3))
+    trader1_contribution = Contribution(
+        user_id=1,  # trader1
+        group_buy_id=completed_gb.id,
+        quantity=trader1_quantity,
+        contribution_amount=selected_product.bulk_price * trader1_quantity,
+        paid_amount=selected_product.bulk_price * trader1_quantity,
+        is_fully_paid=True,
+        joined_at=completed_date - timedelta(days=random.randint(2, 5))
+    )
+    db.add(trader1_contribution)
+    contributions_created += 1
+    total_quantity += trader1_quantity
+    
+    # Add 3-6 other traders to reach MOQ
+    remaining_quantity = selected_product.moq - trader1_quantity
+    other_traders = [t for t in traders_info if t["id"] != 1][:random.randint(3, 6)]
+    
+    for trader_info in other_traders:
+        if remaining_quantity <= 0:
+            break
+            
+        # Each contributes a portion
+        max_contribution = min(remaining_quantity, selected_product.moq // 4)
+        quantity = random.randint(5, max_contribution)
+        
+        contribution = Contribution(
+            user_id=trader_info["id"],
+            group_buy_id=completed_gb.id,
+            quantity=quantity,
+            contribution_amount=selected_product.bulk_price * quantity,
+            paid_amount=selected_product.bulk_price * quantity,
+            is_fully_paid=True,
+            joined_at=completed_date - timedelta(days=random.randint(2, 5))
+        )
+        db.add(contribution)
+        contributions_created += 1
+        total_quantity += quantity
+        remaining_quantity -= quantity
+    
+    # Update group-buy with final quantities
+    completed_gb.total_quantity = total_quantity
+    # participants_count is a property, don't set it directly
+    
+    db.commit()
+    
+    print("✅ Created completed group-buy '{}' with {} participants".format(
+        selected_product.name, contributions_created))
+    print("   - Product: {}".format(selected_product.name))
+    print("   - Total quantity: {}".format(total_quantity))
+    print("   - Trader1 contributed: {}".format(trader1_quantity))
+    
+    return 1
+
+def create_contributions_for_groupbuys(db, traders_info):
+    """Create realistic contributions to existing GroupBuys"""
+    
+    print("\n🤝 Creating contributions to GroupBuys...")
+    
+    active_groupbuys = db.query(GroupBuy).filter(GroupBuy.status == "active").all()
+    contributions_created = 0
+    
+    for gb in active_groupbuys:
+        # Each GroupBuy gets 30-70% participation
+        target_participants = int(gb.product.moq * random.uniform(0.3, 0.7) / 10)  # Scale down
+        
+        # Select random traders
+        selected_traders = random.sample(traders_info, min(target_participants, len(traders_info)))
+        
+        for trader_info in selected_traders:
+            # Create contribution record
+            quantity = random.randint(5, min(20, gb.product.moq // 2))
+            contribution = Contribution(
+                user_id=trader_info["id"],
+                group_buy_id=gb.id,
+                quantity=quantity,
+                contribution_amount=gb.product.bulk_price * quantity,
+                paid_amount=gb.product.bulk_price * quantity,
+                is_fully_paid=True,
+                joined_at=datetime.utcnow() - timedelta(days=random.randint(1, 7))
+            )
+            db.add(contribution)
+            contributions_created += 1
+        
+        # Update GroupBuy quantities
+        gb.total_quantity = sum(c.quantity for c in gb.contributions)
+    
+    db.commit()
+    print("✅ Created {} contributions to GroupBuys".format(contributions_created))
+    
+    return contributions_created
 
 def main():
     """Main seeding function"""
@@ -262,9 +498,9 @@ def main():
         existing_transactions = db.query(Transaction).count()
         
         if existing_traders > 50 and existing_transactions > 100:
-            print(f"\n⚠️  Database already seeded:")
-            print(f"   - {existing_traders} traders")
-            print(f"   - {existing_transactions} transactions")
+            print("\n⚠️  Database already seeded:")
+            print("   - {} traders".format(existing_traders))
+            print("   - {} transactions".format(existing_transactions))
             
             response = input("\nRe-seed anyway? This will ADD more data (y/N): ")
             if response.lower() != 'y':
@@ -279,16 +515,45 @@ def main():
             print("   Expected: 74 Mbare Musika products")
             return
         
-        print(f"\n✅ Found {len(products)} products in database")
+        print("\n✅ Found {} products in database".format(len(products)))
         
-        # Seed traders
-        traders_info = seed_mbare_traders(db, n_traders=100)
+        # Check if traders already exist
+        existing_traders_count = db.query(User).filter(~User.is_admin).count()
+        if existing_traders_count > 0:
+            print("\n✅ Found {} existing traders, skipping trader creation".format(existing_traders_count))
+            traders_info = []
+            for i in range(1, existing_traders_count + 1):
+                trader = db.query(User).filter(User.id == i).first()
+                if trader:
+                    traders_info.append({
+                        "id": trader.id,
+                        "zone": trader.location_zone,
+                        "business": "existing",  # We don't have this info
+                        "preferences": generate_trader_preferences("tuckshop")  # Default preferences
+                    })
+        else:
+            # Seed traders
+            traders_info = seed_mbare_traders(db, n_traders=100)
         
-        # Seed transactions (12 weeks of history)
-        seed_mbare_transactions(db, traders_info, weeks=12)
+        # Check if transactions already exist
+        existing_transactions = db.query(Transaction).count()
+        if existing_transactions > 0:
+            print("\n✅ Found {} existing transactions, skipping transaction creation".format(existing_transactions))
+        else:
+            # Seed transactions (12 weeks of history)
+            seed_mbare_transactions(db, traders_info, weeks=12)
         
         # Create active group-buys
         create_active_group_buys(db, n_groupbuys=25)
+        
+        # Create completed group-buy for trader1
+        create_completed_groupbuy_for_trader1(db, traders_info)
+        
+        # Create AdminGroups with Mbare products and contributions
+        create_admin_groups_with_contributions(db, traders_info)
+        
+        # Create contributions to existing GroupBuys
+        create_contributions_for_groupbuys(db, traders_info)
         
         # Summary
         print("\n" + "="*60)
@@ -298,20 +563,22 @@ def main():
         final_traders = db.query(User).filter(~User.is_admin).count()
         final_transactions = db.query(Transaction).count()
         final_groupbuys = db.query(GroupBuy).filter(GroupBuy.status == "active").count()
+        completed_groupbuys = db.query(GroupBuy).filter(GroupBuy.status == "completed").count()
         
-        print(f"\n📊 Database Statistics:")
-        print(f"   - Traders: {final_traders}")
-        print(f"   - Products: {len(products)}")
-        print(f"   - Transactions: {final_transactions}")
-        print(f"   - Active Group-Buys: {final_groupbuys}")
-        print(f"\n🎯 Ready for hybrid recommender training!")
-        print(f"   Minimum requirements met: ✅")
-        print(f"   - Products: {len(products)} ≥ 5")
-        print(f"   - Traders: {final_traders} ≥ 4")
-        print(f"   - Transactions: {final_transactions} ≥ 10")
+        print("\n📊 Database Statistics:")
+        print("   - Traders: {}".format(final_traders))
+        print("   - Products: {}".format(len(products)))
+        print("   - Transactions: {}".format(final_transactions))
+        print("   - Active Group-Buys: {}".format(final_groupbuys))
+        print("   - Completed Group-Buys: {}".format(completed_groupbuys))
+        print("\n🎯 Ready for hybrid recommender training!")
+        print("   Minimum requirements met: ✅")
+        print("   - Products: {} ≥ 5".format(len(products)))
+        print("   - Traders: {} ≥ 4".format(final_traders))
+        print("   - Transactions: {} ≥ 10".format(final_transactions))
         
     except Exception as e:
-        print(f"\n❌ Error: {e}")
+        print("\n❌ Error: {}".format(e))
         import traceback
         traceback.print_exc()
         db.rollback()

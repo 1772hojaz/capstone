@@ -25,6 +25,7 @@ router = APIRouter()
 class DashboardStats(BaseModel):
     total_users: int
     total_products: int
+    total_transactions: int
     active_group_buys: int
     completed_group_buys: int
     total_revenue: float
@@ -99,16 +100,19 @@ async def get_dashboard_stats(
     db: Session = Depends(get_db)
 ):
     """Get dashboard statistics"""
-    total_users = db.query(func.count(User.id)).filter(not User.is_admin).scalar()
+    # Count non-admin users correctly. Use bitwise not (~) or explicit comparison instead
+    total_users = db.query(func.count(User.id)).filter(~User.is_admin).scalar()
     total_products = db.query(func.count(Product.id)).filter(Product.is_active).scalar()
+    total_transactions = db.query(func.count(Transaction.id)).scalar()
     active_group_buys = db.query(func.count(GroupBuy.id)).filter(GroupBuy.status == "active").scalar()
     completed_group_buys = db.query(func.count(GroupBuy.id)).filter(GroupBuy.status == "completed").scalar()
     
-    # Calculate total revenue from completed group-buys only
-    completed_groups = db.query(GroupBuy).filter(GroupBuy.status == "completed").all()
-    total_revenue = sum(gb.total_contributions for gb in completed_groups if gb.total_contributions)
+    # Calculate total revenue from transactions (includes upfront and final payments)
+    # This gives a more accurate picture of money actually transacted in the system.
+    total_revenue = db.query(func.sum(Transaction.amount)).scalar() or 0.0
     
-    # Calculate total savings
+    # Calculate total savings from completed group-buys
+    completed_groups = db.query(GroupBuy).filter(GroupBuy.status == "completed").all()
     total_savings = sum(
         gb.total_quantity * (gb.product.unit_price - gb.product.bulk_price)
         for gb in completed_groups if gb.product and gb.total_quantity
@@ -117,6 +121,7 @@ async def get_dashboard_stats(
     return DashboardStats(
         total_users=total_users or 0,
         total_products=total_products or 0,
+        total_transactions=total_transactions or 0,
         active_group_buys=active_group_buys or 0,
         completed_group_buys=completed_group_buys or 0,
         total_revenue=float(total_revenue),
@@ -171,7 +176,8 @@ async def get_all_users(
     db: Session = Depends(get_db)
 ):
     """Get all users with filtering"""
-    query = db.query(User).filter(not User.is_admin)
+    # Filter out admin users correctly
+    query = db.query(User).filter(~User.is_admin)
     
     if location_zone:
         query = query.filter(User.location_zone == location_zone)
@@ -421,6 +427,58 @@ async def get_reports(
         cluster_distribution=cluster_distribution
     )
 
+
+@router.get("/activity")
+async def get_activity_data(
+    months: int = 6,
+    admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Return activity time series for the last `months` months.
+
+    Response: [{ month: 'Jan', groups: int, users: int }, ...]
+    """
+    try:
+        # Clamp months
+        months = max(1, min(24, months))
+
+        now = datetime.utcnow()
+        # Build month buckets as YYYY-MM strings
+        buckets = []
+        for i in range(months - 1, -1, -1):
+            dt = (now - timedelta(days=i * 30))
+            key = dt.strftime('%Y-%m')
+            label = dt.strftime('%b')
+            buckets.append((key, label))
+
+        # Query group buys per month (by created_at)
+        group_counts = dict(db.query(
+            func.strftime('%Y-%m', GroupBuy.created_at).label('m'),
+            func.count(GroupBuy.id)
+        ).group_by('m').all())
+
+        # Query new users per month (by created_at)
+        user_counts = dict(db.query(
+            func.strftime('%Y-%m', User.created_at).label('m'),
+            func.count(User.id)
+        ).group_by('m').all())
+
+        result = []
+        for key, label in buckets:
+            groups = int(group_counts.get(key, 0))
+            users = int(user_counts.get(key, 0))
+            result.append({
+                'month': label,
+                'month_key': key,
+                'groups': groups,
+                'users': users
+            })
+
+        return result
+    except Exception as e:
+        print(f"Error building activity data: {e}")
+        raise HTTPException(status_code=500, detail="Failed to build activity data")
+
 @router.post("/retrain")
 async def trigger_retrain(
     admin = Depends(verify_admin),
@@ -437,7 +495,7 @@ async def trigger_retrain(
         
         return {
             "status": "started",
-            "message": "Model retraining started. Check /api/admin/training-status for progress."
+            "message": "Model retraining started. Check /api/admin/ml-system-status for current status."
         }
     except Exception as e:
         raise HTTPException(
@@ -445,47 +503,14 @@ async def trigger_retrain(
             detail=f"Error starting retraining: {str(e)}"
         )
 
-@router.get("/training-status")
-async def get_training_status(
-    admin = Depends(verify_admin),
-    db: Session = Depends(get_db)
-):
-    """Get current training status"""
-    # Import the global training status from ml.py
-    from ml import current_training_status
-    
-    # Get latest model info for additional context
-    latest_model = db.query(MLModel).filter(
-        MLModel.model_type == "hybrid_recommender"
-    ).order_by(MLModel.trained_at.desc()).first()
-    
-    status_info = {
-        "status": current_training_status["status"],
-        "progress": current_training_status["progress"],
-        "current_stage": current_training_status["current_stage"],
-        "stages_completed": current_training_status["stages_completed"],
-        "started_at": current_training_status["started_at"],
-        "completed_at": current_training_status["completed_at"],
-        "error": current_training_status["error"]
-    }
-    
-    # Add latest model results if training completed
-    if current_training_status["status"] == "completed" and latest_model:
-        status_info["results"] = {
-            "silhouette_score": latest_model.metrics.get('silhouette_score', 0),
-            "n_clusters": latest_model.metrics.get('n_clusters', 0),
-            "nmf_rank": latest_model.metrics.get('nmf_rank', 0),
-            "tfidf_vocab_size": latest_model.metrics.get('tfidf_vocab_size', 0)
-        }
-    
-    return status_info
-
 # ML Performance Tracking
 class MLModelPerformance(BaseModel):
     id: int
     model_type: str
     silhouette_score: float
     n_clusters: int
+    nmf_rank: int
+    tfidf_vocab_size: int
     trained_at: datetime
     is_active: bool
     
@@ -499,7 +524,7 @@ async def get_ml_performance(
 ):
     """Get ML model performance history"""
     models = db.query(MLModel).filter(
-        MLModel.model_type == "clustering"
+        MLModel.model_type == "hybrid_recommender"
     ).order_by(MLModel.trained_at.desc()).limit(20).all()
     
     result = []
@@ -509,6 +534,8 @@ async def get_ml_performance(
             model_type=model.model_type,
             silhouette_score=model.metrics.get('silhouette_score', 0),
             n_clusters=model.metrics.get('n_clusters', 0),
+            nmf_rank=model.metrics.get('nmf_rank', 0),
+            tfidf_vocab_size=model.metrics.get('tfidf_vocab_size', 0),
             trained_at=model.trained_at,
             is_active=model.is_active
         ))

@@ -20,6 +20,7 @@ from models import User, GroupBuy, Transaction, Product, MLModel, Contribution, 
 from auth import verify_token, get_current_user
 from websocket_manager import manager
 from explainability import explain_recommendation, explain_cluster_assignment, generate_counterfactual_explanation
+from lime_explainer import explain_with_lime
 import logging
 
 logger = logging.getLogger(__name__)
@@ -57,7 +58,7 @@ class MLScores(BaseModel):
 
 class RecommendationResponse(BaseModel):
     group_buy_id: int
-    product_id: int
+    product_id: Optional[int]  # Made optional since AdminGroups don't have product_id
     product_name: str
     product_image_url: Optional[str]
     unit_price: float
@@ -505,15 +506,19 @@ def get_recommendations_for_user(user: User, db: Session) -> List[dict]:
     """Generate recommendations using Hybrid Recommender (NMF + TF-IDF + Clustering)"""
     global nmf_model, tfidf_model, clustering_model, scaler, feature_store
     
-    # Get active group-buys in user's location
+    # Get active group-buys in Mbare zone for category matching
     active_groups = db.query(GroupBuy).filter(
-        GroupBuy.location_zone == user.location_zone,
+        GroupBuy.location_zone == "Mbare",
         GroupBuy.status == "active",
         GroupBuy.deadline > datetime.utcnow()
     ).all()
     
     if not active_groups:
-        return []
+        # Fallback to all AdminGroups if no Mbare GroupBuys
+        admin_groups = db.query(AdminGroup).filter(
+            AdminGroup.is_active == True
+        ).all()
+        return get_admin_group_recommendations(user, admin_groups, db)
     
     # If models aren't loaded, fall back to simple recommendations
     if not all([nmf_model, tfidf_model, clustering_model, scaler, feature_store]):
@@ -615,7 +620,7 @@ def get_recommendations_for_user(user: User, db: Session) -> List[dict]:
         else:
             cbf_scores_norm = cbf_scores * 0
         
-        # Score each group-buy
+        # Get recommended categories from top GroupBuy recommendations
         recommendations = []
         seen_products = set(tx.product_id for tx in transactions)
         
@@ -666,51 +671,92 @@ def get_recommendations_for_user(user: User, db: Session) -> List[dict]:
                 score = min(score, 1.0)
                 
                 recommendations.append({
-                    "group_buy_id": gb.id,
-                    "product_id": gb.product_id,
-                    "product_name": gb.product.name,
-                    "product_image_url": gb.product.image_url,
-                    "unit_price": gb.product.unit_price,
-                    "bulk_price": gb.product.bulk_price,
-                    "moq": gb.product.moq,
-                    "savings_factor": gb.product.savings_factor,
-                    "savings": savings,
-                    "location_zone": gb.location_zone,
-                    "deadline": gb.deadline,
-                    "total_quantity": gb.total_quantity,
-                    "moq_progress": moq_progress,
-                    "participants_count": gb.participants_count,
-                    "recommendation_score": score,
-                    "reason": ", ".join(reasons) if reasons else "AI-recommended based on your preferences",
-                    "ml_scores": {
-                        "collaborative_filtering": float(cf_score),
-                        "content_based": float(cbf_score),
-                        "popularity": float(pop_score),
-                        "hybrid": float(base_score)
-                    },
-                    # Additional detailed fields for GroupDetail page
-                    "description": gb.product.description or f"High-quality {gb.product.name} available at bulk pricing",
-                    "long_description": gb.product.description or f"Join this group buy to get {gb.product.name} at {savings:.0f}% savings compared to retail price. Minimum order quantity: {gb.product.moq} units.",
-                    "category": gb.product.category or "General",
-                    "created_at": gb.created_at,
-                    "admin_created": True,
-                    "admin_name": "ConnectSphere Admin",
-                    "discount_percentage": savings,
-                    "shipping_info": "Free shipping when group goal is reached",
-                    "estimated_delivery": "2-3 weeks after group completion",
-                    "features": ["Bulk pricing", "Quality guaranteed", "Group savings"],
-                    "requirements": [f"Minimum {gb.product.moq} participants required", "Full payment required to join"]
+                    "group_buy": gb,
+                    "score": score,
+                    "category": gb.product.category or "general",
+                    "reasons": reasons
                 })
             except ValueError:
                 continue
         
-        # Sort by hybrid score
-        recommendations.sort(key=lambda x: x["recommendation_score"], reverse=True)
-        return recommendations[:10]
+        # Sort by hybrid score and get top categories
+        recommendations.sort(key=lambda x: x["score"], reverse=True)
+        top_categories = list(set(rec["category"] for rec in recommendations[:5]))
+        
+        # Now get AdminGroups that match these categories
+        admin_groups = db.query(AdminGroup).filter(
+            AdminGroup.is_active == True,
+            AdminGroup.category.in_(top_categories)
+        ).all()
+        
+        # If no matching categories, get all active AdminGroups
+        if not admin_groups:
+            admin_groups = db.query(AdminGroup).filter(
+                AdminGroup.is_active == True
+            ).all()
+        
+        # Create final recommendations from AdminGroups
+        final_recommendations = []
+        for admin_group in admin_groups[:10]:
+            # Find the matching GroupBuy recommendation for scoring
+            matching_rec = next((rec for rec in recommendations if rec["category"] == admin_group.category), None)
+            
+            if matching_rec:
+                score = matching_rec["score"]
+                reasons = matching_rec["reasons"]
+            else:
+                score = 0.5  # Default score for AdminGroups without direct ML match
+                reasons = ["Admin-created group buy"]
+            
+            # Calculate MOQ progress for AdminGroup
+            moq_progress = (admin_group.participants / admin_group.max_participants) * 100
+            
+            final_recommendations.append({
+                "group_buy_id": admin_group.id,
+                "product_id": None,  # AdminGroups don't have product_id
+                "product_name": admin_group.name,
+                "product_image_url": admin_group.image,
+                "unit_price": admin_group.original_price,
+                "bulk_price": admin_group.price,
+                "moq": admin_group.max_participants,
+                "savings_factor": admin_group.discount_percentage / 100.0,
+                "savings": admin_group.discount_percentage,
+                "location_zone": "Mbare",  # All AdminGroups are for Mbare
+                "deadline": admin_group.end_date,
+                "total_quantity": admin_group.participants,
+                "moq_progress": moq_progress,
+                "participants_count": admin_group.participants,
+                "recommendation_score": score,
+                "reason": ", ".join(reasons) if reasons else "AI-recommended based on your preferences",
+                "ml_scores": {
+                    "collaborative_filtering": 0.3,
+                    "content_based": 0.4,
+                    "popularity": 0.3,
+                    "hybrid": score
+                },
+                # Additional detailed fields for GroupDetail page
+                "description": admin_group.description,
+                "long_description": admin_group.long_description or admin_group.description,
+                "category": admin_group.category,
+                "created_at": admin_group.created,
+                "admin_created": True,
+                "admin_name": admin_group.admin_name,
+                "discount_percentage": admin_group.discount_percentage,
+                "shipping_info": admin_group.shipping_info,
+                "estimated_delivery": admin_group.estimated_delivery,
+                "features": admin_group.features or [],
+                "requirements": admin_group.requirements or []
+            })
+        
+        # Sort by recommendation score
+        final_recommendations.sort(key=lambda x: x["recommendation_score"], reverse=True)
+        return final_recommendations
         
     except Exception as e:
         print(f"⚠️  Error in hybrid recommendations: {e}")
-        return get_simple_recommendations(user, db, active_groups)
+        # Fallback to AdminGroups
+        admin_groups = db.query(AdminGroup).filter(AdminGroup.is_active == True).all()
+        return get_admin_group_recommendations(user, admin_groups, db)
 
 def get_simple_recommendations(user: User, db: Session, active_groups) -> List[dict]:
     """Fallback to simple rule-based recommendations"""
@@ -1569,7 +1615,7 @@ def get_user_similarity_based_recommendations(user_id: int, db: Session, limit: 
         # Sort by similarity (highest first)
         similarities.sort(key=lambda x: x[1], reverse=True)
         
-        # Get groups that similar users have joined
+        # Get groups that similar users have joined (using Contribution table for GroupBuy)
         recommended_groups = []
         seen_group_ids = set()
         
@@ -1615,7 +1661,7 @@ def get_user_similarity_based_recommendations(user_id: int, db: Session, limit: 
             'savings': (rec['group'].product.savings_factor * 100) if rec['group'].product else 10,
             'location_zone': rec['group'].location_zone,
             'deadline': rec['group'].deadline,
-            'total_quantity': rec['group'].total_quantity,
+            'total_quantity': rec['group'].participants,
             'moq_progress': rec['group'].moq_progress,
             'participants_count': rec['group'].participants_count,
             'recommendation_score': rec['recommendation_score'],
@@ -1839,3 +1885,115 @@ async def explain_all_user_recommendations(
     except Exception as e:
         logger.error(f"Error generating comprehensive explanation: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to generate explanations: {str(e)}")
+
+@router.get("/explain/lime/{group_buy_id}")
+async def explain_group_buy_with_lime(
+    group_buy_id: int,
+    user: User = Depends(verify_token),
+    db: Session = Depends(get_db)
+):
+    """
+    Generate LIME-based explanation for a specific group-buy recommendation.
+
+    Uses Local Interpretable Model-agnostic Explanations (LIME) to provide
+    interpretable explanations for individual recommendations by training
+    a surrogate model around the prediction of interest.
+
+    This complements the existing component-decomposition explainability.
+    """
+    try:
+        # Get group-buy
+        group_buy = db.query(GroupBuy).filter(GroupBuy.id == group_buy_id).first()
+        if not group_buy:
+            raise HTTPException(status_code=404, detail="Group-buy not found")
+
+        # Generate LIME explanation
+        lime_explanation = explain_with_lime(user, group_buy, db)
+
+        # Add additional context
+        lime_explanation.update({
+            "group_buy_id": group_buy_id,
+            "product_name": group_buy.product.name,
+            "model_type": "hybrid_recommender",
+            "explainability_method": "lime",
+            "complementary_methods": ["component_decomposition", "counterfactual"]
+        })
+
+        return lime_explanation
+
+    except Exception as e:
+        logger.error(f"Error generating LIME explanation: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate LIME explanation: {str(e)}")
+
+def get_admin_group_recommendations(user: User, admin_groups: List[AdminGroup], db: Session) -> List[dict]:
+    """Fallback recommendations using AdminGroups when ML models fail"""
+    recommendations = []
+    
+    for admin_group in admin_groups:
+        score = 0.5  # Default score
+        reasons = ["Admin-created group buy"]
+        
+        # Boost score based on user preferences
+        if user.preferred_categories and admin_group.category.lower() in [cat.lower() for cat in user.preferred_categories]:
+            score += 0.2
+            reasons.append(f"Matches your interest in {admin_group.category}")
+        
+        # Boost for groups with good participation
+        moq_progress = (admin_group.participants / admin_group.max_participants) * 100
+        if moq_progress >= 75:
+            score += 0.1
+            reasons.append("Almost at target quantity")
+        elif moq_progress >= 50:
+            score += 0.05
+        
+        # Boost for ending soon
+        days_remaining = (admin_group.end_date - datetime.utcnow()).days
+        if days_remaining <= 3:
+            score += 0.05
+            reasons.append("Ending soon")
+        
+        # Boost for high savings
+        if admin_group.discount_percentage >= 20:
+            score += 0.1
+            reasons.append(f"{admin_group.discount_percentage}% savings")
+        
+        score = min(score, 1.0)
+        
+        recommendations.append({
+            "group_buy_id": admin_group.id,
+            "product_id": None,
+            "product_name": admin_group.name,
+            "product_image_url": admin_group.image,
+            "unit_price": admin_group.original_price,
+            "bulk_price": admin_group.price,
+            "moq": admin_group.max_participants,
+            "savings_factor": admin_group.discount_percentage / 100.0,
+            "savings": admin_group.discount_percentage,
+            "location_zone": "Mbare",
+            "deadline": admin_group.end_date,
+            "total_quantity": admin_group.participants,
+            "moq_progress": moq_progress,
+            "participants_count": admin_group.participants,
+            "recommendation_score": score,
+            "reason": ", ".join(reasons),
+            "ml_scores": {
+                "collaborative_filtering": 0.3,
+                "content_based": 0.4,
+                "popularity": 0.3,
+                "hybrid": score
+            },
+            "description": admin_group.description,
+            "long_description": admin_group.long_description or admin_group.description,
+            "category": admin_group.category,
+            "created_at": admin_group.created,
+            "admin_created": True,
+            "admin_name": admin_group.admin_name,
+            "discount_percentage": admin_group.discount_percentage,
+            "shipping_info": admin_group.shipping_info,
+            "estimated_delivery": admin_group.estimated_delivery,
+            "features": admin_group.features or [],
+            "requirements": admin_group.requirements or []
+        })
+    
+    recommendations.sort(key=lambda x: x["recommendation_score"], reverse=True)
+    return recommendations[:10]
