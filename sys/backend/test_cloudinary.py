@@ -5,6 +5,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import cloudinary
+import cloudinary.uploader
+import cloudinary.api
 
 # Configure Cloudinary
 cloudinary.config(
@@ -19,7 +21,17 @@ print('api_secret exists:', bool(cloudinary.config().api_secret))
 
 # Test Cloudinary connection
 try:
-    result = cloudinary.api.ping()
-    print('Cloudinary ping successful:', result)
+    # Try to get account info instead of ping
+    result = cloudinary.api.usage()
+    print('Cloudinary connection successful - usage:', result.get('plan', 'Unknown'))
 except Exception as e:
-    print('Cloudinary ping failed:', str(e))
+    print('Cloudinary API test failed:', str(e))
+    # Try uploading a small test image
+    try:
+        with open('test_image.png', 'rb') as f:
+            test_result = cloudinary.uploader.upload(f, folder="test")
+            print('Test upload successful:', test_result.get('secure_url', 'No URL'))
+    except FileNotFoundError:
+        print('No test image found for upload test')
+    except Exception as e2:
+        print('Test upload failed:', str(e2))

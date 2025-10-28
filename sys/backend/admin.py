@@ -76,14 +76,17 @@ class CreateGroupRequest(BaseModel):
     category: str
     price: float
     original_price: float
-    image: str  # URL from Cloudinary
+    image: Optional[str] = None  # Make image optional since it's uploaded separately
     max_participants: int
-    end_date: datetime
+    end_date: str  # Change to str to accept ISO string
     admin_name: Optional[str] = "Admin"
     shipping_info: Optional[str] = "Free shipping when group goal is reached"
     estimated_delivery: Optional[str] = "2-3 weeks after group completion"
     features: Optional[List[str]] = []
     requirements: Optional[List[str]] = []
+
+    class Config:
+        extra = "ignore"  # Allow extra fields from frontend
 
 class UpdateGroupRequest(BaseModel):
     name: Optional[str] = None
@@ -1224,6 +1227,33 @@ async def create_admin_group(
 ):
     """Create a new admin-managed group buying opportunity"""
     try:
+        # Debug: Log the received data
+        print(f"DEBUG: Received group data: {group_data.dict()}")
+
+        # Validate required fields
+        if not group_data.name or not group_data.name.strip():
+            raise HTTPException(status_code=400, detail="Group name is required")
+        if not group_data.description or not group_data.description.strip():
+            raise HTTPException(status_code=400, detail="Group description is required")
+        if not group_data.category or not group_data.category.strip():
+            raise HTTPException(status_code=400, detail="Category is required")
+        if not isinstance(group_data.price, (int, float)) or group_data.price <= 0:
+            raise HTTPException(status_code=400, detail="Price must be a positive number")
+        if not isinstance(group_data.original_price, (int, float)) or group_data.original_price <= 0:
+            raise HTTPException(status_code=400, detail="Original price must be a positive number")
+        if not group_data.image or not group_data.image.strip():
+            raise HTTPException(status_code=400, detail="Image URL is required")
+        if not isinstance(group_data.max_participants, int) or group_data.max_participants <= 0:
+            raise HTTPException(status_code=400, detail="Max participants must be a positive integer")
+        if not group_data.end_date or not group_data.end_date.strip():
+            raise HTTPException(status_code=400, detail="End date is required")
+
+        # Parse end_date from ISO string
+        try:
+            end_date_obj = datetime.fromisoformat(group_data.end_date.replace('Z', '+00:00'))
+        except (ValueError, AttributeError):
+            raise HTTPException(status_code=400, detail="Invalid end_date format")
+
         # Create the admin group
         new_group = AdminGroup(
             name=group_data.name,
@@ -1234,7 +1264,7 @@ async def create_admin_group(
             original_price=group_data.original_price,
             image=group_data.image,
             max_participants=group_data.max_participants,
-            end_date=group_data.end_date,
+            end_date=end_date_obj,
             admin_name=group_data.admin_name,
             shipping_info=group_data.shipping_info,
             estimated_delivery=group_data.estimated_delivery,
@@ -1262,6 +1292,8 @@ async def create_admin_group(
             }
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"Error creating admin group: {e}")
         db.rollback()
@@ -1292,8 +1324,7 @@ async def update_admin_group(
         if group_data.category is not None:
             group.category = group_data.category
         if group_data.product_name is not None:
-            # For admin groups, we use the name as product name
-            group.name = group_data.product_name
+            group.name = group_data.product_name  # Update group name with product name
         if group_data.regular_price is not None:
             group.original_price = group_data.regular_price
 
@@ -1308,7 +1339,11 @@ async def update_admin_group(
                 "name": group.name,
                 "description": group.description,
                 "category": group.category,
-                "original_price": group.original_price
+                "price": group.price,
+                "original_price": group.original_price,
+                "max_participants": group.max_participants,
+                "end_date": group.end_date.isoformat() if group.end_date else None,
+                "image": group.image
             }
         }
 
@@ -1318,3 +1353,82 @@ async def update_admin_group(
         print(f"Error updating admin group {group_id}: {e}")
         db.rollback()
         raise HTTPException(status_code=500, detail="Failed to update group")
+
+@router.delete("/groups/{group_id}")
+async def delete_admin_group(
+    group_id: int,
+    admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Delete an admin-managed group buying opportunity"""
+    try:
+        # Get the group
+        group = db.query(AdminGroup).filter(AdminGroup.id == group_id).first()
+        if not group:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Group not found"
+            )
+
+        # Check if group has participants
+        participant_count = db.query(func.count(AdminGroupJoin.id)).filter(
+            AdminGroupJoin.admin_group_id == group_id
+        ).scalar() or 0
+
+        if participant_count > 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Cannot delete group with {participant_count} participants. Remove all participants first."
+            )
+
+        # Delete associated image from Cloudinary if it exists
+        if group.image:
+            try:
+                # Extract public_id from Cloudinary URL
+                # URL format: https://res.cloudinary.com/{cloud_name}/image/upload/{version}/{public_id}.{format}
+                if 'cloudinary.com' in group.image and '/upload/' in group.image:
+                    # Find the part after '/upload/'
+                    upload_part = group.image.split('/upload/')[1]
+                    # Remove version number (starts with 'v' followed by digits)
+                    if upload_part.startswith('v') and len(upload_part) > 1:
+                        # Find the next '/' after the version
+                        version_end = upload_part.find('/')
+                        if version_end != -1:
+                            public_id_with_ext = upload_part[version_end + 1:]
+                        else:
+                            public_id_with_ext = upload_part[1:]  # Remove 'v' if no path
+                    else:
+                        public_id_with_ext = upload_part
+                    
+                    # Remove file extension to get public_id
+                    if '.' in public_id_with_ext:
+                        public_id = '.'.join(public_id_with_ext.split('.')[:-1])
+                    else:
+                        public_id = public_id_with_ext
+                    
+                    if public_id:
+                        # Delete from Cloudinary
+                        result = cloudinary.uploader.destroy(public_id)
+                        print(f"Successfully deleted image from Cloudinary: {public_id}, result: {result}")
+                    else:
+                        print(f"Warning: Could not extract public_id from URL: {group.image}")
+            except Exception as cloudinary_error:
+                print(f"Warning: Failed to delete image from Cloudinary: {cloudinary_error}")
+                print(f"Image URL was: {group.image}")
+                # Don't fail the entire operation if image deletion fails
+
+        # Delete the group
+        db.delete(group)
+        db.commit()
+
+        return {
+            "message": "Group deleted successfully",
+            "group_id": group_id
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error deleting admin group {group_id}: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to delete group")
