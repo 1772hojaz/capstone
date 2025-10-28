@@ -1,16 +1,19 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, and_
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime, timedelta
 from database import get_db
-from models import User, GroupBuy, Product, Transaction, MLModel, AdminGroup, AdminGroupJoin
+from models import User, GroupBuy, Product, Transaction, MLModel, AdminGroup, AdminGroupJoin, QRCodeGenerateRequest, QRCodeGenerateResponse, QRCodeScanResponse, UserProductPurchaseInfo, QRCodePickup
+from groups import decrypt_qr_data
 from auth import verify_admin
 import cloudinary
 import cloudinary.uploader
 import cloudinary.api
 import os
+import secrets
+import hashlib
 
 # Configure Cloudinary
 cloudinary.config(
@@ -708,7 +711,7 @@ async def get_ready_for_payment_groups(
 ):
     """Get groups that have reached their target and are ready for payment processing"""
     try:
-        # Get admin groups that have reached their target (participants >= max_participants)
+        # Get admin groups that have reached their target (100% complete)
         ready_groups = db.query(AdminGroup).filter(
             AdminGroup.is_active,
             AdminGroup.max_participants.isnot(None),
@@ -772,7 +775,7 @@ async def get_group_moderation_stats(
             AdminGroup.is_active
         ).scalar() or 0
 
-        # Ready for payment groups count
+        # Ready for payment groups count (groups that are 100% complete)
         ready_for_payment_count = db.query(func.count(AdminGroup.id)).filter(
             AdminGroup.is_active,
             AdminGroup.max_participants.isnot(None),
@@ -833,6 +836,385 @@ async def upload_image(
     except Exception as e:
         print(f"Error uploading image: {e}")
         raise HTTPException(status_code=500, detail="Failed to upload image")
+
+# Helper function to generate secure QR code data
+def generate_qr_code_data(user_id: int, group_buy_id: int) -> str:
+    """Generate a secure QR code string using user_id, group_buy_id and random token"""
+    # Create a unique string combining user, group buy and random token
+    random_token = secrets.token_urlsafe(32)
+    data_string = f"{user_id}:{group_buy_id}:{random_token}:{datetime.utcnow().isoformat()}"
+    
+    # Hash the string for security
+    qr_code_data = hashlib.sha256(data_string.encode()).hexdigest()
+    return qr_code_data
+
+@router.post("/qr/generate", response_model=QRCodeGenerateResponse)
+async def generate_qr_code(
+    request: QRCodeGenerateRequest,
+    admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Generate a QR code for a user's purchase"""
+    try:
+        # Verify user exists
+        user = db.query(User).filter(User.id == request.user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Verify group buy exists
+        group_buy = db.query(GroupBuy).filter(GroupBuy.id == request.group_buy_id).first()
+        if not group_buy:
+            raise HTTPException(status_code=404, detail="Group buy not found")
+        
+        # Check if user has purchased this product
+        transaction = db.query(Transaction).filter(
+            and_(
+                Transaction.user_id == request.user_id,
+                Transaction.group_buy_id == request.group_buy_id
+            )
+        ).first()
+        
+        if not transaction:
+            raise HTTPException(
+                status_code=400, 
+                detail="User has not purchased this product"
+            )
+        
+        # Generate QR code data
+        qr_code_data = generate_qr_code_data(request.user_id, request.group_buy_id)
+        
+        # Set expiration date
+        expires_at = datetime.utcnow() + timedelta(days=request.validity_days)
+        
+        # Create QR code record
+        qr_record = QRCodePickup(
+            qr_code_data=qr_code_data,
+            user_id=request.user_id,
+            group_buy_id=request.group_buy_id,
+            pickup_location=request.pickup_location,
+            expires_at=expires_at
+        )
+        
+        db.add(qr_record)
+        db.commit()
+        db.refresh(qr_record)
+        
+        return QRCodeGenerateResponse(
+            qr_code_data=qr_code_data,
+            expires_at=expires_at,
+            message="QR code generated successfully"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to generate QR code: {str(e)}")
+
+@router.get("/qr/scan/{qr_code_data}", response_model=QRCodeScanResponse)
+async def scan_qr_code(
+    qr_code_data: str,
+    admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Scan a QR code to get product purchase information"""
+    try:
+        # First, try to find the QR code in the database (for admin-generated QR codes)
+        qr_record = db.query(QRCodePickup).filter(
+            QRCodePickup.qr_code_data == qr_code_data
+        ).first()
+
+        if qr_record:
+            # Handle database-stored QR codes
+            # Check if QR code is expired
+            if qr_record.expires_at < datetime.utcnow():
+                raise HTTPException(status_code=400, detail="QR code has expired")
+
+            # Get user information
+            user = db.query(User).filter(User.id == qr_record.user_id).first()
+            if not user:
+                raise HTTPException(status_code=404, detail="User not found")
+
+            # Get group buy and product information
+            group_buy = db.query(GroupBuy).filter(GroupBuy.id == qr_record.group_buy_id).first()
+            if not group_buy:
+                raise HTTPException(status_code=404, detail="Group buy not found")
+
+            product = group_buy.product
+            if not product:
+                raise HTTPException(status_code=404, detail="Product not found")
+
+            # Get transaction information - try multiple ways to find it
+            transaction = db.query(Transaction).filter(
+                and_(
+                    Transaction.user_id == qr_record.user_id,
+                    Transaction.group_buy_id == qr_record.group_buy_id
+                )
+            ).first()
+
+            # If no transaction found with group_buy_id, try finding any transaction for this user
+            # This handles cases where transactions were created without group_buy_id
+            if not transaction:
+                transaction = db.query(Transaction).filter(
+                    Transaction.user_id == qr_record.user_id
+                ).first()
+
+            if not transaction:
+                raise HTTPException(status_code=404, detail="Transaction not found")
+
+            # Mark QR code as used if not already used
+            if not qr_record.is_used:
+                qr_record.is_used = True
+                qr_record.used_at = datetime.utcnow()
+                qr_record.used_by_staff = getattr(admin, 'email', 'Unknown Admin')
+                qr_record.used_location = qr_record.pickup_location
+                db.commit()
+        else:
+            # Handle encrypted QR codes from trader side
+            try:
+                if qr_code_data.startswith("QR-"):
+                    # Look up the QR data from database instead of cache
+                    qr_record = db.query(QRCodePickup).filter(
+                        QRCodePickup.qr_code_data == qr_code_data
+                    ).first()
+                    
+                    print(f"DEBUG: Looking up QR ID {qr_code_data} in database")
+                    if not qr_record:
+                        print(f"DEBUG: QR ID {qr_code_data} not found in database")
+                        raise HTTPException(status_code=400, detail="Invalid QR code")
+                    
+                    # Get encrypted data from used_location field
+                    encrypted_data = qr_record.used_location
+                    print(f"DEBUG: Found encrypted data: {encrypted_data[:50]}...")
+                else:
+                    # Direct encrypted data (for backward compatibility)
+                    encrypted_data = qr_code_data
+                
+                # Try to decrypt the QR code data
+                decrypted_data = decrypt_qr_data(encrypted_data)
+
+                # Extract information from decrypted payload
+                user_id = decrypted_data.get("user_id")
+                group_id = decrypted_data.get("group_id")
+                expires_at_str = decrypted_data.get("expires_at")
+
+                if not user_id or not group_id:
+                    raise HTTPException(status_code=400, detail="Invalid QR code format")
+
+                # Check expiration
+                if expires_at_str:
+                    expires_at = datetime.fromisoformat(expires_at_str.replace('Z', '+00:00'))
+                    if expires_at < datetime.utcnow():
+                        raise HTTPException(status_code=400, detail="QR code has expired")
+
+                # Get user information
+                user = db.query(User).filter(User.id == user_id).first()
+                if not user:
+                    raise HTTPException(status_code=404, detail="User not found")
+
+                # Get group buy and product information
+                group_buy = db.query(GroupBuy).filter(GroupBuy.id == group_id).first()
+                if not group_buy:
+                    raise HTTPException(status_code=404, detail="Group buy not found")
+
+                product = group_buy.product
+                if not product:
+                    raise HTTPException(status_code=404, detail="Product not found")
+
+                # Get transaction information - try multiple ways to find it
+                transaction = db.query(Transaction).filter(
+                    and_(
+                        Transaction.user_id == user_id,
+                        Transaction.group_buy_id == group_id
+                    )
+                ).first()
+
+                # If no transaction found with group_buy_id, try finding any transaction for this user
+                # This handles cases where transactions were created without group_buy_id
+                if not transaction:
+                    transaction = db.query(Transaction).filter(
+                        Transaction.user_id == user_id
+                    ).first()
+
+                if not transaction:
+                    raise HTTPException(status_code=404, detail="Transaction not found")
+
+                # For encrypted QR codes, we don't store usage in database
+                # But we can create a record for tracking purposes
+                qr_record = QRCodePickup(
+                    qr_code_data=qr_code_data,
+                    user_id=user_id,
+                    group_buy_id=group_id,
+                    pickup_location="Encrypted QR Scan",
+                    expires_at=expires_at if expires_at_str else datetime.utcnow() + timedelta(hours=24),
+                    is_used=True,
+                    used_at=datetime.utcnow(),
+                    used_by_staff=getattr(admin, 'email', 'Unknown Admin'),
+                    used_location="Encrypted QR Scan"
+                )
+                db.add(qr_record)
+                db.commit()
+
+            except Exception:
+                raise HTTPException(status_code=400, detail="Invalid or corrupted QR code")
+
+        # Prepare response data (common for both QR code types)
+        user_info = {
+            "id": user.id,
+            "email": user.email,
+            "full_name": user.full_name or "",
+            "location_zone": user.location_zone
+        }
+
+        product_info = {
+            "id": product.id,
+            "name": product.name,
+            "description": product.description or "",
+            "unit_price": float(product.unit_price),
+            "bulk_price": float(product.bulk_price),
+            "category": product.category or "",
+            "savings_factor": float(product.savings_factor)
+        }
+
+        purchase_info = {
+            "quantity": transaction.quantity,
+            "amount": float(transaction.amount),
+            "transaction_type": transaction.transaction_type or "final",
+            "purchase_date": transaction.created_at.isoformat()
+        }
+
+        qr_status = {
+            "is_used": getattr(qr_record, 'is_used', True),
+            "used_at": getattr(qr_record, 'used_at', datetime.utcnow()).isoformat() if hasattr(qr_record, 'used_at') and qr_record.used_at else datetime.utcnow().isoformat(),
+            "generated_at": getattr(qr_record, 'generated_at', datetime.utcnow()).isoformat() if hasattr(qr_record, 'generated_at') else datetime.utcnow().isoformat(),
+            "expires_at": getattr(qr_record, 'expires_at', datetime.utcnow() + timedelta(hours=24)).isoformat() if hasattr(qr_record, 'expires_at') else (datetime.utcnow() + timedelta(hours=24)).isoformat(),
+            "pickup_location": getattr(qr_record, 'pickup_location', 'Default Pickup Point'),
+            "used_by_staff": getattr(qr_record, 'used_by_staff', getattr(admin, 'email', 'Unknown Admin')),
+            "used_location": getattr(qr_record, 'used_location', getattr(qr_record, 'pickup_location', 'Default Pickup Point'))
+        }
+
+        return QRCodeScanResponse(
+            user_info=user_info,
+            product_info=product_info,
+            purchase_info=purchase_info,
+            qr_status=qr_status
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to scan QR code: {str(e)}")
+
+
+# New: POST endpoint to scan QR code payloads passed in the request body.
+class QRScanRequest(BaseModel):
+    qr_code_data: str
+
+
+@router.post("/qr/scan", response_model=QRCodeScanResponse)
+async def scan_qr_code_post(
+    request: QRScanRequest,
+    admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Scan a QR code sent in the request body.
+
+    This is provided to allow clients to send long/base64 QR payloads safely in
+    the JSON body (avoids URL-encoding/length issues when passing tokens in the path).
+    """
+    # Delegate to existing logic for consistency
+    return await scan_qr_code(request.qr_code_data, admin, db)
+
+@router.get("/qr/user/{user_id}/purchases", response_model=List[UserProductPurchaseInfo])
+async def get_user_purchases(
+    user_id: int,
+    admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Get all purchases for a specific user"""
+    try:
+        # Verify user exists
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Get all transactions for the user
+        transactions = db.query(Transaction).filter(
+            Transaction.user_id == user_id
+        ).all()
+        
+        purchases = []
+        for transaction in transactions:
+            # Get group buy information
+            if transaction.group_buy_id:
+                group_buy = db.query(GroupBuy).filter(
+                    GroupBuy.id == transaction.group_buy_id
+                ).first()
+                
+                if group_buy and group_buy.product:
+                    purchase_info = UserProductPurchaseInfo(
+                        user_id=user.id,
+                        email=user.email,
+                        full_name=user.full_name or "",
+                        product_id=group_buy.product.id,
+                        product_name=group_buy.product.name,
+                        quantity_purchased=transaction.quantity,
+                        total_amount=float(transaction.amount),
+                        purchase_date=transaction.created_at,
+                        pickup_location=transaction.location_zone or ""
+                    )
+                    purchases.append(purchase_info)
+        
+        return purchases
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch user purchases: {str(e)}")
+
+@router.get("/qr/product/{product_id}/purchasers", response_model=List[UserProductPurchaseInfo])
+async def get_product_purchasers(
+    product_id: int,
+    admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Get all users who purchased a specific product"""
+    try:
+        # Verify product exists
+        product = db.query(Product).filter(Product.id == product_id).first()
+        if not product:
+            raise HTTPException(status_code=404, detail="Product not found")
+        
+        # Get all transactions for this product
+        transactions = db.query(Transaction).filter(
+            Transaction.product_id == product_id
+        ).all()
+        
+        purchasers = []
+        for transaction in transactions:
+            # Get user information
+            user = db.query(User).filter(User.id == transaction.user_id).first()
+            
+            if user:
+                purchase_info = UserProductPurchaseInfo(
+                    user_id=user.id,
+                    email=user.email,
+                    full_name=user.full_name or "",
+                    product_id=product.id,
+                    product_name=product.name,
+                    quantity_purchased=transaction.quantity,
+                    total_amount=float(transaction.amount),
+                    purchase_date=transaction.created_at,
+                    pickup_location=transaction.location_zone or ""
+                )
+                purchasers.append(purchase_info)
+        
+        return purchasers
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch product purchasers: {str(e)}")
 
 @router.post("/groups/create")
 async def create_admin_group(

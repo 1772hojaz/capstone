@@ -2,6 +2,7 @@ from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, Foreig
 from sqlalchemy.orm import relationship
 from database import Base
 from datetime import datetime
+from pydantic import BaseModel
 
 class User(Base):
     __tablename__ = "users"
@@ -235,10 +236,10 @@ class QRCodePickup(Base):
     __tablename__ = "qr_code_pickups"
     
     id = Column(Integer, primary_key=True, index=True)
-    qr_code_data = Column(String, nullable=False, unique=True)  # Encrypted QR code content
+    qr_code_data = Column(String, nullable=False, unique=True)  # QR ID for trader codes, encrypted data for admin codes
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    group_buy_id = Column(Integer, ForeignKey("group_buys.id"), nullable=False)
-    pickup_location = Column(String, nullable=False)  # Branch location
+    group_buy_id = Column(Integer, ForeignKey("group_buys.id"), nullable=True)  # Nullable for admin groups
+    pickup_location = Column(String, nullable=False)  # Branch location or encrypted data for trader codes
     generated_at = Column(DateTime, default=datetime.utcnow)
     expires_at = Column(DateTime, nullable=False)
     is_used = Column(Boolean, default=False)
@@ -262,4 +263,34 @@ class PickupLocation(Base):
     operating_hours = Column(String, nullable=False)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+# Pydantic models for API responses
+class QRCodeGenerateRequest(BaseModel):
+    user_id: int
+    group_buy_id: int
+    validity_days: int = 30
+    pickup_location: str
+
+class QRCodeGenerateResponse(BaseModel):
+    qr_code_data: str
+    expires_at: datetime
+    message: str
+
+class QRCodeScanResponse(BaseModel):
+    user_info: dict
+    product_info: dict
+    purchase_info: dict
+    qr_status: dict
+
+class UserProductPurchaseInfo(BaseModel):
+    user_id: int
+    email: str
+    full_name: str
+    product_id: int
+    product_name: str
+    quantity_purchased: int
+    total_amount: float
+    purchase_date: datetime
+    pickup_location: str
 

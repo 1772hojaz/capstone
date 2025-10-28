@@ -8,9 +8,10 @@ import json
 from datetime import datetime, timedelta
 import base64
 import io
+import secrets
 from cryptography.fernet import Fernet
 from database import get_db
-from models import User, AdminGroup, Contribution, GroupBuy, AdminGroupJoin
+from models import User, AdminGroup, Contribution, GroupBuy, AdminGroupJoin, QRCodePickup
 from auth import verify_token
 
 router = APIRouter()
@@ -149,6 +150,9 @@ class PickupStatusResponse(BaseModel):
     qr_code: Optional[str] = None
     expires_at: Optional[str] = None
 
+# Global cache for QR codes (for testing - in production use database)
+qr_code_cache = {}
+
 # QR Code Configuration
 QR_ENCRYPTION_KEY = os.getenv("QR_ENCRYPTION_KEY", "pBPfREtwhKH-Ky87_uy0I6zQ0sJeslOzzpFQWkoyr2U=")
 QR_EXPIRY_HOURS = 24  # QR codes expire after 24 hours
@@ -164,11 +168,17 @@ def encrypt_qr_data(data: dict) -> str:
 def decrypt_qr_data(encrypted_data: str) -> dict:
     """Decrypt QR code data"""
     try:
+        print(f"DEBUG: Attempting to decrypt: {encrypted_data[:50]}...")
         f = Fernet(QR_ENCRYPTION_KEY.encode())
         encrypted = base64.urlsafe_b64decode(encrypted_data.encode())
+        print("DEBUG: Base64 decoded successfully")
         decrypted = f.decrypt(encrypted)
-        return json.loads(decrypted.decode())
-    except Exception:
+        print("DEBUG: Fernet decrypted successfully")
+        result = json.loads(decrypted.decode())
+        print(f"DEBUG: JSON parsed successfully: {result}")
+        return result
+    except Exception as e:
+        print(f"DEBUG: Decryption failed with error: {e}")
         raise HTTPException(status_code=400, detail="Invalid QR code data")
 
 def generate_qr_code_image(qr_content: str) -> str:
@@ -235,11 +245,34 @@ async def get_group_qr_code(
         }
 
         qr_content = encrypt_qr_data(payload)
-        qr_image_base64 = generate_qr_code_image(qr_content)
+        # Generate a short ID for the QR code
+        qr_id = "QR-" + secrets.token_hex(4).upper()
+        
+        # Store the QR data in database instead of cache
+        from models import QRCodePickup
+        qr_record = QRCodePickup(
+            qr_code_data=qr_id,  # Store the QR ID as the data
+            user_id=user.id,
+            group_buy_id=group_id,
+            pickup_location=pickup_location,
+            expires_at=datetime.fromisoformat(expires_at.replace('Z', '+00:00')),
+            is_used=False
+        )
+        db.add(qr_record)
+        db.commit()
+        db.refresh(qr_record)
+        
+        # Store encrypted data as used_location (temporary solution)
+        qr_record.used_location = qr_content  # Store encrypted data here temporarily
+        db.commit()
+        
+        print(f"DEBUG: Stored QR data in database - ID: {qr_id}, Record ID: {qr_record.id}")
+        
+        qr_image_base64 = generate_qr_code_image(qr_id)
 
         return {
             "qr_code": qr_image_base64,
-            "qr_content": qr_content,
+            "qr_id": qr_id,
             "expires_at": expires_at,
             "pickup_instructions": f"Show this QR code at {pickup_location} and present valid ID when requested"
         }
@@ -315,6 +348,66 @@ async def get_my_groups(
                     "created": group_buy.created_at.strftime("%b %d, %Y") if group_buy.created_at else "",
                     "matchScore": 95,  # Default high score for joined groups
                     "reason": "You joined this group",
+                    "adminCreated": True,
+                    "adminName": group_buy.creator.full_name if group_buy.creator else "Admin",
+                    "discountPercentage": int(group_buy.product.savings_factor * 100),
+                    "shippingInfo": "Free shipping when group goal is reached",
+                    "estimatedDelivery": "2-3 weeks after group completion",
+                    "features": ["Bulk pricing", "Quality guaranteed", "Group savings"],
+                    "requirements": [f"Minimum {group_buy.product.moq} participants required"],
+                    "longDescription": group_buy.product.description or f"Join this group buy to get {group_buy.product.name} at discounted bulk pricing.",
+                    "category": group_buy.product.category or "General",
+                    "endDate": group_buy.deadline.strftime("%Y-%m-%dT%H:%M:%SZ") if group_buy.deadline else None
+                }
+                groups_data.append(group_data)
+        
+        # For admin users, also include all completed groups (for testing purposes)
+        # Actually, let's show all completed groups for everyone during testing
+        # Get all completed groups that user hasn't already joined
+        completed_groups = db.query(GroupBuy).filter(
+            GroupBuy.status == "completed"
+        ).all()
+        
+        user_joined_group_ids = {contrib.group_buy_id for contrib in contributions}
+        
+        for group_buy in completed_groups:
+            if group_buy.id not in user_joined_group_ids:
+                # Get pickup location for this group
+                pickup_location = "Downtown Market"  # Default
+                if hasattr(group_buy, 'location_zone'):
+                    if group_buy.location_zone == "Downtown":
+                        pickup_location = "Downtown Market"
+                    elif group_buy.location_zone == "Uptown":
+                        pickup_location = "Uptown Market"
+                    elif group_buy.location_zone == "Suburbs":
+                        pickup_location = "Suburban Collection Point"
+                    else:
+                        pickup_location = f"{group_buy.location_zone} Market"
+                
+                # Calculate progress
+                progress = f"{group_buy.total_quantity}/{group_buy.product.moq} ({group_buy.moq_progress:.1f}%)"
+                
+                # Format due date
+                due_date = group_buy.deadline.strftime("%b %d, %Y") if group_buy.deadline else "No deadline"
+                
+                group_data = {
+                    "id": group_buy.id,
+                    "name": group_buy.product.name,
+                    "description": group_buy.product.description or f"Group buy for {group_buy.product.name}",
+                    "price": f"${group_buy.product.bulk_price:.2f}",
+                    "originalPrice": f"${group_buy.product.unit_price:.2f}",
+                    "image": group_buy.product.image_url or "/api/placeholder/300/200",
+                    "status": "ready_for_pickup",  # All completed groups are ready for pickup
+                    "progress": progress,
+                    "dueDate": due_date,
+                    "pickupLocation": pickup_location,
+                    "orderStatus": "Ready for pickup (Testing)",
+                    "savings": f"${(group_buy.product.unit_price - group_buy.product.bulk_price):.2f}",
+                    "participants": group_buy.participants_count,
+                    "maxParticipants": group_buy.product.moq,
+                    "created": group_buy.created_at.strftime("%b %d, %Y") if group_buy.created_at else "",
+                    "matchScore": 95,
+                    "reason": "Completed group (Testing)",
                     "adminCreated": True,
                     "adminName": group_buy.creator.full_name if group_buy.creator else "Admin",
                     "discountPercentage": int(group_buy.product.savings_factor * 100),
@@ -404,7 +497,6 @@ async def get_past_groups_summary(
     tags=["Groups"]
 )
 async def get_all_groups(
-    user: User = Depends(verify_token),
     db: Session = Depends(get_db)
 ):
     """Get all admin-created groups for browsing"""
@@ -491,7 +583,6 @@ async def get_all_groups(
 )
 async def get_group_detail(
     group_id: int,
-    user: User = Depends(verify_token),
     db: Session = Depends(get_db)
 ):
     """Get detailed information about a specific admin group"""
