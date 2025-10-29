@@ -1,0 +1,17 @@
+Perfect! I can see there are two supplier accounts in the database:
+
+supplier@test.com - Test Supplier (is_supplier: 1)
+supplier@connectsphere.com - Test Supplier (is_supplier: 1)
+The error you received was because you were trying to log in with a regular trader account that doesn't have supplier privileges.
+
+To test the supplier login, please use one of these accounts:
+
+Email: supplier@test.com
+Password: SupplierPass123!
+
+Or alternatively:
+Email: supplier@connectsphere.com
+Password: SupplierPass123!
+
+Try logging in with these credentials on the supplier login page. The validation should work correctly and redirect you to the supplier dashboard. Let me know if you encounter any other issues!
+
