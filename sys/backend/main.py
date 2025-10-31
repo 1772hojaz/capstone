@@ -19,6 +19,7 @@ from chat import router as chat_router
 from ml import router as ml_router
 from admin import router as admin_router
 from settings import router as settings_router
+from supplier import router as supplier_router
 from ml_scheduler import scheduler, start_scheduler
 from websocket_manager import manager
 
@@ -235,6 +236,7 @@ app.include_router(chat_router, prefix="/api/chat", tags=["Chat"])
 app.include_router(ml_router, prefix="/api/ml", tags=["Machine Learning"])
 app.include_router(admin_router, prefix="/api/admin", tags=["Admin"])
 app.include_router(settings_router, prefix="/api/settings", tags=["Settings"])
+app.include_router(supplier_router, prefix="/api/supplier", tags=["Supplier"])
 
 if __name__ == "__main__":
     print("DEBUG: Starting server with updated code...")

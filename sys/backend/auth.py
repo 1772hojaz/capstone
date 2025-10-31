@@ -29,6 +29,16 @@ class UserRegister(BaseModel):
     preferred_group_sizes: List[str] = []
     participation_frequency: str = "occasional"
 
+class SupplierRegister(BaseModel):
+    email: EmailStr
+    password: str
+    full_name: str
+    company_name: str
+    business_address: str
+    tax_id: str
+    phone_number: str
+    location_zone: str
+
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
@@ -38,6 +48,7 @@ class Token(BaseModel):
     token_type: str
     user_id: int
     is_admin: bool
+    is_supplier: bool
     location_zone: str
 
 class UserProfile(BaseModel):
@@ -148,6 +159,7 @@ async def register(user_data: UserRegister, db: Session = Depends(get_db)):
         token_type="bearer",
         user_id=new_user.id,
         is_admin=new_user.is_admin,
+        is_supplier=new_user.is_supplier,
         location_zone=new_user.location_zone
     )
 
@@ -166,6 +178,7 @@ async def login(credentials: UserLogin, db: Session = Depends(get_db)):
         token_type="bearer",
         user_id=user.id,
         is_admin=user.is_admin,
+        is_supplier=user.is_supplier,
         location_zone=user.location_zone
     )
 
@@ -266,3 +279,41 @@ async def change_password(
     db.commit()
     
     return {"message": "Password changed successfully"}
+
+@router.post("/register-supplier", response_model=Token)
+async def register_supplier(supplier_data: SupplierRegister, db: Session = Depends(get_db)):
+    """Register a new supplier"""
+    # Check if user exists
+    existing_user = db.query(User).filter(User.email == supplier_data.email).first()
+    if existing_user:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
+    
+    # Create new supplier
+    new_supplier = User(
+        email=supplier_data.email,
+        hashed_password=hash_password(supplier_data.password),
+        full_name=supplier_data.full_name,
+        company_name=supplier_data.company_name,
+        business_address=supplier_data.business_address,
+        tax_id=supplier_data.tax_id,
+        phone_number=supplier_data.phone_number,
+        location_zone=supplier_data.location_zone,
+        is_supplier=True,
+        is_admin=False
+    )
+    
+    db.add(new_supplier)
+    db.commit()
+    db.refresh(new_supplier)
+    
+    # Create token
+    access_token = create_access_token({"user_id": new_supplier.id, "email": new_supplier.email})
+    
+    return Token(
+        access_token=access_token,
+        token_type="bearer",
+        user_id=new_supplier.id,
+        is_admin=new_supplier.is_admin,
+        is_supplier=new_supplier.is_supplier,
+        location_zone=new_supplier.location_zone
+    )

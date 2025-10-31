@@ -12,8 +12,17 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     full_name = Column(String)
     is_admin = Column(Boolean, default=False)
+    is_supplier = Column(Boolean, default=False)
     location_zone = Column(String, nullable=False)
     cluster_id = Column(Integer, nullable=True)
+    
+    # Supplier-specific fields
+    company_name = Column(String)
+    business_address = Column(Text)
+    tax_id = Column(String)
+    phone_number = Column(String)
+    supplier_rating = Column(Float, default=0.0)
+    total_orders_fulfilled = Column(Integer, default=0)
     
     # User preferences for better recommendations
     preferred_categories = Column(JSON, default=list)  # List of preferred product categories
@@ -40,6 +49,8 @@ class User(Base):
     contributions = relationship("Contribution", back_populates="user")
     transactions = relationship("Transaction", back_populates="user")
     chat_messages = relationship("ChatMessage", back_populates="user")
+    supplier_products = relationship("SupplierProduct", back_populates="supplier")
+    supplier_orders = relationship("SupplierOrder", back_populates="supplier")
 
 class Product(Base):
     __tablename__ = "products"
@@ -59,6 +70,7 @@ class Product(Base):
     
     # Relationships
     group_buys = relationship("GroupBuy", back_populates="product")
+    supplier_products = relationship("SupplierProduct", back_populates="product")
     
     @property
     def savings_factor(self):
@@ -216,6 +228,10 @@ class AdminGroup(Base):
             return int(((self.original_price - self.price) / self.original_price) * 100)
         return 0
 
+    # Relationships
+    joins = relationship("AdminGroupJoin", back_populates="admin_group")
+    supplier_orders = relationship("SupplierOrder", backref="admin_group")
+
 class AdminGroupJoin(Base):
     __tablename__ = "admin_group_joins"
     
@@ -229,7 +245,7 @@ class AdminGroupJoin(Base):
     joined_at = Column(DateTime, default=datetime.utcnow)
     
     # Relationships
-    admin_group = relationship("AdminGroup", backref="joins")
+    admin_group = relationship("AdminGroup", back_populates="joins")
     user = relationship("User", backref="admin_group_joins")
 
 class QRCodePickup(Base):
@@ -263,6 +279,142 @@ class PickupLocation(Base):
     operating_hours = Column(String, nullable=False)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+class SupplierProduct(Base):
+    __tablename__ = "supplier_products"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    supplier_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
+    sku = Column(String, nullable=False)
+    stock_level = Column(Integer, default=0)
+    min_bulk_quantity = Column(Integer, default=1)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    supplier = relationship("User", back_populates="supplier_products")
+    product = relationship("Product", back_populates="supplier_products")
+    pricing_tiers = relationship("ProductPricingTier", back_populates="supplier_product", cascade="all, delete-orphan")
+
+class ProductPricingTier(Base):
+    __tablename__ = "product_pricing_tiers"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    supplier_product_id = Column(Integer, ForeignKey("supplier_products.id"), nullable=False)
+    min_quantity = Column(Integer, nullable=False)
+    max_quantity = Column(Integer, nullable=True)  # Null means unlimited
+    unit_price = Column(Float, nullable=False)
+    description = Column(String)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    supplier_product = relationship("SupplierProduct", back_populates="pricing_tiers")
+
+class SupplierOrder(Base):
+    __tablename__ = "supplier_orders"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    supplier_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    group_buy_id = Column(Integer, ForeignKey("group_buys.id"), nullable=True)  # Link to group buy
+    admin_group_id = Column(Integer, ForeignKey("admin_groups.id"), nullable=True)  # Link to admin group
+    order_number = Column(String, unique=True, nullable=False)
+    status = Column(String, default="pending")  # pending, confirmed, rejected, shipped, delivered
+    total_value = Column(Float, nullable=False)
+    total_savings = Column(Float, default=0.0)
+    delivery_method = Column(String)  # delivery, pickup
+    delivery_location = Column(String)
+    scheduled_delivery_date = Column(DateTime, nullable=True)
+    special_instructions = Column(Text)
+    rejection_reason = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    confirmed_at = Column(DateTime, nullable=True)
+    shipped_at = Column(DateTime, nullable=True)
+    delivered_at = Column(DateTime, nullable=True)
+    
+    # Relationships
+    supplier = relationship("User", back_populates="supplier_orders")
+    order_items = relationship("SupplierOrderItem", back_populates="supplier_order", cascade="all, delete-orphan")
+
+class SupplierOrderItem(Base):
+    __tablename__ = "supplier_order_items"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    supplier_order_id = Column(Integer, ForeignKey("supplier_orders.id"), nullable=False)
+    supplier_product_id = Column(Integer, ForeignKey("supplier_products.id"), nullable=False)
+    quantity = Column(Integer, nullable=False)
+    unit_price = Column(Float, nullable=False)
+    total_amount = Column(Float, nullable=False)
+    
+    # Relationships
+    supplier_order = relationship("SupplierOrder", back_populates="order_items")
+    supplier_product = relationship("SupplierProduct", backref="order_items")
+
+class SupplierPickupLocation(Base):
+    __tablename__ = "supplier_pickup_locations"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    supplier_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    name = Column(String, nullable=False)
+    address = Column(Text, nullable=False)
+    city = Column(String, nullable=False)
+    province = Column(String, nullable=False)
+    phone = Column(String, nullable=False)
+    operating_hours = Column(String, nullable=False)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    supplier = relationship("User", backref="pickup_locations")
+
+class SupplierInvoice(Base):
+    __tablename__ = "supplier_invoices"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    supplier_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    order_id = Column(Integer, ForeignKey("supplier_orders.id"), nullable=False)
+    invoice_number = Column(String, unique=True, nullable=False)
+    amount = Column(Float, nullable=False)
+    tax_amount = Column(Float, default=0.0)
+    total_amount = Column(Float, nullable=False)
+    status = Column(String, default="unpaid")  # unpaid, paid, overdue
+    due_date = Column(DateTime, nullable=False)
+    paid_at = Column(DateTime, nullable=True)
+    pdf_url = Column(String)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    supplier = relationship("User", backref="invoices")
+    order = relationship("SupplierOrder", backref="invoice")
+
+class SupplierPayment(Base):
+    __tablename__ = "supplier_payments"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    supplier_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    amount = Column(Float, nullable=False)
+    payment_method = Column(String, nullable=False)  # bank_transfer, mobile_money, cash
+    reference_number = Column(String)
+    status = Column(String, default="pending")  # pending, completed, failed
+    processed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    supplier = relationship("User", backref="payments")
+
+class SupplierNotification(Base):
+    __tablename__ = "supplier_notifications"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    supplier_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    title = Column(String, nullable=False)
+    message = Column(Text, nullable=False)
+    type = Column(String, nullable=False)  # order, payment, system
+    is_read = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    supplier = relationship("User", backref="notifications")
 
 
 # Pydantic models for API responses
