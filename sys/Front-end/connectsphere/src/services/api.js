@@ -80,6 +80,20 @@ class ApiService {
     return response;
   }
 
+  async registerSupplier(supplierData) {
+    const response = await this.request('/api/auth/register-supplier', {
+      method: 'POST',
+      body: JSON.stringify(supplierData),
+    });
+
+    // Store token on successful registration
+    if (response.access_token) {
+      localStorage.setItem('token', response.access_token);
+    }
+
+    return response;
+  }
+
   async logout() {
     try {
       await this.request('/api/auth/logout', { method: 'POST' });
@@ -316,6 +330,128 @@ class ApiService {
 
   async getProductPurchasers(productId) {
     return this.request(`/api/admin/qr/product/${productId}/purchasers`);
+  }
+
+  // Supplier API methods
+  async getSupplierDashboardMetrics() {
+    return this.request('/api/supplier/dashboard/metrics');
+  }
+
+  async getSupplierProducts() {
+    return this.request('/api/supplier/products');
+  }
+
+  async createSupplierProduct(productData) {
+    return this.request('/api/supplier/products', {
+      method: 'POST',
+      body: JSON.stringify(productData),
+    });
+  }
+
+  async updateProductPricing(productId, pricingTiers) {
+    return this.request(`/api/supplier/products/${productId}/pricing`, {
+      method: 'PUT',
+      body: JSON.stringify({ pricing_tiers: pricingTiers }),
+    });
+  }
+
+  async getSupplierOrders(status = null) {
+    const url = status ? `/api/supplier/orders?status=${status}` : '/api/supplier/orders';
+    return this.request(url);
+  }
+
+  async processOrderAction(orderId, action, reason = null, deliveryData = null) {
+    const requestData = { action };
+    if (reason) requestData.reason = reason;
+    if (deliveryData) {
+      requestData.delivery_method = deliveryData.method;
+      requestData.scheduled_delivery_date = deliveryData.date;
+      requestData.special_instructions = deliveryData.instructions;
+    }
+
+    return this.request(`/api/supplier/orders/${orderId}/action`, {
+      method: 'POST',
+      body: JSON.stringify(requestData),
+    });
+  }
+
+  // Supplier Pickup Locations
+  async getSupplierPickupLocations() {
+    return this.request('/api/supplier/pickup-locations');
+  }
+
+  async createPickupLocation(locationData) {
+    return this.request('/api/supplier/pickup-locations', {
+      method: 'POST',
+      body: JSON.stringify(locationData),
+    });
+  }
+
+  async updatePickupLocation(locationId, locationData) {
+    return this.request(`/api/supplier/pickup-locations/${locationId}`, {
+      method: 'PUT',
+      body: JSON.stringify(locationData),
+    });
+  }
+
+  async deletePickupLocation(locationId) {
+    return this.request(`/api/supplier/pickup-locations/${locationId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Supplier Invoices
+  async getSupplierInvoices(status = null) {
+    const url = status ? `/api/supplier/invoices?status=${status}` : '/api/supplier/invoices';
+    return this.request(url);
+  }
+
+  async generateInvoice(orderId) {
+    return this.request(`/api/supplier/orders/${orderId}/invoice`, {
+      method: 'POST',
+    });
+  }
+
+  // Supplier Payments
+  async getSupplierPayments() {
+    return this.request('/api/supplier/payments');
+  }
+
+  async getPaymentDashboard() {
+    return this.request('/api/supplier/payments/dashboard');
+  }
+
+  // Supplier Notifications
+  async getSupplierNotifications(unreadOnly = false) {
+    const url = unreadOnly ? '/api/supplier/notifications?unread_only=true' : '/api/supplier/notifications';
+    return this.request(url);
+  }
+
+  async markNotificationRead(notificationId) {
+    return this.request(`/api/supplier/notifications/${notificationId}/read`, {
+      method: 'PUT',
+    });
+  }
+
+  async markAllNotificationsRead() {
+    return this.request('/api/supplier/notifications/mark-all-read', {
+      method: 'PUT',
+    });
+  }
+
+  // Bulk CSV Upload
+  async bulkUploadProducts(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    return this.request('/api/supplier/products/bulk-upload', {
+      method: 'POST',
+      body: formData,
+      headers: {
+        // Don't set Content-Type, let the browser set it with boundary for FormData
+        ...this.getAuthToken() ? { Authorization: `Bearer ${this.getAuthToken()}` } : {},
+      },
+    });
   }
 
   // Utility methods

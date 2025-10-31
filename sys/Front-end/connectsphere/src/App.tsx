@@ -1,8 +1,11 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
+import SupplierLandingPage from './pages/SupplierLandingPage';
+import SupplierLoginPage from './pages/SupplierLoginPage';
 import AdminDashboard from './pages/AdminDashboard';
 import TraderDashboard from './pages/TraderDashboard';
+import SupplierDashboard from './pages/SupplierDashboard';
 import GroupList from './pages/GroupList';
 import AllGroups from './pages/AllGroups';
 import GroupDetail from './pages/GroupDetail';
@@ -17,8 +20,11 @@ function App() {
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/supplier" element={<SupplierLandingPage />} />
+        <Route path="/supplier/login" element={<SupplierLoginPage />} />
         <Route path="/admin" element={<AdminDashboard />} />
         <Route path="/trader" element={<TraderDashboard />} />
+        <Route path="/supplier/dashboard" element={<SupplierDashboard />} />
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/groups" element={<GroupList />} />
         <Route path="/all-groups" element={<AllGroups />} />
