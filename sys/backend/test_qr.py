@@ -32,7 +32,7 @@ def test_qr_workflow():
     # Step 2: Login as trader to get token
     print("\n2. 🔐 Logging in as trader...")
     trader_login_data = {
-        "email": "trader33@mbare.co.zw",
+        "email": "testtrader@mbare.co.zw",
         "password": "password123"
     }
 
