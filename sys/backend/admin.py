@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime, timedelta
 from database import get_db
-from models import User, GroupBuy, Product, Transaction, MLModel, AdminGroup, AdminGroupJoin, QRCodeGenerateRequest, QRCodeGenerateResponse, QRCodeScanResponse, UserProductPurchaseInfo, QRCodePickup
+from models import User, GroupBuy, Product, Transaction, MLModel, AdminGroup, AdminGroupJoin, QRCodeGenerateRequest, QRCodeGenerateResponse, QRCodeScanResponse, UserProductPurchaseInfo, QRCodePickup, QRScanHistory
 from groups import decrypt_qr_data
 from auth import verify_admin
 import cloudinary
@@ -1432,3 +1432,58 @@ async def delete_admin_group(
         print(f"Error deleting admin group {group_id}: {e}")
         db.rollback()
         raise HTTPException(status_code=500, detail="Failed to delete group")
+
+@router.get("/qr/scan-history")
+async def get_qr_scan_history(
+    limit: int = 50,
+    offset: int = 0,
+    admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Get QR code scan history"""
+    try:
+        # Get scan history with related data
+        scans = db.query(QRScanHistory).options(
+            db.joinedload(QRScanHistory.scanned_by_user),
+            db.joinedload(QRScanHistory.scanned_user),
+            db.joinedload(QRScanHistory.product),
+            db.joinedload(QRScanHistory.group_buy)
+        ).order_by(QRScanHistory.scanned_at.desc()).limit(limit).offset(offset).all()
+
+        result = []
+        for scan in scans:
+            result.append({
+                "id": scan.id,
+                "qr_code": scan.qr_code_data,
+                "scanned_at": scan.scanned_at.isoformat(),
+                "scanned_by": {
+                    "id": scan.scanned_by_user.id if scan.scanned_by_user else None,
+                    "email": scan.scanned_by_user.email if scan.scanned_by_user else "Unknown"
+                } if scan.scanned_by_user else None,
+                "user_info": {
+                    "id": scan.scanned_user.id,
+                    "full_name": scan.scanned_user.full_name or "Unknown User",
+                    "email": scan.scanned_user.email
+                },
+                "product_info": {
+                    "id": scan.product.id,
+                    "name": scan.product.name,
+                    "category": scan.product.category
+                },
+                "purchase_info": {
+                    "quantity": scan.quantity,
+                    "amount": scan.amount
+                },
+                "pickup_location": scan.pickup_location
+            })
+
+        return {
+            "scans": result,
+            "total": len(result),
+            "limit": limit,
+            "offset": offset
+        }
+
+    except Exception as e:
+        print(f"Error getting scan history: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch scan history")

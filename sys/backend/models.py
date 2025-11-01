@@ -416,6 +416,27 @@ class SupplierNotification(Base):
     # Relationships
     supplier = relationship("User", backref="notifications")
 
+class QRScanHistory(Base):
+    __tablename__ = "qr_scan_history"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    qr_code_data = Column(String, nullable=False)
+    scanned_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # Admin who scanned
+    scanned_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)   # User whose QR was scanned
+    group_buy_id = Column(Integer, ForeignKey("group_buys.id"), nullable=True)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
+    quantity = Column(Integer, nullable=False)
+    amount = Column(Float, nullable=False)
+    scanned_at = Column(DateTime, default=datetime.utcnow)
+    pickup_location = Column(String, nullable=True)
+    scan_result = Column(JSON)  # Store the full scan result for reference
+    
+    # Relationships
+    scanned_by_user = relationship("User", foreign_keys=[scanned_by_user_id], backref="admin_scans")
+    scanned_user = relationship("User", foreign_keys=[scanned_user_id], backref="qr_scans")
+    group_buy = relationship("GroupBuy", backref="scan_history")
+    product = relationship("Product", backref="scan_history")
+
 
 # Pydantic models for API responses
 class QRCodeGenerateRequest(BaseModel):
