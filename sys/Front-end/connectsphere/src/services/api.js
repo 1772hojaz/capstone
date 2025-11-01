@@ -332,6 +332,11 @@ class ApiService {
     return this.request(`/api/admin/qr/product/${productId}/purchasers`);
   }
 
+  async getQRScanHistory(limit = 50, offset = 0) {
+    const params = new URLSearchParams({ limit: limit.toString(), offset: offset.toString() });
+    return this.request(`/api/admin/qr/scan-history?${params}`);
+  }
+
   // Supplier API methods
   async getSupplierDashboardMetrics() {
     return this.request('/api/supplier/dashboard/metrics');
@@ -397,6 +402,14 @@ class ApiService {
   async deletePickupLocation(locationId) {
     return this.request(`/api/supplier/pickup-locations/${locationId}`, {
       method: 'DELETE',
+    });
+  }
+
+  // QR Code Scanning
+  async scanQRCode(qrCodeData) {
+    return this.request('/api/admin/qr/scan', {
+      method: 'POST',
+      body: JSON.stringify({ qr_code_data: qrCodeData }),
     });
   }
 

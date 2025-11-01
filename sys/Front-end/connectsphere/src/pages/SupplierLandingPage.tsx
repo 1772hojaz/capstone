@@ -74,6 +74,12 @@ const SupplierLandingPage = () => {
           </div>
           <div className="flex gap-4">
             <button
+              onClick={() => navigate('/')}
+              className="text-blue-200 hover:text-white transition border border-blue-200 px-3 py-2 rounded-lg text-sm"
+            >
+              For Traders
+            </button>
+            <button
               onClick={() => navigate('/supplier/login')}
               className="text-white hover:text-blue-200 transition"
             >

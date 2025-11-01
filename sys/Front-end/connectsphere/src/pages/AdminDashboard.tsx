@@ -46,9 +46,12 @@ const trainingStages: { id: TrainingStage; label: string }[] = [
 ];
 
 const AdminDashboard = () => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'ml-visualisations' | 'management' | 'qr-verify'>('overview');
+  // Load active tab from localStorage or default to 'overview'
+  const [activeTab, setActiveTab] = useState<'overview' | 'ml-visualisations' | 'management' | 'qr-verify'>(() => {
+    const savedTab = localStorage.getItem('admin-dashboard-active-tab');
+    return (savedTab as 'overview' | 'ml-visualisations' | 'management' | 'qr-verify') || 'overview';
+  });
   const [lastScannedCode, setLastScannedCode] = useState<string | null>(null);
-  const [verificationStatus, setVerificationStatus] = useState<'none' | 'success' | 'error' | 'loading'>('none');
   const [nextRetrainTime, setNextRetrainTime] = useState<Date>(new Date(Date.now() + 12 * 60 * 60 * 1000));
   const [timeLeft, setTimeLeft] = useState<string>('');
   const [isRetraining, setIsRetraining] = useState(false);
@@ -65,24 +68,48 @@ const AdminDashboard = () => {
   const [isScanning, setIsScanning] = useState(false);
   const [scanResult, setScanResult] = useState<any>(null);
   const [errorMessage, setErrorMessage] = useState<string>('');
+  const [scanHistory, setScanHistory] = useState<any[]>([]);
   const qrScannerRef = useRef<QrScanner | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   
     // QR Code helper functions
   const handleQRScan = async (qrCodeData: string) => {
     if (!qrCodeData) return;
-    
-    setVerificationStatus('loading');
+
     setErrorMessage('');
-    
+
     try {
       const result = await apiService.scanQRCode(qrCodeData);
       setScanResult(result);
-      setVerificationStatus('success');
       setLastScannedCode(qrCodeData);
+      
+      // Add to scan history locally for immediate feedback
+      const scanEntry = {
+        qrCode: qrCodeData,
+        timestamp: new Date(),
+        userInfo: result.user_info,
+        productInfo: result.product_info,
+        purchaseInfo: result.purchase_info
+      };
+      setScanHistory(prev => [scanEntry, ...prev].slice(0, 50)); // Keep last 50 scans
+
+      // Refresh scan history from API to get the latest data
+      try {
+        const history = await apiService.getQRScanHistory(50, 0);
+        const transformedHistory = history.scans.map((scan: any) => ({
+          qrCode: scan.qr_code,
+          timestamp: new Date(scan.scanned_at),
+          userInfo: scan.user_info,
+          productInfo: scan.product_info,
+          purchaseInfo: scan.purchase_info
+        }));
+        setScanHistory(transformedHistory);
+      } catch (refreshError) {
+        console.error('Failed to refresh scan history:', refreshError);
+        // Keep the local update if API refresh fails
+      }
     } catch (error: any) {
       setErrorMessage(error.message || 'Failed to scan QR code');
-      setVerificationStatus('error');
       setScanResult(null);
     }
   };
@@ -136,26 +163,6 @@ const AdminDashboard = () => {
       stopScanning();
     };
   }, []);
-  
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-    }).format(amount);
-  };
-  
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString();
-  };
-  
-  const calculateSavings = (unitPrice: number, bulkPrice: number) => {
-    return unitPrice - bulkPrice;
-  };
-  
-  const calculateSavingsPercentage = (unitPrice: number, bulkPrice: number) => {
-    if (unitPrice <= 0) return 0;
-    return ((unitPrice - bulkPrice) / unitPrice) * 100;
-  };
   
   // Dashboard data state
   const [dashboardStats, setDashboardStats] = useState<any>(null);
@@ -243,6 +250,34 @@ const AdminDashboard = () => {
 
     loadDashboardData();
   }, []);
+
+  // Load QR scan history on mount
+  useEffect(() => {
+    const loadScanHistory = async () => {
+      try {
+        const history = await apiService.getQRScanHistory(50, 0);
+        // Transform API response to match current scanHistory format
+        const transformedHistory = history.scans.map((scan: any) => ({
+          qrCode: scan.qr_code,
+          timestamp: new Date(scan.scanned_at),
+          userInfo: scan.user_info,
+          productInfo: scan.product_info,
+          purchaseInfo: scan.purchase_info
+        }));
+        setScanHistory(transformedHistory);
+      } catch (error) {
+        console.error('Failed to load scan history:', error);
+        // Don't show error to user, just log it
+      }
+    };
+
+    loadScanHistory();
+  }, []);
+
+  // Save active tab to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('admin-dashboard-active-tab', activeTab);
+  }, [activeTab]);
   useEffect(() => {
     const connectWebSocket = () => {
       try {
@@ -398,17 +433,6 @@ const AdminDashboard = () => {
 
       {/* Main Content */}
       <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-        {/* Header */}
-        <div className="mb-6 sm:mb-8">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-2">
-            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900">Admin Dashboard</h1>
-            <div className="flex items-center gap-1 bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-xs sm:text-sm font-medium w-fit">
-              <Zap className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              <span>Admin Tools</span>
-            </div>
-          </div>
-          <p className="text-sm sm:text-base text-gray-600">Platform metrics, moderation tools, and system settings for ConnectSphere</p>
-        </div>
 
         {/* Tab Content */}
         {activeTab === 'overview' && (
@@ -731,148 +755,234 @@ const AdminDashboard = () => {
         )}
 
         {activeTab === 'qr-verify' && (
-          <div className="space-y-6">
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">QR Code Verification</h2>
-              <div className="max-w-2xl mx-auto">
-                {/* QR Scanner */}
-                <div className="aspect-square w-full relative bg-gray-50 rounded-lg overflow-hidden mb-6 border-2 border-dashed border-gray-300">
-                  <video
-                    ref={videoRef}
-                    className="w-full h-full object-cover"
-                    playsInline
-                    muted
-                  />
-                  {!isScanning && (
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="text-center">
-                        <div className="w-16 h-16 mx-auto mb-4 text-gray-400">
-                          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M12 15h4.01M12 21h4.01M12 12h4.01M12 15h4.01M12 21h4.01M12 12h4.01M12 15h4.01M12 21h4.01" />
+          <div className="space-y-4">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200">
+              <div className="p-4">
+                {/* Main Layout - Camera and Instructions/Results */}
+                <div className={`grid gap-6 ${scanResult || !scanResult ? 'lg:grid-cols-2' : 'max-w-2xl mx-auto'}`}>
+                  
+                  {/* Camera Section - Always on left */}
+                  <div className="space-y-3">
+                    {/* QR Scanner */}
+                    <div className="aspect-square w-64 mx-auto relative bg-gray-50 rounded-lg overflow-hidden border-2 border-dashed border-gray-300">
+                      <video
+                        ref={videoRef}
+                        className="w-full h-full object-cover"
+                        playsInline
+                        muted
+                      />
+                      {!isScanning && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-gray-900 bg-opacity-80">
+                          <div className="bg-gray-50 rounded-lg p-2">
+                            <div className="text-center">
+                              <div className="w-6 h-6 mx-auto mb-1 text-gray-400 bg-gray-100 rounded-full flex items-center justify-center">
+                                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" className="w-3 h-3">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10l4.553-2.276A1 1 0 0119 8.618v6.764a1 1 0 01-1.447.894L13 14M3 18h8a2 2 0 002-2V8a2 2 0 00-2-2H3a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                </svg>
+                              </div>
+                              <p className="text-gray-900 font-medium text-sm">Camera Ready</p>
+                              <p className="text-xs text-gray-600 mt-0.5">Click "Start Scanning" to activate the camera</p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Controls */}
+                    <div className="flex gap-2">
+                      <button
+                        onClick={isScanning ? stopScanning : startScanning}
+                        className={`flex-1 py-2 px-3 text-sm rounded-lg font-medium transition-colors ${
+                          isScanning
+                            ? 'bg-red-600 hover:bg-red-700 text-white'
+                            : 'bg-blue-600 hover:bg-blue-700 text-white'
+                        }`}
+                      >
+                        {isScanning ? 'Stop Scanning' : 'Start Scanning'}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setScanResult(null);
+                          setErrorMessage('');
+                          setLastScannedCode(null);
+                        }}
+                        className="px-3 py-2 text-sm bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg font-medium transition-colors"
+                      >
+                        Clear
+                      </button>
+                    </div>
+
+                    {/* Last Scanned Code */}
+                    {lastScannedCode && (
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                        <p className="text-sm text-blue-700">
+                          <span className="font-medium">Last scanned:</span> {lastScannedCode.substring(0, 20)}...
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Right Side - Instructions or Results */}
+                  <div className="space-y-4">
+                    {/* Instructions - Show before scan */}
+                    {!scanResult ? (
+                      <div className="bg-gray-50 rounded-lg p-4">
+                        <h3 className="text-base font-semibold text-gray-900 mb-3">How it works:</h3>
+                        <ul className="text-xs text-gray-600 space-y-2">
+                          <li className="flex items-start gap-2">
+                            <span className="flex-shrink-0 w-4 h-4 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-medium">1</span>
+                            <span>Click "Start Scanning" to activate the camera</span>
+                          </li>
+                          <li className="flex items-start gap-2">
+                            <span className="flex-shrink-0 w-4 h-4 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-medium">2</span>
+                            <span>Point the camera at a customer's QR code</span>
+                          </li>
+                          <li className="flex items-start gap-2">
+                            <span className="flex-shrink-0 w-4 h-4 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-medium">3</span>
+                            <span>The system will automatically scan and verify the QR code</span>
+                          </li>
+                          <li className="flex items-start gap-2">
+                            <span className="flex-shrink-0 w-4 h-4 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-medium">4</span>
+                            <span>Review the customer and purchase information</span>
+                          </li>
+                          <li className="flex items-start gap-2">
+                            <span className="flex-shrink-0 w-4 h-4 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-medium">5</span>
+                            <span>Complete the pickup process and mark the QR code as used</span>
+                          </li>
+                        </ul>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {/* Error Message */}
+                        {errorMessage && (
+                          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                            <div className="flex items-center gap-2 mb-3">
+                              <div className="text-red-500">
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                              </div>
+                              <p className="text-red-800 font-semibold text-base">Scan Error</p>
+                            </div>
+                            <p className="text-red-700 bg-red-100 px-3 py-2 rounded-md border border-red-200">{errorMessage}</p>
+                          </div>
+                        )}
+
+                        {/* Scan Results */}
+                        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                          <div className="flex items-center gap-2 mb-3">
+                            <div className="text-green-500">
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                              </svg>
+                            </div>
+                            <p className="text-green-800 font-semibold text-base">QR Code Verified Successfully!</p>
+                          </div>                        <div className="grid grid-cols-1 gap-3">
+                            {/* User Info */}
+                            <div className="bg-white rounded-lg p-3 border border-green-100">
+                              <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                                <svg className="w-3 h-3 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                </svg>
+                                Customer Information
+                              </h4>
+                              <div className="space-y-1 text-xs">
+                                <p><span className="font-medium text-gray-600">Name:</span> <span className="text-gray-900">{scanResult.user_info?.full_name || 'N/A'}</span></p>
+                                <p><span className="font-medium text-gray-600">Email:</span> <span className="text-gray-900">{scanResult.user_info?.email || 'N/A'}</span></p>
+                                <p><span className="font-medium text-gray-600">Location:</span> <span className="text-gray-900">{scanResult.user_info?.location_zone || 'N/A'}</span></p>
+                              </div>
+                            </div>
+
+                            {/* Product Info */}
+                            <div className="bg-white rounded-lg p-3 border border-green-100">
+                              <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                                <svg className="w-3 h-3 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                                </svg>
+                                Product Information
+                              </h4>
+                              <div className="space-y-1 text-xs">
+                                <p><span className="font-medium text-gray-600">Product:</span> <span className="text-gray-900">{scanResult.product_info?.name || 'N/A'}</span></p>
+                                <p><span className="font-medium text-gray-600">Price:</span> <span className="text-gray-900">${scanResult.product_info?.unit_price || 'N/A'}</span></p>
+                                <p><span className="font-medium text-gray-600">Category:</span> <span className="text-gray-900">{scanResult.product_info?.category || 'N/A'}</span></p>
+                              </div>
+                            </div>
+
+                            {/* Purchase Info */}
+                            <div className="bg-white rounded-lg p-3 border border-green-100">
+                              <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                                <svg className="w-3 h-3 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                </svg>
+                                Purchase Details
+                              </h4>
+                              <div className="space-y-1 text-xs">
+                                <p><span className="font-medium text-gray-600">Quantity:</span> <span className="text-gray-900">{scanResult.purchase_info?.quantity || 'N/A'}</span></p>
+                                <p><span className="font-medium text-gray-600">Amount:</span> <span className="text-gray-900">${scanResult.purchase_info?.amount || 'N/A'}</span></p>
+                                <p><span className="font-medium text-gray-600">Date:</span> <span className="text-gray-900">{scanResult.purchase_info?.purchase_date ? new Date(scanResult.purchase_info.purchase_date).toLocaleDateString() : 'N/A'}</span></p>
+                              </div>
+                            </div>
+
+                            {/* QR Status */}
+                            <div className="bg-white rounded-lg p-3 border border-green-100">
+                              <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                                <svg className="w-3 h-3 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M12 15h4.01M12 21h4.01M12 12h4.01M12 15h4.01M12 21h4.01M12 12h4.01M12 15h4.01M12 21h4.01" />
+                                </svg>
+                                QR Code Status
+                              </h4>
+                              <div className="space-y-1 text-xs">
+                                <p><span className="font-medium text-gray-600">Used:</span> <span className={`font-medium ${scanResult.qr_status?.is_used ? 'text-red-600' : 'text-green-600'}`}>{scanResult.qr_status?.is_used ? 'Yes' : 'No'}</span></p>
+                                <p><span className="font-medium text-gray-600">Generated:</span> <span className="text-gray-900">{scanResult.qr_status?.generated_at ? new Date(scanResult.qr_status.generated_at).toLocaleDateString() : 'N/A'}</span></p>
+                                <p><span className="font-medium text-gray-600">Expires:</span> <span className="text-gray-900">{scanResult.qr_status?.expires_at ? new Date(scanResult.qr_status.expires_at).toLocaleDateString() : 'N/A'}</span></p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Scan History - Always visible */}
+                    <div className="bg-white rounded-lg p-4 border border-gray-200">
+                      <h4 className="text-base font-semibold text-gray-900 mb-3">Scan History:</h4>
+                      {scanHistory.length > 0 ? (
+                        <div className="space-y-2 max-h-64 overflow-y-auto">
+                          {scanHistory.map((scan, index) => (
+                            <div key={index} className="bg-gray-50 rounded-lg p-3 border border-gray-100">
+                              <div className="flex items-center justify-between mb-1">
+                                <div className="flex items-center gap-2">
+                                  <svg className="w-3 h-3 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                  </svg>
+                                  <span className="text-xs font-medium text-gray-900">
+                                    {scan.userInfo?.full_name || 'Unknown User'}
+                                  </span>
+                                </div>
+                                <span className="text-xs text-gray-500">
+                                  {scan.timestamp.toLocaleTimeString()}
+                                </span>
+                              </div>
+                              <div className="text-xs text-gray-600 space-y-0.5">
+                                <p><span className="font-medium">Product:</span> {scan.productInfo?.name || 'N/A'}</p>
+                                <p><span className="font-medium">Email:</span> {scan.userInfo?.email || 'N/A'}</p>
+                                <p><span className="font-medium">Scanned:</span> {scan.timestamp.toLocaleDateString()}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center py-6 text-gray-500">
+                          <svg className="w-8 h-8 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                           </svg>
+                          <p className="text-xs">No QR scans recorded yet</p>
+                          <p className="text-xs mt-1">Scanned QR codes will appear here</p>
                         </div>
-                        <p className="text-gray-600 font-medium">Camera Ready</p>
-                        <p className="text-sm text-gray-500 mt-1">Click start to begin scanning</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Controls */}
-                <div className="flex gap-3 mb-6">
-                  <button
-                    onClick={isScanning ? stopScanning : startScanning}
-                    className={`flex-1 py-3 px-4 rounded-lg font-medium transition-colors ${
-                      isScanning
-                        ? 'bg-red-600 hover:bg-red-700 text-white'
-                        : 'bg-blue-600 hover:bg-blue-700 text-white'
-                    }`}
-                  >
-                    {isScanning ? 'Stop Scanning' : 'Start Scanning'}
-                  </button>
-                  <button
-                    onClick={() => {
-                      setScanResult(null);
-                      setErrorMessage('');
-                      setVerificationStatus('none');
-                      setLastScannedCode(null);
-                    }}
-                    className="px-4 py-3 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg font-medium transition-colors"
-                  >
-                    Clear
-                  </button>
-                </div>
-
-                {/* Error Message */}
-                {errorMessage && (
-                  <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-4">
-                    <div className="flex items-center gap-2">
-                      <div className="text-red-500">
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                      </div>
-                      <p className="text-red-700 font-medium">{errorMessage}</p>
+                      )}
                     </div>
                   </div>
-                )}
-
-                {/* Scan Results */}
-                {scanResult && (
-                  <div className="mb-6 bg-green-50 border border-green-200 rounded-lg p-4">
-                    <div className="flex items-center gap-2 mb-3">
-                      <div className="text-green-500">
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                      </div>
-                      <p className="text-green-700 font-medium">QR Code Verified Successfully!</p>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {/* User Info */}
-                      <div className="bg-white rounded-lg p-3">
-                        <h4 className="font-medium text-gray-900 mb-2">Customer Information</h4>
-                        <div className="space-y-1 text-sm">
-                          <p><span className="font-medium">Name:</span> {scanResult.user_info?.full_name || 'N/A'}</p>
-                          <p><span className="font-medium">Email:</span> {scanResult.user_info?.email || 'N/A'}</p>
-                          <p><span className="font-medium">Location:</span> {scanResult.user_info?.location_zone || 'N/A'}</p>
-                        </div>
-                      </div>
-
-                      {/* Product Info */}
-                      <div className="bg-white rounded-lg p-3">
-                        <h4 className="font-medium text-gray-900 mb-2">Product Information</h4>
-                        <div className="space-y-1 text-sm">
-                          <p><span className="font-medium">Product:</span> {scanResult.product_info?.name || 'N/A'}</p>
-                          <p><span className="font-medium">Price:</span> ${scanResult.product_info?.unit_price || 'N/A'}</p>
-                          <p><span className="font-medium">Category:</span> {scanResult.product_info?.category || 'N/A'}</p>
-                        </div>
-                      </div>
-
-                      {/* Purchase Info */}
-                      <div className="bg-white rounded-lg p-3">
-                        <h4 className="font-medium text-gray-900 mb-2">Purchase Details</h4>
-                        <div className="space-y-1 text-sm">
-                          <p><span className="font-medium">Quantity:</span> {scanResult.purchase_info?.quantity || 'N/A'}</p>
-                          <p><span className="font-medium">Amount:</span> ${scanResult.purchase_info?.amount || 'N/A'}</p>
-                          <p><span className="font-medium">Date:</span> {scanResult.purchase_info?.purchase_date ? new Date(scanResult.purchase_info.purchase_date).toLocaleDateString() : 'N/A'}</p>
-                        </div>
-                      </div>
-
-                      {/* QR Status */}
-                      <div className="bg-white rounded-lg p-3">
-                        <h4 className="font-medium text-gray-900 mb-2">QR Code Status</h4>
-                        <div className="space-y-1 text-sm">
-                          <p><span className="font-medium">Used:</span> {scanResult.qr_status?.is_used ? 'Yes' : 'No'}</p>
-                          <p><span className="font-medium">Generated:</span> {scanResult.qr_status?.generated_at ? new Date(scanResult.qr_status.generated_at).toLocaleDateString() : 'N/A'}</p>
-                          <p><span className="font-medium">Expires:</span> {scanResult.qr_status?.expires_at ? new Date(scanResult.qr_status.expires_at).toLocaleDateString() : 'N/A'}</p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Instructions */}
-                <div className="mt-6 bg-gray-50 rounded-lg p-4">
-                  <h3 className="text-sm font-medium text-gray-900 mb-2">How it works:</h3>
-                  <ul className="text-sm text-gray-600 space-y-2">
-                    <li>1. Click "Start Scanning" to activate the camera</li>
-                    <li>2. Point the camera at a customer's QR code</li>
-                    <li>3. The system will automatically scan and verify the QR code</li>
-                    <li>4. Review the customer and purchase information</li>
-                    <li>5. Complete the pickup process and mark the QR code as used</li>
-                  </ul>
                 </div>
-
-                {/* Last Scanned Code */}
-                {lastScannedCode && (
-                  <div className="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-3">
-                    <p className="text-sm text-blue-700">
-                      <span className="font-medium">Last scanned:</span> {lastScannedCode.substring(0, 20)}...
-                    </p>
-                  </div>
-                )}
               </div>
             </div>
           </div>
