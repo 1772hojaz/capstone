@@ -789,10 +789,28 @@ const GroupModeration = () => {
                       >
                         <option value="">Select category</option>
                         <option value="electronics">Electronics</option>
-                        <option value="fashion">Fashion</option>
+                        <option value="fashion">Fashion & Clothing</option>
                         <option value="home">Home & Living</option>
                         <option value="beauty">Beauty & Health</option>
                         <option value="sports">Sports & Outdoor</option>
+                        <option value="food">Food & Groceries</option>
+                        <option value="vegetables">Vegetables</option>
+                        <option value="fruits">Fruits</option>
+                        <option value="books">Books & Stationery</option>
+                        <option value="automotive">Automotive & Parts</option>
+                        <option value="tools">Tools & Hardware</option>
+                        <option value="furniture">Furniture & Decor</option>
+                        <option value="appliances">Appliances</option>
+                        <option value="toys">Toys & Games</option>
+                        <option value="jewelry">Jewelry & Accessories</option>
+                        <option value="pet">Pet Supplies</option>
+                        <option value="garden">Garden & Outdoor</option>
+                        <option value="music">Music & Instruments</option>
+                        <option value="art">Art & Crafts</option>
+                        <option value="office">Office Supplies</option>
+                        <option value="medical">Medical & Pharmacy</option>
+                        <option value="baby">Baby & Kids</option>
+                        <option value="other">Other</option>
                       </select>
                     </div>
 
