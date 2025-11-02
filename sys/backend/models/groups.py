@@ -34,7 +34,7 @@ class GroupResponse(BaseModel):
     adminCreated: bool = True
     adminName: str = "Admin"
     savings: Optional[float] = None
-    discountPercentage: Optional[int] = None
+    discountPercentage: Optional[float] = None
     shippingInfo: Optional[str] = None
     estimatedDelivery: Optional[str] = None
     features: Optional[List[str]] = None
@@ -42,6 +42,7 @@ class GroupResponse(BaseModel):
     longDescription: Optional[str] = None
     status: Optional[str] = None
     orderStatus: Optional[str] = None
+    joined: bool = False
 
 class GroupDetailResponse(BaseModel):
     id: int
@@ -497,7 +498,8 @@ async def get_past_groups_summary(
     tags=["Groups"]
 )
 async def get_all_groups(
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(verify_token)
 ):
     """Get all active groups for browsing (both AdminGroups and GroupBuy groups)"""
     result = []
@@ -505,6 +507,12 @@ async def get_all_groups(
     # Get active AdminGroups
     admin_groups = db.query(AdminGroup).filter(AdminGroup.is_active).all()
     for group in admin_groups:
+        # Check if user has joined this admin group
+        joined = db.query(AdminGroupJoin).filter(
+            AdminGroupJoin.admin_group_id == group.id,
+            AdminGroupJoin.user_id == current_user.id
+        ).first() is not None
+        
         result.append(GroupResponse(
             id=group.id,
             name=group.name,
@@ -529,7 +537,8 @@ async def get_all_groups(
             requirements=group.requirements or [],
             longDescription=group.long_description,
             status="active",
-            orderStatus="Open for joining"
+            orderStatus="Open for joining",
+            joined=joined
         ))
     
     # Get active GroupBuy groups
@@ -543,6 +552,12 @@ async def get_all_groups(
         participants_count = db.query(Contribution).filter(
             Contribution.group_buy_id == group.id
         ).count()
+        
+        # Check if user has joined this group buy
+        joined = db.query(Contribution).filter(
+            Contribution.group_buy_id == group.id,
+            Contribution.user_id == current_user.id
+        ).first() is not None
         
         result.append(GroupResponse(
             id=group.id,
@@ -568,7 +583,8 @@ async def get_all_groups(
             requirements=[f"Minimum {group.product.moq if group.product else 10} total units required"],
             longDescription=group.product.description if group.product else f"Join this community group buy for {group.product.name if group.product else 'quality products'} at bulk prices.",
             status="active",
-            orderStatus="Open for joining"
+            orderStatus="Open for joining",
+            joined=joined
         ))
     
     return result
@@ -741,94 +757,166 @@ async def join_group(
     user: User = Depends(verify_token),
     db: Session = Depends(get_db)
 ):
-    """Join a group-buy by creating a contribution.
+    """Join a group-buy by creating a contribution or join record.
 
     Allows users to join an active group-buy by specifying quantity and delivery preferences.
-    Creates a contribution record and initial transaction.
+    Handles both AdminGroup and GroupBuy groups.
     """
     try:
-        # Check if group exists and is active
-        group = db.query(AdminGroup).filter(
+        # First, try to find the group as an AdminGroup
+        admin_group = db.query(AdminGroup).filter(
             AdminGroup.id == group_id,
             AdminGroup.is_active
         ).first()
 
-        if not group:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Group not found or no longer active"
+        if admin_group:
+            # Handle AdminGroup join
+            # Check if user has already joined this group
+            existing_join = db.query(AdminGroupJoin).filter(
+                AdminGroupJoin.user_id == user.id,
+                AdminGroupJoin.admin_group_id == group_id
+            ).first()
+
+            if existing_join:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="You have already joined this group"
+                )
+
+            # Validate quantity
+            if request.quantity <= 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Quantity must be greater than 0"
+                )
+
+            # Check if group has space (if max_participants is set)
+            if admin_group.max_participants and admin_group.participants >= admin_group.max_participants:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Group is full"
+                )
+
+            # Calculate contribution amount (upfront payment - typically 50%)
+            contribution_amount = request.quantity * admin_group.price
+            upfront_amount = contribution_amount * 0.5  # 50% upfront
+
+            # Create admin group join record
+            join_record = AdminGroupJoin(
+                user_id=user.id,
+                admin_group_id=group_id,
+                quantity=request.quantity,
+                delivery_method=request.delivery_method,
+                payment_method=request.payment_method,
+                special_instructions=request.special_instructions
             )
 
-        # Check if user has already joined this group
-        existing_join = db.query(AdminGroupJoin).filter(
-            AdminGroupJoin.user_id == user.id,
-            AdminGroupJoin.admin_group_id == group_id
+            db.add(join_record)
+
+            # Update group participant count
+            admin_group.participants += 1
+
+            # Create initial transaction record
+            from models import Transaction
+            transaction = Transaction(
+                user_id=user.id,
+                group_buy_id=None,  # Admin groups don't have group_buy_id
+                product_id=None,  # Will be set when group completes
+                quantity=request.quantity,
+                amount=upfront_amount,
+                transaction_type="upfront",
+                location_zone=user.location_zone or "Unknown"
+            )
+
+            db.add(transaction)
+            db.commit()
+
+            return {
+                "message": "Successfully joined the group!",
+                "join_id": join_record.id,
+                "quantity": request.quantity,
+                "upfront_amount": round(upfront_amount, 2),
+                "total_amount": round(contribution_amount, 2),
+                "remaining_balance": round(contribution_amount - upfront_amount, 2),
+                "group_progress": f"{admin_group.participants}/{admin_group.max_participants or 'unlimited'}"
+            }
+
+        # If not an AdminGroup, try GroupBuy
+        group_buy = db.query(GroupBuy).filter(
+            GroupBuy.id == group_id,
+            GroupBuy.status == "active",
+            GroupBuy.deadline > datetime.utcnow()
         ).first()
 
-        if existing_join:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="You have already joined this group"
+        if group_buy:
+            # Handle GroupBuy join
+            # Check if user has already joined this group
+            existing_contribution = db.query(Contribution).filter(
+                Contribution.user_id == user.id,
+                Contribution.group_buy_id == group_id
+            ).first()
+
+            if existing_contribution:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="You have already joined this group"
+                )
+
+            # Validate quantity
+            if request.quantity <= 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Quantity must be greater than 0"
+                )
+
+            # Calculate contribution amount
+            contribution_amount = request.quantity * group_buy.product.bulk_price
+
+            # Create contribution record
+            contribution = Contribution(
+                user_id=user.id,
+                group_buy_id=group_id,
+                quantity=request.quantity,
+                contribution_amount=contribution_amount,
+                paid_amount=0.0,  # No payment required upfront for GroupBuy
+                is_fully_paid=False
             )
 
-        # Validate quantity
-        if request.quantity <= 0:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Quantity must be greater than 0"
+            db.add(contribution)
+
+            # Update group totals
+            group_buy.total_quantity += request.quantity
+            group_buy.total_contributions += contribution_amount
+
+            # Create transaction record for the contribution
+            from models import Transaction
+            transaction = Transaction(
+                user_id=user.id,
+                group_buy_id=group_id,
+                product_id=group_buy.product_id,
+                quantity=request.quantity,
+                amount=contribution_amount,
+                transaction_type="contribution",
+                location_zone=user.location_zone or "Unknown"
             )
 
-        # Check if group has space (if max_participants is set)
-        if group.max_participants and group.participants >= group.max_participants:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Group is full"
-            )
+            db.add(transaction)
+            db.commit()
 
-        # Calculate contribution amount (upfront payment - typically 50%)
-        contribution_amount = request.quantity * group.price
-        upfront_amount = contribution_amount * 0.5  # 50% upfront
+            return {
+                "message": "Successfully joined the group buy!",
+                "contribution_id": contribution.id,
+                "quantity": request.quantity,
+                "contribution_amount": round(contribution_amount, 2),
+                "group_progress": f"{group_buy.total_quantity}/{group_buy.product.moq} ({group_buy.moq_progress:.1f}%)",
+                "payment_required": "Payment will be collected when the group reaches minimum quantity"
+            }
 
-        # Create admin group join record
-        join_record = AdminGroupJoin(
-            user_id=user.id,
-            admin_group_id=group_id,
-            quantity=request.quantity,
-            delivery_method=request.delivery_method,
-            payment_method=request.payment_method,
-            special_instructions=request.special_instructions
+        # If neither AdminGroup nor GroupBuy found
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Group not found or no longer active"
         )
-
-        db.add(join_record)
-
-        # Update group participant count
-        group.participants += 1
-
-        # Create initial transaction record
-        from models import Transaction
-        transaction = Transaction(
-            user_id=user.id,
-            group_buy_id=None,  # Admin groups don't have group_buy_id
-            product_id=None,  # Will be set when group completes
-            quantity=request.quantity,
-            amount=upfront_amount,
-            transaction_type="upfront",
-            location_zone=user.location_zone or "Unknown"
-            # Note: Transaction model doesn't have delivery_method/payment_method fields
-        )
-
-        db.add(transaction)
-        db.commit()
-
-        return {
-            "message": "Successfully joined the group!",
-            "join_id": join_record.id,
-            "quantity": request.quantity,
-            "upfront_amount": round(upfront_amount, 2),
-            "total_amount": round(contribution_amount, 2),
-            "remaining_balance": round(contribution_amount - upfront_amount, 2),
-            "group_progress": f"{group.participants}/{group.max_participants or 'unlimited'}"
-        }
 
     except HTTPException:
         raise

@@ -16,7 +16,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.decomposition import NMF
 # import shap  # Temporarily disabled due to llvmlite compatibility issue
 from db.database import get_db
-from models.models import User, GroupBuy, Transaction, Product, MLModel, Contribution, AdminGroup
+from models.models import User, GroupBuy, Transaction, Product, MLModel, Contribution, AdminGroup, AdminGroupJoin
 from authentication.auth import verify_token, get_current_user
 from websocket.websocket_manager import manager
 from .explainability import explain_recommendation, explain_cluster_assignment, generate_counterfactual_explanation
@@ -528,6 +528,21 @@ def get_recommendations_for_user(user: User, db: Session) -> List[dict]:
         ).all()
         return get_admin_group_recommendations(user, admin_groups, db)
     
+    # Filter out groups the user has already joined
+    user_joined_group_ids = set()
+    user_contributions = db.query(Contribution.group_buy_id).filter(
+        Contribution.user_id == user.id
+    ).all()
+    user_joined_group_ids = {contrib.group_buy_id for contrib in user_contributions}
+    
+    # Filter active groups to exclude joined ones
+    available_groups = [g for g in active_groups if g.id not in user_joined_group_ids]
+    
+    if not available_groups:
+        # If no available groups, fall back to AdminGroups
+        admin_groups = db.query(AdminGroup).filter(AdminGroup.is_active).all()
+        return get_admin_group_recommendations(user, admin_groups, db)
+    
     # If models aren't loaded, fall back to simple recommendations
     if not all([nmf_model, tfidf_model, clustering_model, scaler, feature_store]):
         print("⚠️  Hybrid models not loaded, using simple recommendations")
@@ -631,7 +646,7 @@ def get_recommendations_for_user(user: User, db: Session) -> List[dict]:
         
         # Now create final recommendations directly from GroupBuy groups
         final_recommendations = []
-        for gb in active_groups[:10]:  # Limit to top 10 groups
+        for gb in available_groups[:10]:  # Limit to top 10 groups
             # Calculate score for each group
             score = 0.5  # Default score
             reasons = ["Available group buy"]
@@ -725,8 +740,18 @@ def get_simple_recommendations(user: User, db: Session, active_groups) -> List[d
         ).all()
         cluster_product_ids = set(t.product_id for t in cluster_transactions)
     
+    # Filter out groups the user has already joined
+    user_joined_group_ids = set()
+    user_contributions = db.query(Contribution.group_buy_id).filter(
+        Contribution.user_id == user.id
+    ).all()
+    user_joined_group_ids = {contrib.group_buy_id for contrib in user_contributions}
+    
+    # Filter active groups to exclude joined ones
+    available_groups = [g for g in active_groups if g.id not in user_joined_group_ids]
+    
     recommendations = []
-    for gb in active_groups:
+    for gb in available_groups:
         score = 0.0
         reasons = []
         
@@ -1569,6 +1594,13 @@ def get_user_similarity_based_recommendations(user_id: int, db: Session, limit: 
         recommended_groups = []
         seen_group_ids = set()
         
+        # Get groups the target user has already joined to exclude them
+        user_joined_group_ids = set()
+        user_contributions = db.query(Contribution.group_buy_id).filter(
+            Contribution.user_id == user_id
+        ).all()
+        user_joined_group_ids = {contrib.group_buy_id for contrib in user_contributions}
+        
         for similar_user, sim_score in similarities[:20]:  # Top 20 most similar users
             # Get groups this user has joined (using Contribution table for GroupBuy)
             user_groups = db.query(GroupBuy).join(Contribution).filter(
@@ -1577,7 +1609,9 @@ def get_user_similarity_based_recommendations(user_id: int, db: Session, limit: 
             ).all()
             
             for group in user_groups:
-                if group.id not in seen_group_ids and group.status == 'active':
+                if (group.id not in seen_group_ids and 
+                    group.status == 'active' and 
+                    group.id not in user_joined_group_ids):  # Exclude already joined groups
                     # Calculate recommendation score based on similarity and group metrics
                     rec_score = sim_score * 0.8 + (group.current_members / group.max_members) * 0.2
                     
@@ -1877,9 +1911,20 @@ async def explain_group_buy_with_lime(
 
 def get_admin_group_recommendations(user: User, admin_groups: List[AdminGroup], db: Session) -> List[dict]:
     """Fallback recommendations using AdminGroups when ML models fail"""
+    
+    # Filter out admin groups the user has already joined
+    user_joined_admin_group_ids = set()
+    user_admin_joins = db.query(AdminGroupJoin.admin_group_id).filter(
+        AdminGroupJoin.user_id == user.id
+    ).all()
+    user_joined_admin_group_ids = {join.admin_group_id for join in user_admin_joins}
+    
+    # Filter admin groups to exclude joined ones
+    available_admin_groups = [g for g in admin_groups if g.id not in user_joined_admin_group_ids]
+    
     recommendations = []
     
-    for admin_group in admin_groups:
+    for admin_group in available_admin_groups:
         score = 0.5  # Default score
         reasons = ["Admin-created group buy"]
         
