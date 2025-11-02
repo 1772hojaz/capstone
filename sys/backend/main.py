@@ -11,21 +11,25 @@ load_dotenv()
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from database import engine, Base, SessionLocal, get_db
-from auth import router as auth_router
-from products import router as products_router
-from groups import router as groups_router
-from chat import router as chat_router
-from ml import router as ml_router
-from admin import router as admin_router
-from settings import router as settings_router
-from supplier import router as supplier_router
-from ml_scheduler import scheduler, start_scheduler
-from websocket_manager import manager
+from db.database import engine, Base, SessionLocal
+from authentication.auth import router as auth_router
+from models.products import router as products_router
+from models.groups import router as groups_router
+from models.chat import router as chat_router
+from ml.ml import router as ml_router
+from models.admin import router as admin_router
+from models.settings import router as settings_router
+from models.supplier import router as supplier_router
+from ml.ml_scheduler import scheduler, start_scheduler
+from websocket.websocket_manager import manager
 
 # Centralized logging configuration
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
-LOG_FILE = os.path.join(os.path.dirname(__file__), "backend.log")
+# Ensure logs are stored in the project's `logs/` directory
+LOG_DIR = os.path.join(os.path.dirname(__file__), "logs")
+# Create logs directory if it doesn't exist (safe to call on every start)
+os.makedirs(LOG_DIR, exist_ok=True)
+LOG_FILE = os.path.join(LOG_DIR, "backend.log")
 
 LOGGING_CONFIG = {
     "version": 1,
@@ -117,8 +121,8 @@ async def startup_event():
     """Initialize HYBRID models on startup and start daily retraining scheduler"""
     db = SessionLocal()
     try:
-        from models import MLModel, Transaction, User, Product
-        from ml import train_clustering_model_with_progress, load_models
+        from models.models import MLModel, Transaction, User, Product
+        from ml.ml import train_clustering_model_with_progress, load_models
         
         print("\n" + "="*60)
         print("🚀 Hybrid Recommender System Initialization")
