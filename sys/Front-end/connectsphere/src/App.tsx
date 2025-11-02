@@ -11,7 +11,7 @@ import AllGroups from './pages/AllGroups';
 import GroupDetail from './pages/GroupDetail';
 import ProfilePage from './pages/ProfilePage';
 import GroupModeration from './pages/GroupModeration';
-import UserManagement from './pages/UserManagement';
+import Users from './pages/Users';
 import SystemSettings from './pages/SystemSettings';
 
 function App() {
@@ -30,7 +30,7 @@ function App() {
         <Route path="/all-groups" element={<AllGroups />} />
         <Route path="/group/:id" element={<GroupDetail />} />
         <Route path="/moderation" element={<GroupModeration />} />
-        <Route path="/users" element={<UserManagement />} />
+        <Route path="/users" element={<Users />} />
         <Route path="/settings" element={<SystemSettings />} />
       </Routes>
     </Router>
