@@ -193,9 +193,41 @@ class ApiService {
 
   // Admin methods (only available to admin users)
   async getAllUsers() {
-    return this.request('/api/admin/users');
+    return this.request("/api/admin/users");
   }
 
+  async getUserStats() {
+    return this.request("/api/admin/users/stats");
+  }
+
+  async getUserDetails(userId) {
+    return this.request(`/api/admin/users/${userId}`);
+  }
+
+  async updateUser(userId, userData) {
+    return this.request(`/api/admin/users/${userId}`, {
+      method: "PUT",
+      body: JSON.stringify(userData),
+    });
+  }
+
+  async deleteUser(userId) {
+    return this.request(`/api/admin/users/${userId}`, {
+      method: "DELETE",
+    });
+  }
+
+  async toggleSupplierStatus(userId) {
+    return this.request(`/api/admin/users/${userId}/toggle-supplier`, {
+      method: "POST",
+    });
+  }
+
+  async toggleUserActiveStatus(userId) {
+    return this.request(`/api/admin/users/${userId}/toggle-active`, {
+      method: "POST",
+    });
+  }
   async getSystemStats() {
     return this.request('/api/admin/stats');
   }
@@ -232,6 +264,12 @@ class ApiService {
     });
   }
 
+
+  async deleteAdminGroup(groupId) {
+    return this.request(`/api/admin/groups/${groupId}`, {
+      method: 'DELETE',
+    });
+  }
   async getReports() {
     return this.request('/api/admin/reports');
   }

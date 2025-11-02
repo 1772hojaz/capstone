@@ -15,7 +15,8 @@ import {
   Package,
   AlertTriangle,
   ShoppingBag,
-  X
+  X,
+  Trash2
 } from 'lucide-react';
 
 const GroupModeration = () => {
@@ -133,6 +134,27 @@ const GroupModeration = () => {
     }
   };
 
+
+  const handleDeleteGroup = async (groupId: number) => {
+    if (!window.confirm('Are you sure you want to delete this group? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      await apiService.deleteAdminGroup(groupId);
+      // Refresh data after deletion
+      const stats = await apiService.getGroupModerationStats();
+      setModerationStats(stats);
+      const activeData = await apiService.getActiveGroups();
+      setActiveGroups(activeData);
+      const readyData = await apiService.getReadyForPaymentGroups();
+      setReadyForPaymentGroupsData(readyData);
+      alert('Group deleted successfully!');
+    } catch (error: any) {
+      console.error('Failed to delete group:', error);
+      alert(error.message || 'Failed to delete group. Please try again.');
+    }
+  };
   const reportedContent = [
     {
       id: 1,
@@ -337,6 +359,13 @@ const GroupModeration = () => {
                   <button className="px-4 py-2 border border-gray-300 text-sm rounded-lg hover:bg-gray-50 transition">
                     View Details
                   </button>
+                  <button
+                    onClick={() => handleDeleteGroup(group.id)}
+                    className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 transition"
+                    title="Delete Group"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
             ))}
@@ -416,8 +445,15 @@ const GroupModeration = () => {
                     onClick={() => handlePaymentProcess(group)}
                     className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition"
                   >
-                    <DollarSign className="w-4 h-4" />
+                    <DollarSign className="w-4 w-4" />
                     Process Payment
+                  </button>
+                  <button
+                    onClick={() => handleDeleteGroup(group.id)}
+                    className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 transition"
+                    title="Delete Group"
+                  >
+                    <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
               </div>

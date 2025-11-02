@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Users as UsersIcon, Search, Edit, Trash2, Shield, UserCheck, UserX, Plus, Filter, Download, Eye, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Users as UsersIcon, Search, Edit, Trash2, Shield, UserCheck, UserX, Plus, Filter, Download, Eye, ChevronLeft, ChevronRight, Ban, CheckCircle } from 'lucide-react';
 import Layout from '../components/Layout';
+import apiService from '../services/api';
 
 interface User {
   id: number;
@@ -12,6 +13,7 @@ interface User {
   total_spent: number;
   created_at: string;
   is_supplier?: boolean;
+  is_active?: boolean;
 }
 
 interface UserStats {
@@ -54,25 +56,13 @@ const Users = () => {
   useEffect(() => {
     filterAndSortUsers();
   }, [users, searchTerm, selectedLocation, selectedCluster, sortBy, sortOrder]);
-
   const fetchUsers = async () => {
     try {
-      const token = localStorage.getItem('authToken');
-      const response = await fetch('/api/admin/users', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setUsers(data);
-      } else {
-        console.error('Failed to fetch users');
-      }
+      setLoading(true);
+      const response = await apiService.getAllUsers();
+      setUsers(response);
     } catch (error) {
-      console.error('Error fetching users:', error);
+      console.error('Failed to fetch users:', error);
     } finally {
       setLoading(false);
     }
@@ -80,30 +70,19 @@ const Users = () => {
 
   const fetchStats = async () => {
     try {
-      const token = localStorage.getItem('authToken');
-      const response = await fetch('/api/admin/users/stats', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setStats(data);
-      }
+      const response = await apiService.getUserStats();
+      setStats(response);
     } catch (error) {
-      console.error('Error fetching stats:', error);
+      console.error('Failed to fetch user stats:', error);
     }
   };
-
   const filterAndSortUsers = () => {
     let filtered = users.filter(user => {
       const matchesSearch = user.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           user.email.toLowerCase().includes(searchTerm.toLowerCase());
+                            user.email.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesLocation = !selectedLocation || user.location_zone === selectedLocation;
-      const matchesCluster = !selectedCluster || user.cluster_id?.toString() === selectedCluster;
-      
+      const matchesCluster = !selectedCluster || (user.cluster_id?.toString() === selectedCluster);
+
       return matchesSearch && matchesLocation && matchesCluster;
     });
 
@@ -145,85 +124,58 @@ const Users = () => {
 
   const handleUpdateUser = async () => {
     if (!selectedUser) return;
-
+    
     try {
-      const token = localStorage.getItem('authToken');
-      const response = await fetch(`/api/admin/users/${selectedUser.id}`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(editFormData)
-      });
-
-      if (response.ok) {
-        await fetchUsers();
-        setShowEditModal(false);
-        setSelectedUser(null);
-      } else {
-        console.error('Failed to update user');
-      }
+      await apiService.updateUser(selectedUser.id, editFormData);
+      await fetchUsers();
+      await fetchStats();
+      setShowEditModal(false);
+      setSelectedUser(null);
     } catch (error) {
-      console.error('Error updating user:', error);
+      console.error('Failed to update user:', error);
     }
   };
 
   const handleDeleteUser = async () => {
     if (!selectedUser) return;
-
+    
     try {
-      const token = localStorage.getItem('authToken');
-      const response = await fetch(`/api/admin/users/${selectedUser.id}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.ok) {
-        await fetchUsers();
-        await fetchStats();
-        setShowDeleteModal(false);
-        setSelectedUser(null);
-      } else {
-        console.error('Failed to delete user');
-      }
+      await apiService.deleteUser(selectedUser.id);
+      await fetchUsers();
+      await fetchStats();
+      setShowDeleteModal(false);
+      setSelectedUser(null);
     } catch (error) {
-      console.error('Error deleting user:', error);
+      console.error('Failed to delete user:', error);
     }
   };
 
-  const toggleSupplierStatus = async (user: User) => {
+  const handleToggleSupplier = async (userId: number, currentStatus: boolean) => {
     try {
-      const token = localStorage.getItem('authToken');
-      const response = await fetch(`/api/admin/users/${user.id}/toggle-supplier`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.ok) {
-        await fetchUsers();
-        await fetchStats();
-      } else {
-        console.error('Failed to toggle supplier status');
-      }
+      await apiService.toggleSupplierStatus(userId);
+      await fetchUsers();
+      await fetchStats();
     } catch (error) {
-      console.error('Error toggling supplier status:', error);
+      console.error('Failed to toggle supplier status:', error);
     }
   };
 
-  const exportUsers = () => {
+  const handleToggleActive = async (userId: number) => {
+    try {
+      await apiService.toggleUserActiveStatus(userId);
+      await fetchUsers();
+      await fetchStats();
+    } catch (error) {
+      console.error('Failed to toggle user active status:', error);
+    }
+  };
+
+  const exportToCSV = () => {
     const csvContent = [
-      ['ID', 'Name', 'Email', 'Location', 'Cluster', 'Transactions', 'Total Spent', 'Created At', 'Is Supplier'],
+      ['Email', 'Full Name', 'Location', 'Cluster', 'Transactions', 'Total Spent', 'Registered', 'Is Supplier'],
       ...filteredUsers.map(user => [
-        user.id,
-        user.full_name,
         user.email,
+        user.full_name,
         user.location_zone,
         user.cluster_id || '',
         user.total_transactions,
@@ -241,7 +193,6 @@ const Users = () => {
     a.click();
     URL.revokeObjectURL(url);
   };
-
   // Pagination
   const indexOfLastUser = currentPage * usersPerPage;
   const indexOfFirstUser = indexOfLastUser - usersPerPage;
@@ -275,7 +226,7 @@ const Users = () => {
           </div>
           <div className="flex space-x-4">
             <button
-              onClick={exportUsers}
+              onClick={exportToCSV}
               className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition"
             >
               <Download className="mr-2 h-4 w-4" />
@@ -446,16 +397,35 @@ const Users = () => {
                       <div className="text-sm text-gray-500">${user.total_spent.toFixed(2)} spent</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center space-x-2">
-                        {user.is_supplier && (
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                            <Shield className="mr-1 h-3 w-3" />
-                            Supplier
-                          </span>
-                        )}
-                        <span className="text-xs text-gray-500">
-                          Joined {new Date(user.created_at).toLocaleDateString()}
-                        </span>
+                      <div className="space-y-2">
+                        {/* User Type Badge */}
+                        <div>
+                          {user.is_supplier ? (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                              <Shield className="mr-1 h-3 w-3" />
+                              Supplier
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                              <UsersIcon className="mr-1 h-3 w-3" />
+                              Trader
+                            </span>
+                          )}
+                        </div>
+                        {/* Account Status Badge */}
+                        <div>
+                          {user.is_active !== false ? (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
+                              <CheckCircle className="mr-1 h-3 w-3" />
+                              Active
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                              <Ban className="mr-1 h-3 w-3" />
+                              Suspended
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
@@ -468,11 +438,18 @@ const Users = () => {
                           <Edit className="h-4 w-4" />
                         </button>
                         <button
-                          onClick={() => toggleSupplierStatus(user)}
+                          onClick={() => handleToggleSupplier(user.id, user.is_supplier || false)}
                           className={`transition ${user.is_supplier ? 'text-orange-600 hover:text-orange-900' : 'text-green-600 hover:text-green-900'}`}
-                          title={user.is_supplier ? "Remove Supplier Status" : "Make Supplier"}
+                          title={user.is_supplier ? "Demote to Trader" : "Promote to Supplier"}
                         >
                           {user.is_supplier ? <UserX className="h-4 w-4" /> : <UserCheck className="h-4 w-4" />}
+                        </button>
+                        <button
+                          onClick={() => handleToggleActive(user.id)}
+                          className={`transition ${user.is_active !== false ? 'text-yellow-600 hover:text-yellow-900' : 'text-emerald-600 hover:text-emerald-900'}`}
+                          title={user.is_active !== false ? "Suspend User" : "Activate User"}
+                        >
+                          {user.is_active !== false ? <Ban className="h-4 w-4" /> : <CheckCircle className="h-4 w-4" />}
                         </button>
                         <button
                           onClick={() => {
