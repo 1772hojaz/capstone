@@ -42,6 +42,7 @@ const GroupModeration = () => {
     productName: string;
     productDescription: string;
     productImage: File | null;
+    imagePreview: string | null;
     regularPrice: string;
     bulkPrice: string;
     totalStock: string;
@@ -61,6 +62,7 @@ const GroupModeration = () => {
     productName: '',
     productDescription: '',
     productImage: null,
+    imagePreview: null,
     regularPrice: '',
     bulkPrice: '',
     totalStock: '',
@@ -261,24 +263,6 @@ const GroupModeration = () => {
       alert(error.message || 'Failed to update group. Please try again.');
     }
   };
-  const reportedContent = [
-    {
-      id: 1,
-      group: 'Tech Gadgets Collective',
-      reporter: 'User#4521',
-      reason: 'Spam content',
-      date: '2024-01-15',
-      severity: 'Medium',
-    },
-    {
-      id: 2,
-      group: 'Fashion Forward',
-      reporter: 'User#7832',
-      reason: 'Inappropriate listing',
-      date: '2024-01-14',
-      severity: 'High',
-    },
-  ];
 
   return (
     <Layout title="Group Moderation">
@@ -686,12 +670,23 @@ const GroupModeration = () => {
                           onChange={(e) => {
                             const file = e.target.files?.[0];
                             if (file) {
-                              // Here you would typically:
-                              // 1. Create a FormData object
-                              // 2. Send it to your backend
-                              // 3. Get back the URL and set it in state
-                              // For now, we'll just store the file object
-                              setNewGroup({...newGroup, productImage: file});
+                              // Create image preview
+                              const reader = new FileReader();
+                              reader.onload = (e) => {
+                                setNewGroup(prev => ({
+                                  ...prev,
+                                  productImage: file,
+                                  imagePreview: e.target?.result as string
+                                }));
+                              };
+                              reader.readAsDataURL(file);
+                            } else {
+                              // Clear preview if no file selected
+                              setNewGroup(prev => ({
+                                ...prev,
+                                productImage: null,
+                                imagePreview: null
+                              }));
                             }
                           }}
                           className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
@@ -701,6 +696,37 @@ const GroupModeration = () => {
                         )}
                       </div>
                       <p className="mt-1 text-sm text-gray-500">Upload a product image (PNG, JPG up to 5MB)</p>
+                      
+                      {/* Image Preview */}
+                      {newGroup.imagePreview && (
+                        <div className="mt-4">
+                          <p className="text-sm font-medium text-gray-700 mb-2">Image Preview:</p>
+                          <div className="relative inline-block">
+                            <img
+                              src={newGroup.imagePreview}
+                              alt="Product preview"
+                              className="w-32 h-32 object-cover rounded-lg border-2 border-gray-300 shadow-md"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setNewGroup(prev => ({
+                                  ...prev,
+                                  productImage: null,
+                                  imagePreview: null
+                                }));
+                                // Clear the file input
+                                const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+                                if (fileInput) fileInput.value = '';
+                              }}
+                              className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors"
+                              title="Remove image"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     <div>
@@ -875,6 +901,7 @@ const GroupModeration = () => {
                         productName: '',
                         productDescription: '',
                         productImage: null,
+                        imagePreview: null,
                         regularPrice: '',
                         bulkPrice: '',
                         totalStock: '',
