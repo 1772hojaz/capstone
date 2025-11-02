@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Mail, Lock, User, Eye, EyeOff, AlertCircle, CheckCircle, Loader } from 'lucide-react';
+import { Mail, Lock, User, Eye, EyeOff, AlertCircle, CheckCircle, Loader, ArrowLeft } from 'lucide-react';
+import apiService from '../services/api';
 
 const LoginPage = () => {
   const navigate = useNavigate();
@@ -54,16 +55,40 @@ const LoginPage = () => {
     setIsLoading(true);
 
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      let response;
+      if (isLogin) {
+        // Login with existing account
+        response = await apiService.login({
+          email: formData.email,
+          password: formData.password
+        });
+      } else {
+        // Register new account
+        response = await apiService.register({
+          email: formData.email,
+          password: formData.password,
+          full_name: formData.name,
+          location_zone: 'Mbare', // Default location, could be made configurable
+          preferred_categories: [],
+          budget_range: 'medium',
+          experience_level: 'beginner',
+          preferred_group_sizes: [],
+          participation_frequency: 'occasional'
+        });
+      }
 
-      // Simple navigation logic
+      // Success - navigate based on user role
       setSuccessMessage(isLogin ? 'Login successful!' : 'Account created successfully!');
       setTimeout(() => {
-        navigate('/admin');
+        if (response.is_admin) {
+          navigate('/admin');
+        } else {
+          navigate('/trader');
+        }
       }, 1000);
     } catch (error) {
-      setErrors({ general: 'An error occurred. Please try again.' });
+      const errorMessage = error instanceof Error ? error.message : 'An error occurred. Please try again.';
+      setErrors({ general: errorMessage });
     } finally {
       setIsLoading(false);
     }
@@ -87,6 +112,14 @@ const LoginPage = () => {
       </div>
 
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 relative backdrop-blur-sm border border-gray-100">
+        {/* Back Button */}
+        <button
+          onClick={() => navigate('/')}
+          className="absolute top-4 left-4 inline-flex items-center text-gray-400 hover:text-gray-600 transition-colors"
+        >
+          <ArrowLeft className="w-5 h-5" />
+        </button>
+        
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="flex justify-center mb-4">
@@ -100,7 +133,10 @@ const LoginPage = () => {
             ConnectSphere
           </h1>
           <p className="text-gray-600 mt-2 font-medium">
-            {isLogin ? 'Welcome back!' : 'Join us today'}
+            <span className="inline-flex items-center gap-1">
+              <User className="w-4 h-4" />
+              Trader Portal
+            </span>
           </p>
         </div>
 
@@ -268,19 +304,13 @@ const LoginPage = () => {
 
         {/* Quick Navigation */}
         <div className="mt-6 pt-6 border-t border-gray-200">
-          <p className="text-sm text-gray-600 text-center mb-3">Quick Access:</p>
-          <div className="flex gap-2">
+          <p className="text-sm text-gray-600 text-center mb-3">Not a trader? Login or register as a supplier</p>
+          <div className="flex justify-center">
             <button
-              onClick={() => navigate('/admin')}
-              className="flex-1 px-4 py-2 text-sm bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition"
+              onClick={() => navigate('/supplier/login')}
+              className="px-6 py-2 text-sm bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition font-medium"
             >
-              Admin
-            </button>
-            <button
-              onClick={() => navigate('/trader')}
-              className="flex-1 px-4 py-2 text-sm bg-green-50 text-green-600 rounded-lg hover:bg-green-100 transition"
-            >
-              Trader
+              Supplier Portal
             </button>
           </div>
         </div>

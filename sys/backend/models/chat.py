@@ -3,10 +3,13 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import List
 from datetime import datetime
-from database import get_db
-from models import ChatMessage, GroupBuy, User
-from auth import verify_token
+from db.database import get_db
+from models.models import ChatMessage, GroupBuy, User
+from authentication.auth import verify_token
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -44,8 +47,8 @@ class ConnectionManager:
             for connection in self.active_connections[group_id]:
                 try:
                     await connection.send_text(message)
-                except:
-                    pass
+                except Exception as e:
+                    logger.error(f"Error parsing message: {e}")
 
 manager = ConnectionManager()
 

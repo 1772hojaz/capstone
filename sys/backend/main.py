@@ -1,15 +1,69 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from database import engine, Base, SessionLocal
-from auth import router as auth_router
-from products import router as products_router
-from groups import router as groups_router
-from chat import router as chat_router
-from ml import router as ml_router
-from admin import router as admin_router
-from ml_scheduler import scheduler, start_scheduler
 import uvicorn
 import asyncio
+import logging
+import logging.config
+import os
+from logging.config import dictConfig
+from dotenv import load_dotenv
+
+# Load environment variables FIRST, before any other imports
+load_dotenv()
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+from db.database import engine, Base, SessionLocal
+from authentication.auth import router as auth_router
+from models.products import router as products_router
+from models.groups import router as groups_router
+from models.chat import router as chat_router
+from ml.ml import router as ml_router
+from models.admin import router as admin_router
+from models.settings import router as settings_router
+from models.supplier import router as supplier_router
+from ml.ml_scheduler import scheduler, start_scheduler
+from websocket.websocket_manager import manager
+
+# Centralized logging configuration
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+# Ensure logs are stored in the project's `logs/` directory
+LOG_DIR = os.path.join(os.path.dirname(__file__), "logs")
+# Create logs directory if it doesn't exist (safe to call on every start)
+os.makedirs(LOG_DIR, exist_ok=True)
+LOG_FILE = os.path.join(LOG_DIR, "backend.log")
+
+LOGGING_CONFIG = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "default": {"format": "%(asctime)s %(levelname)s [%(name)s] %(message)s"},
+        "detailed": {"format": "%(asctime)s %(levelname)s [%(name)s:%(lineno)d] %(message)s"}
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "level": LOG_LEVEL,
+            "formatter": "default",
+            "stream": "ext://sys.stdout"
+        },
+        "file": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "level": LOG_LEVEL,
+            "formatter": "detailed",
+            "filename": LOG_FILE,
+            "maxBytes": 5 * 1024 * 1024,
+            "backupCount": 5,
+            "encoding": "utf8"
+        }
+    },
+    "root": {"level": LOG_LEVEL, "handlers": ["console", "file"]},
+    "loggers": {
+        "uvicorn": {"level": "INFO", "handlers": ["console"], "propagate": False},
+        "sqlalchemy": {"level": "WARN", "handlers": ["console"], "propagate": False}
+    }
+}
+
+dictConfig(LOGGING_CONFIG)
+logger = logging.getLogger(__name__)
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
@@ -17,14 +71,45 @@ Base.metadata.create_all(bind=engine)
 # Initialize FastAPI app
 app = FastAPI(
     title="Group-Buy System API",
-    description="AI-Driven Group-Buy Recommendation Platform for Informal Traders",
-    version="1.0.0"
+    description="""
+    # AI-Driven Group-Buy Recommendation Platform for Informal Traders
+
+    This API powers a comprehensive group-buy system designed for informal traders in markets like Mbare, Harare.
+
+    ## Features
+
+    * **Authentication**: JWT-based user authentication for traders and admins
+    * **Product Management**: CRUD operations for market products
+    * **Group-Buy Management**: Admin-created group buying opportunities
+    * **AI Recommendations**: Hybrid ML model for personalized product recommendations
+    * **Real-time Chat**: WebSocket-based communication between traders
+    * **Admin Dashboard**: Comprehensive analytics and group management tools
+
+    ## Authentication
+
+    All API endpoints (except health checks) require JWT authentication.
+    Include the token in the Authorization header: `Bearer <token>`
+
+    ## API Endpoints
+
+    * `GET /docs` - Interactive Swagger UI documentation
+    * `GET /redoc` - Alternative ReDoc documentation
+    * `GET /openapi.json` - OpenAPI JSON schema
+    """,
+    version="1.0.0",
+    contact={
+        "name": "Group-Buy System Support",
+        "email": "support@groupbuy.com",
+    },
+    license_info={
+        "name": "MIT",
+    },
 )
 
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001"],  # React dev server
+    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://localhost:5173"],  # React dev server (Vite default)
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -36,8 +121,8 @@ async def startup_event():
     """Initialize HYBRID models on startup and start daily retraining scheduler"""
     db = SessionLocal()
     try:
-        from models import MLModel, Transaction, User, Product
-        from ml import train_clustering_model, load_models
+        from models.models import MLModel, Transaction, User, Product
+        from ml.ml import train_clustering_model_with_progress, load_models
         
         print("\n" + "="*60)
         print("🚀 Hybrid Recommender System Initialization")
@@ -79,13 +164,14 @@ async def startup_event():
         if not latest_model and transaction_count >= 10 and trader_count >= 4:
             print("\n🤖 No trained hybrid model found. Auto-training with database data...")
             try:
-                training_results = train_clustering_model(db)
+                # train_clustering_model_with_progress is an async coroutine; await it in the startup event
+                training_results = await train_clustering_model_with_progress(db)
                 print("✅ Hybrid models trained successfully on startup!")
                 print(f"   - Silhouette Score: {training_results['silhouette_score']:.3f}")
                 print(f"   - Clusters: {training_results['n_clusters']}")
                 print(f"   - NMF Rank: {training_results.get('nmf_rank', 'N/A')}")
                 print(f"   - TF-IDF Vocabulary: {training_results.get('tfidf_vocab_size', 'N/A')}")
-                
+
                 # Reload models
                 load_models()
             except Exception as e:
@@ -93,7 +179,7 @@ async def startup_event():
                 print("   Models can be trained manually via: POST /api/ml/retrain")
         elif latest_model:
             score = latest_model.metrics.get('silhouette_score', 0)
-            print(f"\n✅ Loaded existing hybrid model")
+            print("\n✅ Loaded existing hybrid model")
             print(f"   - Trained at: {latest_model.trained_at}")
             print(f"   - Silhouette Score: {score:.3f}")
             print(f"   - Clusters: {latest_model.metrics.get('n_clusters', 'N/A')}")
@@ -101,7 +187,7 @@ async def startup_event():
             print(f"   - Model Type: {latest_model.model_type}")
         else:
             print("\n⚠️  Not enough data for hybrid training yet")
-            print(f"   Need: ≥10 transactions, ≥4 traders, ≥5 products")
+            print("   Need: ≥10 transactions, ≥4 traders, ≥5 products")
             print(f"   Have: {transaction_count} transactions, {trader_count} traders, {product_count} products")
         
         # Start the daily retraining scheduler
@@ -127,18 +213,24 @@ async def shutdown_event():
     print("\n🛑 Stopping ML scheduler...")
     await scheduler.stop()
 
-# Health check
-@app.get("/")
-async def root():
-    return {
-        "message": "Group-Buy System API",
-        "version": "1.0.0",
-        "status": "running"
-    }
+# WebSocket endpoint for ML training progress
+@app.websocket("/ws/ml-training")
+async def ml_training_websocket(websocket: WebSocket):
+    await manager.connect(websocket)
+    try:
+        while True:
+            # Keep connection alive, wait for client messages if needed
+            data = await websocket.receive_text()
+            # Echo back for connection health
+            await websocket.send_text(f"Connected: {data}")
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
 
+# Health check endpoint
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy"}
+    """Basic health check endpoint"""
+    return {"status": "healthy", "service": "group-buy-api"}
 
 # Include routers
 app.include_router(auth_router, prefix="/api/auth", tags=["Authentication"])
@@ -147,6 +239,9 @@ app.include_router(groups_router, prefix="/api/groups", tags=["Group-Buys"])
 app.include_router(chat_router, prefix="/api/chat", tags=["Chat"])
 app.include_router(ml_router, prefix="/api/ml", tags=["Machine Learning"])
 app.include_router(admin_router, prefix="/api/admin", tags=["Admin"])
+app.include_router(settings_router, prefix="/api/settings", tags=["Settings"])
+app.include_router(supplier_router, prefix="/api/supplier", tags=["Supplier"])
 
 if __name__ == "__main__":
+    print("DEBUG: Starting server with updated code...")
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

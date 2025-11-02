@@ -81,6 +81,12 @@ const LandingPage = () => {
             </div>
             <div className="flex items-center gap-4">
               <button
+                onClick={() => navigate('/supplier')}
+                className="text-white hover:text-purple-200 transition font-medium"
+              >
+                For Suppliers
+              </button>
+              <button
                 onClick={() => navigate('/login')}
                 className="text-white hover:text-purple-200 transition font-medium"
               >

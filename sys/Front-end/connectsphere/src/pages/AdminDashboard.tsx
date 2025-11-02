@@ -1,9 +1,11 @@
-import { Zap, Users, Eye, ShoppingBag, TrendingUp, DollarSign, AlertTriangle, RefreshCw, Clock } from 'lucide-react';
+import { Zap, Users, Eye, ShoppingBag, TrendingUp, DollarSign, RefreshCw, Clock } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { useState, useEffect } from 'react';
-import { ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Bar, PieChart, Pie, Cell, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts';
+import { useState, useEffect, useRef } from 'react';
+import { ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Bar, PieChart, Pie, Cell } from 'recharts';
 import StatCard from '../components/StatCard';
 import Layout from '../components/Layout';
+import apiService from '../services/api';
+import QrScanner from 'qr-scanner';
 
 interface ManagementCardProps {
   icon: React.ReactNode;
@@ -31,24 +33,144 @@ const ManagementCard = ({ icon, title, description, buttonText, link }: Manageme
   );
 };
 
-type TrainingStage = 'data-collection' | 'preprocessing' | 'training' | 'validation' | 'deployment' | null;
+type TrainingStage = 'data_collection' | 'matrix_building' | 'clustering' | 'nmf_training' | 'tfidf_processing' | 'hybrid_fusion' | 'model_saving' | null;
 
 const trainingStages: { id: TrainingStage; label: string }[] = [
-  { id: 'data-collection', label: 'Data Collection' },
-  { id: 'preprocessing', label: 'Preprocessing' },
-  { id: 'training', label: 'Training' },
-  { id: 'validation', label: 'Validation' },
-  { id: 'deployment', label: 'Deployment' }
+  { id: 'data_collection', label: 'Data Collection' },
+  { id: 'matrix_building', label: 'Matrix Building' },
+  { id: 'clustering', label: 'Clustering' },
+  { id: 'nmf_training', label: 'NMF Training' },
+  { id: 'tfidf_processing', label: 'TF-IDF Processing' },
+  { id: 'hybrid_fusion', label: 'Hybrid Fusion' },
+  { id: 'model_saving', label: 'Model Saving' }
 ];
 
 const AdminDashboard = () => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'analytics' | 'management' | 'qr-verify'>('overview');
+  // Load active tab from localStorage or default to 'overview'
+  const [activeTab, setActiveTab] = useState<'overview' | 'ml-visualisations' | 'management' | 'qr-verify'>(() => {
+    const savedTab = localStorage.getItem('admin-dashboard-active-tab');
+    return (savedTab as 'overview' | 'ml-visualisations' | 'management' | 'qr-verify') || 'overview';
+  });
   const [lastScannedCode, setLastScannedCode] = useState<string | null>(null);
-  const [verificationStatus, setVerificationStatus] = useState<'none' | 'success' | 'error' | 'loading'>('none');
   const [nextRetrainTime, setNextRetrainTime] = useState<Date>(new Date(Date.now() + 12 * 60 * 60 * 1000));
   const [timeLeft, setTimeLeft] = useState<string>('');
   const [isRetraining, setIsRetraining] = useState(false);
   const [currentStage, setCurrentStage] = useState<TrainingStage>(null);
+  const [trainingProgress, setTrainingProgress] = useState<number>(0);
+  const [trainingMessage, setTrainingMessage] = useState<string>('');
+  const [trainingResults, setTrainingResults] = useState<any>(null);
+  const [trainingError, setTrainingError] = useState<string | null>(null);
+  
+  // WebSocket reference
+  const wsRef = useRef<WebSocket | null>(null);
+  
+  // QR Scanner state
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanResult, setScanResult] = useState<any>(null);
+  const [errorMessage, setErrorMessage] = useState<string>('');
+  const [scanHistory, setScanHistory] = useState<any[]>([]);
+  const qrScannerRef = useRef<QrScanner | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  
+    // QR Code helper functions
+  const handleQRScan = async (qrCodeData: string) => {
+    if (!qrCodeData) return;
+
+    setErrorMessage('');
+
+    try {
+      const result = await apiService.scanQRCode(qrCodeData);
+      setScanResult(result);
+      setLastScannedCode(qrCodeData);
+      
+      // Add to scan history locally for immediate feedback
+      const scanEntry = {
+        qrCode: qrCodeData,
+        timestamp: new Date(),
+        userInfo: result.user_info,
+        productInfo: result.product_info,
+        purchaseInfo: result.purchase_info
+      };
+      setScanHistory(prev => [scanEntry, ...prev].slice(0, 50)); // Keep last 50 scans
+
+      // Refresh scan history from API to get the latest data
+      try {
+        const history = await apiService.getQRScanHistory(50, 0);
+        const transformedHistory = history.scans.map((scan: any) => ({
+          qrCode: scan.qr_code,
+          timestamp: new Date(scan.scanned_at),
+          userInfo: scan.user_info,
+          productInfo: scan.product_info,
+          purchaseInfo: scan.purchase_info
+        }));
+        setScanHistory(transformedHistory);
+      } catch (refreshError) {
+        console.error('Failed to refresh scan history:', refreshError);
+        // Keep the local update if API refresh fails
+      }
+    } catch (error: any) {
+      setErrorMessage(error.message || 'Failed to scan QR code');
+      setScanResult(null);
+    }
+  };
+
+  // QR Scanner functions
+  const startScanning = async () => {
+    if (!videoRef.current) return;
+
+    try {
+      setIsScanning(true);
+      setErrorMessage('');
+      setScanResult(null);
+
+      const scanner = new QrScanner(
+        videoRef.current,
+        (result) => {
+          console.log('QR Code detected:', result.data);
+          handleQRScan(result.data);
+          stopScanning();
+        },
+        {
+          onDecodeError: (error) => {
+            console.log('QR decode error:', error);
+          },
+          highlightScanRegion: true,
+          highlightCodeOutline: true,
+        }
+      );
+
+      qrScannerRef.current = scanner;
+      await scanner.start();
+    } catch (error: any) {
+      console.error('Failed to start QR scanner:', error);
+      setErrorMessage('Failed to access camera. Please ensure camera permissions are granted.');
+      setIsScanning(false);
+    }
+  };
+
+  const stopScanning = () => {
+    if (qrScannerRef.current) {
+      qrScannerRef.current.stop();
+      qrScannerRef.current.destroy();
+      qrScannerRef.current = null;
+    }
+    setIsScanning(false);
+  };
+
+  // Cleanup scanner on unmount
+  useEffect(() => {
+    return () => {
+      stopScanning();
+    };
+  }, []);
+  
+  // Dashboard data state
+  const [dashboardStats, setDashboardStats] = useState<any>(null);
+  const [activityData, setActivityData] = useState<any[]>([]);
+  const [modelPerformanceData, setModelPerformanceData] = useState<any[]>([]);
+  const [mlSystemStatus, setMlSystemStatus] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const calculateTimeLeft = () => {
@@ -72,69 +194,178 @@ const AdminDashboard = () => {
     return () => clearInterval(timer);
   }, [nextRetrainTime]);
 
-  const handleRetrain = () => {
+  // Load dashboard data
+  useEffect(() => {
+    const loadDashboardData = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+        
+        // Load dashboard stats
+        const stats = await apiService.getDashboardStats();
+        setDashboardStats(stats);
+        
+        // Load activity data from backend (last 6 months)
+        try {
+          const activity = await apiService.getActivityData({ months: 6 });
+          // activity is expected as [{ month, month_key, groups, users }, ...]
+          setActivityData((activity || []).map((d: any) => ({ month: d.month, groups: d.groups, users: d.users })));
+        } catch (err) {
+          console.warn('Failed to load activity data from API, falling back to empty array', err);
+          setActivityData([]);
+        }
+        
+        // Load model performance data from API (pick latest model if array)
+        try {
+          const perfArray: any = await apiService.getMLPerformance();
+          const latest: any = Array.isArray(perfArray) && perfArray.length > 0 ? perfArray[0] : null;
+          const silhouette = latest ? (latest.silhouette_score || 0) : 0;
+          const n_clusters = latest ? (latest.n_clusters || 0) : 0;
+          const nmf_rank = latest ? (latest.nmf_rank || 0) : 0;
+          const tfidf_vocab = latest ? (latest.tfidf_vocab_size || 0) : 0;
+
+          // Represent silhouette as percentage for readability (e.g., 3.8%)
+          const silhouettePct = +(silhouette * 100).toFixed(2);
+
+          setModelPerformanceData([
+            { name: 'Silhouette', value: silhouettePct, unit: '%' },
+            { name: 'Clusters', value: n_clusters, unit: '' },
+            { name: 'NMF Rank', value: nmf_rank, unit: '' },
+            { name: 'TF-IDF Vocab', value: tfidf_vocab, unit: '' },
+          ]);
+        } catch (err) {
+          console.warn('Failed to load ML performance from API', err);
+          setModelPerformanceData([]);
+        }
+        
+        // Load ML system status
+        const mlStatus = await apiService.getMLSystemStatus();
+        setMlSystemStatus(mlStatus);      } catch (err) {
+        console.error('Failed to load dashboard data:', err);
+        setError('Failed to load dashboard data. Please try again.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadDashboardData();
+  }, []);
+
+  // Load QR scan history on mount
+  useEffect(() => {
+    const loadScanHistory = async () => {
+      try {
+        const history = await apiService.getQRScanHistory(50, 0);
+        // Transform API response to match current scanHistory format
+        const transformedHistory = history.scans.map((scan: any) => ({
+          qrCode: scan.qr_code,
+          timestamp: new Date(scan.scanned_at),
+          userInfo: scan.user_info,
+          productInfo: scan.product_info,
+          purchaseInfo: scan.purchase_info
+        }));
+        setScanHistory(transformedHistory);
+      } catch (error) {
+        console.error('Failed to load scan history:', error);
+        // Don't show error to user, just log it
+      }
+    };
+
+    loadScanHistory();
+  }, []);
+
+  // Save active tab to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('admin-dashboard-active-tab', activeTab);
+  }, [activeTab]);
+  useEffect(() => {
+    const connectWebSocket = () => {
+      try {
+        const ws = new WebSocket('ws://localhost:8000/ws/ml-training');
+        
+        ws.onopen = () => {
+          console.log('WebSocket connected for ML training progress');
+        };
+        
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            console.log('WebSocket message received:', data);
+            
+            if (data.type === 'progress') {
+              setIsRetraining(true);
+              setCurrentStage(data.stage as TrainingStage);
+              setTrainingProgress(data.progress);
+              setTrainingMessage(data.message);
+              setTrainingError(null);
+            } else if (data.type === 'completed') {
+              setIsRetraining(false);
+              setCurrentStage(null);
+              setTrainingProgress(100);
+              setTrainingMessage(data.message);
+              setTrainingResults(data.results);
+              setTrainingError(null);
+              setNextRetrainTime(new Date(Date.now() + 24 * 60 * 60 * 1000)); // Reset to 24 hours
+            } else if (data.type === 'error') {
+              setIsRetraining(false);
+              setCurrentStage(null);
+              setTrainingProgress(0);
+              setTrainingError(data.error || data.message);
+              setTrainingMessage('');
+            }
+          } catch (error) {
+            console.error('Error parsing WebSocket message:', error);
+          }
+        };
+        
+        ws.onclose = () => {
+          console.log('WebSocket disconnected');
+          // Attempt to reconnect after a delay
+          setTimeout(connectWebSocket, 5000);
+        };
+        
+        ws.onerror = (error) => {
+          console.error('WebSocket error:', error);
+        };
+        
+        wsRef.current = ws;
+      } catch (error) {
+        console.error('Failed to connect WebSocket:', error);
+      }
+    };
+
+    connectWebSocket();
+
+    // Cleanup on unmount
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+    };
+  }, []);
+
+  const handleRetrain = async () => {
     const shouldRetrain = window.confirm('Are you sure you want to start the model retraining process?');
     if (shouldRetrain) {
-      setIsRetraining(true);
-      
-      // Simulate training pipeline stages
-      const simulateStage = (stage: TrainingStage, delay: number) => {
-        return new Promise<void>((resolve) => {
-          setTimeout(() => {
-            setCurrentStage(stage);
-            resolve();
-          }, delay);
-        });
-      };
-
-      // Execute training pipeline
-      const runTrainingPipeline = async () => {
-        await simulateStage('data-collection', 0);
-        await simulateStage('preprocessing', 3000);
-        await simulateStage('training', 3000);
-        await simulateStage('validation', 3000);
-        await simulateStage('deployment', 3000);
+      try {
+        // Reset training state
+        setTrainingProgress(0);
+        setTrainingMessage('');
+        setTrainingError(null);
+        setTrainingResults(null);
         
-        // Complete training
-        setTimeout(() => {
-          setIsRetraining(false);
-          setCurrentStage(null);
-          setNextRetrainTime(new Date(Date.now() + 12 * 60 * 60 * 1000));
-        }, 2000);
-      };
-
-      runTrainingPipeline();
+        // Call the real API
+        await apiService.retrainMLModels();
+        
+        // The WebSocket will handle progress updates
+      } catch (error) {
+        console.error('Retraining failed:', error);
+        setTrainingError('Failed to start retraining. Please try again.');
+      }
     }
   };
 
-  // Activity Data
-  const activityData = [
-    { month: 'Jan', groups: 150, users: 180 },
-    { month: 'Feb', groups: 180, users: 220 },
-    { month: 'Mar', groups: 280, users: 290 },
-    { month: 'Apr', groups: 250, users: 270 },
-    { month: 'May', groups: 320, users: 350 },
-    { month: 'Jun', groups: 380, users: 420 },
-  ];
-
-  // Model Performance Data
-  const modelPerformanceData = [
-    { name: 'Accuracy', value: 85 },
-    { name: 'Precision', value: 78 },
-    { name: 'Recall', value: 82 },
-    { name: 'F1 Score', value: 80 },
-  ];
-
   const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444'];
-
-  // Training Progress Data
-  const trainingProgressData = [
-    { subject: 'Data Quality', A: 90 },
-    { subject: 'Model Training', A: 85 },
-    { subject: 'Validation', A: 88 },
-    { subject: 'Testing', A: 82 },
-    { subject: 'Deployment', A: 95 },
-  ];
 
   return (
     <Layout title="Admin Dashboard">
@@ -158,17 +389,17 @@ const AdminDashboard = () => {
               Overview
             </button>
             <button
-              onClick={() => setActiveTab('analytics')}
+              onClick={() => setActiveTab('ml-visualisations')}
               className={`py-4 text-sm font-medium border-b-2 transition focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-                activeTab === 'analytics' 
+                activeTab === 'ml-visualisations' 
                   ? 'border-blue-600 text-blue-600 font-semibold' 
                   : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300'
               }`}
               role="tab"
-              aria-selected={activeTab === 'analytics'}
+              aria-selected={activeTab === 'ml-visualisations'}
               aria-controls="analytics-panel"
             >
-              Analytics
+              ML Visualisations
             </button>
             <button
               onClick={() => setActiveTab('management')}
@@ -202,17 +433,6 @@ const AdminDashboard = () => {
 
       {/* Main Content */}
       <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-        {/* Header */}
-        <div className="mb-6 sm:mb-8">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-2">
-            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900">Admin Dashboard</h1>
-            <div className="flex items-center gap-1 bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-xs sm:text-sm font-medium w-fit">
-              <Zap className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              <span>Admin Tools</span>
-            </div>
-          </div>
-          <p className="text-sm sm:text-base text-gray-600">Platform metrics, moderation tools, and system settings for ConnectSphere</p>
-        </div>
 
         {/* Tab Content */}
         {activeTab === 'overview' && (
@@ -220,32 +440,42 @@ const AdminDashboard = () => {
             {/* Analytics Summary */}
             <div>
               <h2 className="text-lg font-semibold text-gray-900 mb-4">Analytics Summary</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <StatCard
-                  title="Total Users"
-                  value="1,245"
-                  icon={<Users className="w-6 h-6" />}
-                  color="blue"
-                />
-                <StatCard
-                  title="Active Groups"
-                  value="189"
-                  icon={<Eye className="w-6 h-6" />}
-                  color="green"
-                />
-                <StatCard
-                  title="Total Transactions"
-                  value="8,321"
-                  icon={<ShoppingBag className="w-6 h-6" />}
-                  color="blue"
-                />
-                <StatCard
-                  title="Revenue"
-                  value="$24,987"
-                  icon={<DollarSign className="w-6 h-6" />}
-                  color="red"
-                />
-              </div>
+              {isLoading ? (
+                <div className="flex justify-center items-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                </div>
+              ) : error ? (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                  <p className="text-red-700">{error}</p>
+                </div>
+              ) : dashboardStats ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <StatCard
+                    title="Total Users"
+                    value={dashboardStats.total_users?.toString() || "0"}
+                    icon={<Users className="w-6 h-6" />}
+                    color="blue"
+                  />
+                  <StatCard
+                    title="Active Groups"
+                    value={dashboardStats.active_group_buys?.toString() || "0"}
+                    icon={<Eye className="w-6 h-6" />}
+                    color="green"
+                  />
+                  <StatCard
+                    title="Total Transactions"
+                    value={dashboardStats.total_transactions?.toString() || "0"}
+                    icon={<ShoppingBag className="w-6 h-6" />}
+                    color="blue"
+                  />
+                  <StatCard
+                    title="Revenue"
+                    value={`$${dashboardStats.total_revenue?.toFixed(2) || "0.00"}`}
+                    icon={<DollarSign className="w-6 h-6" />}
+                    color="red"
+                  />
+                </div>
+              ) : null}
             </div>
 
             {/* Platform Activity */}
@@ -270,7 +500,7 @@ const AdminDashboard = () => {
           </div>
         )}
 
-        {activeTab === 'analytics' && (
+        {activeTab === 'ml-visualisations' && (
           <div className="space-y-12">
             {/* Retrain Button and Timer */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6 space-y-6">
@@ -298,8 +528,46 @@ const AdminDashboard = () => {
               </div>
 
               {/* Training Progress Line */}
-              {isRetraining && (
+              {(isRetraining || trainingProgress > 0) && (
                 <div className="space-y-4">
+                  {/* Progress Bar */}
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm font-medium text-gray-700">
+                        {trainingMessage || 'Initializing training...'}
+                      </span>
+                      <span className="text-sm font-medium text-blue-600">
+                        {trainingProgress}%
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div 
+                        className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                        style={{ width: `${trainingProgress}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Error Display */}
+                  {trainingError && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                      <p className="text-red-700 text-sm">{trainingError}</p>
+                    </div>
+                  )}
+
+                  {/* Results Display */}
+                  {trainingResults && (
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                      <p className="text-green-700 text-sm font-medium">Training completed successfully!</p>
+                      <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                        <div>Silhouette Score: {trainingResults.silhouette_score?.toFixed(3)}</div>
+                        <div>Clusters: {trainingResults.n_clusters}</div>
+                        <div>NMF Rank: {trainingResults.nmf_rank}</div>
+                        <div>TF-IDF Vocab: {trainingResults.tfidf_vocab_size}</div>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="flex justify-between items-center relative">
                     {/* Progress Line */}
                     <div className="absolute left-0 right-0 top-1/2 h-1 bg-gray-200 -translate-y-1/2" />
@@ -309,7 +577,7 @@ const AdminDashboard = () => {
                         width: `${
                           currentStage
                             ? ((trainingStages.findIndex(s => s.id === currentStage) + 1) / trainingStages.length) * 100
-                            : 0
+                            : trainingProgress
                         }%`
                       }}
                     />
@@ -317,8 +585,8 @@ const AdminDashboard = () => {
                     {/* Stage Markers */}
                     {trainingStages.map((stage, index) => {
                       const isCompleted = currentStage 
-                        ? trainingStages.findIndex(s => s.id === currentStage) >= index
-                        : false;
+                        ? trainingStages.findIndex(s => s.id === currentStage) > index
+                        : trainingProgress >= ((index + 1) / trainingStages.length) * 100;
                       const isCurrent = stage.id === currentStage;
                       
                       return (
@@ -386,46 +654,31 @@ const AdminDashboard = () => {
                 </ResponsiveContainer>
               </div>
               <div className="grid grid-cols-4 gap-4 mt-8">
-                {modelPerformanceData.map((metric, index) => (
+                {modelPerformanceData.map((metric: any, index: number) => (
                   <div key={index} className="bg-gray-50 rounded-lg p-4">
                     <p className="text-sm text-gray-600">{metric.name}</p>
-                    <p className="text-xl font-semibold text-gray-900 mt-1">{metric.value}%</p>
+                    <p className="text-xl font-semibold text-gray-900 mt-1">
+                      {metric.unit === '%' ? `${metric.value}${metric.unit}` : `${metric.value}`}
+                    </p>
                   </div>
                 ))}
-              </div>
-            </div>
-
-            {/* Training Stage Progress */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="p-2 bg-blue-100 rounded-lg">
-                  <Zap className="w-6 h-6 text-blue-600" />
-                </div>
-                <div>
-                  <h3 className="text-xl font-semibold text-gray-900">Training Stage Progress</h3>
-                  <p className="text-sm text-gray-600 mt-1">Current progress across different training stages</p>
-                </div>
-              </div>
-              <div className="h-[400px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <RadarChart cx="50%" cy="50%" outerRadius="80%" data={trainingProgressData}>
-                    <PolarGrid stroke="#E5E7EB" />
-                    <PolarAngleAxis dataKey="subject" stroke="#6B7280" />
-                    <PolarRadiusAxis angle={30} domain={[0, 100]} stroke="#6B7280" />
-                    <Radar name="Progress" dataKey="A" stroke="#3B82F6" fill="#3B82F6" fillOpacity={0.4} />
-                    <Legend verticalAlign="bottom" height={36} />
-                    <Tooltip />
-                  </RadarChart>
-                </ResponsiveContainer>
               </div>
             </div>
 
             {/* System Status */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
               <div className="flex items-center gap-3 mb-6">
-                <div className="p-2 bg-green-100 rounded-lg">
+                <div className={`p-2 rounded-lg ${
+                  mlSystemStatus?.health_status === 'operational' ? 'bg-green-100' :
+                  mlSystemStatus?.health_status === 'warning' ? 'bg-yellow-100' :
+                  mlSystemStatus?.health_status === 'critical' ? 'bg-red-100' : 'bg-gray-100'
+                }`}>
                   <div className="w-6 h-6 flex items-center justify-center">
-                    <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                    <div className={`w-3 h-3 rounded-full ${
+                      mlSystemStatus?.health_status === 'operational' ? 'bg-green-500' :
+                      mlSystemStatus?.health_status === 'warning' ? 'bg-yellow-500' :
+                      mlSystemStatus?.health_status === 'critical' ? 'bg-red-500' : 'bg-gray-500'
+                    }`}></div>
                   </div>
                 </div>
                 <div>
@@ -435,12 +688,28 @@ const AdminDashboard = () => {
               </div>
               
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-4">
-                <div className="bg-green-50 border border-green-200 rounded-lg p-6">
+                <div className={`border rounded-lg p-6 ${
+                  mlSystemStatus?.health_status === 'operational' ? 'bg-green-50 border-green-200' :
+                  mlSystemStatus?.health_status === 'warning' ? 'bg-yellow-50 border-yellow-200' :
+                  mlSystemStatus?.health_status === 'critical' ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200'
+                }`}>
                   <div className="flex items-center gap-2 mb-2">
-                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                    <p className="font-medium text-green-900">System Health</p>
+                    <div className={`w-2 h-2 rounded-full ${
+                      mlSystemStatus?.health_status === 'operational' ? 'bg-green-500' :
+                      mlSystemStatus?.health_status === 'warning' ? 'bg-yellow-500' :
+                      mlSystemStatus?.health_status === 'critical' ? 'bg-red-500' : 'bg-gray-500'
+                    }`}></div>
+                    <p className={`font-medium ${
+                      mlSystemStatus?.health_status === 'operational' ? 'text-green-900' :
+                      mlSystemStatus?.health_status === 'warning' ? 'text-yellow-900' :
+                      mlSystemStatus?.health_status === 'critical' ? 'text-red-900' : 'text-gray-900'
+                    }`}>System Health</p>
                   </div>
-                  <p className="text-sm text-green-800">All systems operational</p>
+                  <p className={`text-sm ${
+                    mlSystemStatus?.health_status === 'operational' ? 'text-green-800' :
+                    mlSystemStatus?.health_status === 'warning' ? 'text-yellow-800' :
+                    mlSystemStatus?.health_status === 'critical' ? 'text-red-800' : 'text-gray-800'
+                  }`}>{mlSystemStatus?.system_health || 'Loading...'}</p>
                 </div>
 
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
@@ -448,7 +717,7 @@ const AdminDashboard = () => {
                     <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
                     <p className="font-medium text-blue-900">Response Time</p>
                   </div>
-                  <p className="text-sm text-blue-800">85ms average</p>
+                  <p className="text-sm text-blue-800">{mlSystemStatus?.response_time_display || 'Loading...'}</p>
                 </div>
 
                 <div className="bg-purple-50 border border-purple-200 rounded-lg p-6">
@@ -456,7 +725,7 @@ const AdminDashboard = () => {
                     <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
                     <p className="font-medium text-purple-900">Model Updates</p>
                   </div>
-                  <p className="text-sm text-purple-800">Last updated 2h ago</p>
+                  <p className="text-sm text-purple-800">{mlSystemStatus?.model_updates || 'Loading...'}</p>
                 </div>
               </div>
 
@@ -464,20 +733,20 @@ const AdminDashboard = () => {
                 <h4 className="font-semibold text-gray-900 mb-4">System Health Checklist</h4>
                 <div className="space-y-3">
                   <div className="flex items-center gap-2 text-sm text-gray-600">
-                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                    <span>Recommendation Engine: Operational</span>
+                    <div className={`w-2 h-2 rounded-full ${mlSystemStatus?.checklist?.recommendation_engine ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                    <span>Recommendation Engine: {mlSystemStatus?.checklist?.recommendation_engine ? 'Operational' : 'Down'}</span>
                   </div>
                   <div className="flex items-center gap-2 text-sm text-gray-600">
-                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                    <span>Data Processing Pipeline: Running</span>
+                    <div className={`w-2 h-2 rounded-full ${mlSystemStatus?.checklist?.data_processing_pipeline ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                    <span>Data Processing Pipeline: {mlSystemStatus?.checklist?.data_processing_pipeline ? 'Running' : 'Stopped'}</span>
                   </div>
                   <div className="flex items-center gap-2 text-sm text-gray-600">
-                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                    <span>Model Serving API: Active</span>
+                    <div className={`w-2 h-2 rounded-full ${mlSystemStatus?.checklist?.model_serving_api ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                    <span>Model Serving API: {mlSystemStatus?.checklist?.model_serving_api ? 'Active' : 'Inactive'}</span>
                   </div>
                   <div className="flex items-center gap-2 text-sm text-gray-600">
-                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                    <span>Training Infrastructure: Available</span>
+                    <div className={`w-2 h-2 rounded-full ${mlSystemStatus?.checklist?.training_infrastructure ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                    <span>Training Infrastructure: {mlSystemStatus?.checklist?.training_infrastructure ? 'Available' : 'Unavailable'}</span>
                   </div>
                 </div>
               </div>
@@ -486,77 +755,233 @@ const AdminDashboard = () => {
         )}
 
         {activeTab === 'qr-verify' && (
-          <div className="space-y-6">
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">QR Code Verification</h2>
-              <div className="max-w-xl mx-auto">
-                <div className="aspect-square w-full relative bg-gray-50 rounded-lg overflow-hidden mb-6">
-                  <QrScanner
-                    onDecode={(result: string) => {
-                      setLastScannedCode(result);
-                      setVerificationStatus('loading');
-                      // Simulate verification process
-                      setTimeout(() => {
-                        // Here you would typically make an API call to verify the QR code
-                        // For now, we'll simulate a successful verification
-                        setVerificationStatus('success');
-                      }, 1500);
-                    }}
-                    onError={(error: Error) => {
-                      console.error(error);
-                      setVerificationStatus('error');
-                    }}
-                  />
-                </div>
-
-                {/* Verification Status */}
-                <div className="space-y-4">
-                  {verificationStatus === 'loading' && (
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                      <div className="flex items-center gap-3">
-                        <div className="animate-spin">
-                          <RefreshCw className="w-5 h-5 text-blue-600" />
+          <div className="space-y-4">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200">
+              <div className="p-4">
+                {/* Main Layout - Camera and Instructions/Results */}
+                <div className={`grid gap-6 ${scanResult || !scanResult ? 'lg:grid-cols-2' : 'max-w-2xl mx-auto'}`}>
+                  
+                  {/* Camera Section - Always on left */}
+                  <div className="space-y-3">
+                    {/* QR Scanner */}
+                    <div className="aspect-square w-64 mx-auto relative bg-gray-50 rounded-lg overflow-hidden border-2 border-dashed border-gray-300">
+                      <video
+                        ref={videoRef}
+                        className="w-full h-full object-cover"
+                        playsInline
+                        muted
+                      />
+                      {!isScanning && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-gray-900 bg-opacity-80">
+                          <div className="bg-gray-50 rounded-lg p-2">
+                            <div className="text-center">
+                              <div className="w-6 h-6 mx-auto mb-1 text-gray-400 bg-gray-100 rounded-full flex items-center justify-center">
+                                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" className="w-3 h-3">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10l4.553-2.276A1 1 0 0119 8.618v6.764a1 1 0 01-1.447.894L13 14M3 18h8a2 2 0 002-2V8a2 2 0 00-2-2H3a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                </svg>
+                              </div>
+                              <p className="text-gray-900 font-medium text-sm">Camera Ready</p>
+                              <p className="text-xs text-gray-600 mt-0.5">Click "Start Scanning" to activate the camera</p>
+                            </div>
+                          </div>
                         </div>
-                        <p className="text-blue-700 font-medium">Verifying QR code...</p>
-                      </div>
+                      )}
                     </div>
-                  )}
 
-                  {verificationStatus === 'success' && (
-                    <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-5 h-5 rounded-full bg-green-100 flex items-center justify-center">
-                          <div className="w-2 h-2 rounded-full bg-green-600" />
-                        </div>
-                        <div>
-                          <p className="text-green-700 font-medium">QR Code Valid</p>
-                          <p className="text-green-600 text-sm mt-1">Code: {lastScannedCode}</p>
+                    {/* Controls */}
+                    <div className="flex gap-2">
+                      <button
+                        onClick={isScanning ? stopScanning : startScanning}
+                        className={`flex-1 py-2 px-3 text-sm rounded-lg font-medium transition-colors ${
+                          isScanning
+                            ? 'bg-red-600 hover:bg-red-700 text-white'
+                            : 'bg-blue-600 hover:bg-blue-700 text-white'
+                        }`}
+                      >
+                        {isScanning ? 'Stop Scanning' : 'Start Scanning'}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setScanResult(null);
+                          setErrorMessage('');
+                          setLastScannedCode(null);
+                        }}
+                        className="px-3 py-2 text-sm bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg font-medium transition-colors"
+                      >
+                        Clear
+                      </button>
+                    </div>
+
+                    {/* Last Scanned Code */}
+                    {lastScannedCode && (
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                        <p className="text-sm text-blue-700">
+                          <span className="font-medium">Last scanned:</span> {lastScannedCode.substring(0, 20)}...
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Right Side - Instructions or Results */}
+                  <div className="space-y-4">
+                    {/* Instructions - Show before scan */}
+                    {!scanResult ? (
+                      <div className="bg-gray-50 rounded-lg p-4">
+                        <h3 className="text-base font-semibold text-gray-900 mb-3">How it works:</h3>
+                        <ul className="text-xs text-gray-600 space-y-2">
+                          <li className="flex items-start gap-2">
+                            <span className="flex-shrink-0 w-4 h-4 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-medium">1</span>
+                            <span>Click "Start Scanning" to activate the camera</span>
+                          </li>
+                          <li className="flex items-start gap-2">
+                            <span className="flex-shrink-0 w-4 h-4 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-medium">2</span>
+                            <span>Point the camera at a customer's QR code</span>
+                          </li>
+                          <li className="flex items-start gap-2">
+                            <span className="flex-shrink-0 w-4 h-4 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-medium">3</span>
+                            <span>The system will automatically scan and verify the QR code</span>
+                          </li>
+                          <li className="flex items-start gap-2">
+                            <span className="flex-shrink-0 w-4 h-4 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-medium">4</span>
+                            <span>Review the customer and purchase information</span>
+                          </li>
+                          <li className="flex items-start gap-2">
+                            <span className="flex-shrink-0 w-4 h-4 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-medium">5</span>
+                            <span>Complete the pickup process and mark the QR code as used</span>
+                          </li>
+                        </ul>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {/* Error Message */}
+                        {errorMessage && (
+                          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                            <div className="flex items-center gap-2 mb-3">
+                              <div className="text-red-500">
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                              </div>
+                              <p className="text-red-800 font-semibold text-base">Scan Error</p>
+                            </div>
+                            <p className="text-red-700 bg-red-100 px-3 py-2 rounded-md border border-red-200">{errorMessage}</p>
+                          </div>
+                        )}
+
+                        {/* Scan Results */}
+                        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                          <div className="flex items-center gap-2 mb-3">
+                            <div className="text-green-500">
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                              </svg>
+                            </div>
+                            <p className="text-green-800 font-semibold text-base">QR Code Verified Successfully!</p>
+                          </div>                        <div className="grid grid-cols-1 gap-3">
+                            {/* User Info */}
+                            <div className="bg-white rounded-lg p-3 border border-green-100">
+                              <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                                <svg className="w-3 h-3 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                </svg>
+                                Customer Information
+                              </h4>
+                              <div className="space-y-1 text-xs">
+                                <p><span className="font-medium text-gray-600">Name:</span> <span className="text-gray-900">{scanResult.user_info?.full_name || 'N/A'}</span></p>
+                                <p><span className="font-medium text-gray-600">Email:</span> <span className="text-gray-900">{scanResult.user_info?.email || 'N/A'}</span></p>
+                                <p><span className="font-medium text-gray-600">Location:</span> <span className="text-gray-900">{scanResult.user_info?.location_zone || 'N/A'}</span></p>
+                              </div>
+                            </div>
+
+                            {/* Product Info */}
+                            <div className="bg-white rounded-lg p-3 border border-green-100">
+                              <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                                <svg className="w-3 h-3 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                                </svg>
+                                Product Information
+                              </h4>
+                              <div className="space-y-1 text-xs">
+                                <p><span className="font-medium text-gray-600">Product:</span> <span className="text-gray-900">{scanResult.product_info?.name || 'N/A'}</span></p>
+                                <p><span className="font-medium text-gray-600">Price:</span> <span className="text-gray-900">${scanResult.product_info?.unit_price || 'N/A'}</span></p>
+                                <p><span className="font-medium text-gray-600">Category:</span> <span className="text-gray-900">{scanResult.product_info?.category || 'N/A'}</span></p>
+                              </div>
+                            </div>
+
+                            {/* Purchase Info */}
+                            <div className="bg-white rounded-lg p-3 border border-green-100">
+                              <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                                <svg className="w-3 h-3 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                </svg>
+                                Purchase Details
+                              </h4>
+                              <div className="space-y-1 text-xs">
+                                <p><span className="font-medium text-gray-600">Quantity:</span> <span className="text-gray-900">{scanResult.purchase_info?.quantity || 'N/A'}</span></p>
+                                <p><span className="font-medium text-gray-600">Amount:</span> <span className="text-gray-900">${scanResult.purchase_info?.amount || 'N/A'}</span></p>
+                                <p><span className="font-medium text-gray-600">Date:</span> <span className="text-gray-900">{scanResult.purchase_info?.purchase_date ? new Date(scanResult.purchase_info.purchase_date).toLocaleDateString() : 'N/A'}</span></p>
+                              </div>
+                            </div>
+
+                            {/* QR Status */}
+                            <div className="bg-white rounded-lg p-3 border border-green-100">
+                              <h4 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                                <svg className="w-3 h-3 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M12 15h4.01M12 21h4.01M12 12h4.01M12 15h4.01M12 21h4.01M12 12h4.01M12 15h4.01M12 21h4.01" />
+                                </svg>
+                                QR Code Status
+                              </h4>
+                              <div className="space-y-1 text-xs">
+                                <p><span className="font-medium text-gray-600">Used:</span> <span className={`font-medium ${scanResult.qr_status?.is_used ? 'text-red-600' : 'text-green-600'}`}>{scanResult.qr_status?.is_used ? 'Yes' : 'No'}</span></p>
+                                <p><span className="font-medium text-gray-600">Generated:</span> <span className="text-gray-900">{scanResult.qr_status?.generated_at ? new Date(scanResult.qr_status.generated_at).toLocaleDateString() : 'N/A'}</span></p>
+                                <p><span className="font-medium text-gray-600">Expires:</span> <span className="text-gray-900">{scanResult.qr_status?.expires_at ? new Date(scanResult.qr_status.expires_at).toLocaleDateString() : 'N/A'}</span></p>
+                              </div>
+                            </div>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  {verificationStatus === 'error' && (
-                    <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                      <div className="flex items-center gap-3">
-                        <AlertTriangle className="w-5 h-5 text-red-600" />
-                        <div>
-                          <p className="text-red-700 font-medium">Verification Failed</p>
-                          <p className="text-red-600 text-sm mt-1">Please try scanning again</p>
+                    {/* Scan History - Always visible */}
+                    <div className="bg-white rounded-lg p-4 border border-gray-200">
+                      <h4 className="text-base font-semibold text-gray-900 mb-3">Scan History:</h4>
+                      {scanHistory.length > 0 ? (
+                        <div className="space-y-2 max-h-64 overflow-y-auto">
+                          {scanHistory.map((scan, index) => (
+                            <div key={index} className="bg-gray-50 rounded-lg p-3 border border-gray-100">
+                              <div className="flex items-center justify-between mb-1">
+                                <div className="flex items-center gap-2">
+                                  <svg className="w-3 h-3 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                  </svg>
+                                  <span className="text-xs font-medium text-gray-900">
+                                    {scan.userInfo?.full_name || 'Unknown User'}
+                                  </span>
+                                </div>
+                                <span className="text-xs text-gray-500">
+                                  {scan.timestamp.toLocaleTimeString()}
+                                </span>
+                              </div>
+                              <div className="text-xs text-gray-600 space-y-0.5">
+                                <p><span className="font-medium">Product:</span> {scan.productInfo?.name || 'N/A'}</p>
+                                <p><span className="font-medium">Email:</span> {scan.userInfo?.email || 'N/A'}</p>
+                                <p><span className="font-medium">Scanned:</span> {scan.timestamp.toLocaleDateString()}</p>
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                      </div>
+                      ) : (
+                        <div className="text-center py-6 text-gray-500">
+                          <svg className="w-8 h-8 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                          </svg>
+                          <p className="text-xs">No QR scans recorded yet</p>
+                          <p className="text-xs mt-1">Scanned QR codes will appear here</p>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-
-                <div className="mt-6 bg-gray-50 rounded-lg p-4">
-                  <h3 className="text-sm font-medium text-gray-900 mb-2">Instructions:</h3>
-                  <ul className="text-sm text-gray-600 space-y-2">
-                    <li>1. Position the QR code within the scanner frame</li>
-                    <li>2. Hold the code steady until it's recognized</li>
-                    <li>3. Wait for verification results</li>
-                    <li>4. Check the status message below the scanner</li>
-                  </ul>
+                  </div>
                 </div>
               </div>
             </div>
@@ -599,26 +1024,6 @@ const AdminDashboard = () => {
           </div>
         )}
       </main>
-
-      {/* Admin Helper Message */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mt-8 mx-4 sm:mx-6 lg:mx-8 mb-8">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="p-2 bg-blue-100 rounded-lg">
-            <AlertTriangle className="w-6 h-6 text-blue-600" />
-          </div>
-          <div>
-            <h3 className="text-lg font-semibold text-blue-900">Admin Guidelines</h3>
-            <p className="text-sm text-blue-700 mt-1">Important information for managing groups</p>
-          </div>
-        </div>
-        <div className="space-y-3 text-sm text-blue-800">
-          <p>• As an admin, you are responsible for creating new group buying opportunities for traders</p>
-          <p>• Set realistic target member counts and deadlines to ensure group success</p>
-          <p>• Monitor active groups and process payments promptly when targets are reached</p>
-          <p>• Ensure accurate product descriptions and pricing information</p>
-          <p>• Coordinate with local pickup locations for smooth delivery process</p>
-        </div>
-      </div>
     </Layout>
   );
 };

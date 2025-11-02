@@ -1,59 +1,78 @@
-import { Search, MapPin, User, Zap, Users, Eye, DollarSign, ArrowUpRight, Calendar } from 'lucide-react';
+import { Search, MapPin, User, Zap, Users, Eye, ChevronDown } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import apiService from '../services/api';
 
 const TraderDashboard = () => {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCurrency, setSelectedCurrency] = useState<'USD' | 'ZIG'>('USD');
+  const [recommendations, setRecommendations] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [userLocation, setUserLocation] = useState<string>('Harare');
+  const [isLocationDropdownOpen, setIsLocationDropdownOpen] = useState(false);
 
-  // View group handler
-  const handleViewGroup = (groupId: number) => {
-    navigate(`/group/${groupId}`);
+  // Location options
+  const locationOptions = ['Harare', 'Mbare', 'Glen View', 'Highfield', 'Bulawayo', 'Downtown', 'Uptown', 'Suburbs'];
+
+  // Load recommendations on component mount
+  useEffect(() => {
+    const loadRecommendations = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+
+        // Fetch user data to get location
+        const userData = await apiService.getCurrentUser();
+        setUserLocation(userData.location_zone || 'Harare');
+
+        const response = await apiService.getRecommendations();
+        setRecommendations(response);
+      } catch (err) {
+        console.error('Failed to load recommendations:', err);
+        setError('Failed to load recommendations. Please try again.');
+        // Fallback to empty array
+        setRecommendations([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadRecommendations();
+  }, []);
+
+  // View group handler - pass the full recommendation data with view mode
+  const handleViewGroup = (recommendation: any) => {
+    navigate(`/group/${recommendation.group_buy_id}`, { state: { recommendation, mode: 'view' } });
   };
 
-  const recommendations = [
-    {
-      id: 1,
-      name: 'Wireless Mechanical Keyboard',
-      price: 89.99,
-      image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
-      description: 'High-performance mechanical keyboard with customizable RGB backlighting and durable switches.',
-      participants: 35,
-      reason: 'Based on your interest in tech accessories',
-      matchScore: 95,
-    },
-    {
-      id: 2,
-      name: 'Smart Home Assistant Speaker',
-      price: 49.99,
-      image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
-      description: 'Voice-controlled smart speaker with premium sound and integrated AI assistant for home automation.',
-      participants: 50,
-      reason: 'Popular in Harare · Trending now',
-      matchScore: 88,
-    },
-    {
-      id: 3,
-      name: 'Portable Espresso Maker',
-      price: 34.50,
-      image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
-      description: 'Enjoy rich, creamy espresso anywhere with this compact and easy-to-use portable maker. Ideal for travel.',
-      participants: 22,
-      reason: 'Similar to items you viewed',
-      matchScore: 82,
-    },
-    {
-      id: 4,
-      name: 'Ergonomic Office Chair',
-      price: 199.00,
-      image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
-      description: 'Designed for ultimate comfort and support during long work hours. Features adjustable height and lumbar support.',
-      participants: 15,
-      reason: 'Matches your search history',
-      matchScore: 90,
-    },
-  ];
+  // Join group handler - pass the full recommendation data with join mode
+  const handleJoinGroup = (recommendation: any) => {
+    navigate(`/group/${recommendation.group_buy_id}`, { state: { recommendation, mode: 'join' } });
+  };
+
+  // Location change handler
+  const handleLocationChange = async (newLocation: string) => {
+    try {
+      await apiService.updateProfile({ location_zone: newLocation });
+      setUserLocation(newLocation);
+      setIsLocationDropdownOpen(false);
+    } catch (error) {
+      console.error('Failed to update location:', error);
+    }
+  };
+
+  // Click outside handler
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (isLocationDropdownOpen && !(event.target as Element).closest('.location-dropdown')) {
+        setIsLocationDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isLocationDropdownOpen]);
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -112,32 +131,40 @@ const TraderDashboard = () => {
                 className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent w-40 lg:w-48"
               />
             </div>
-            <div className="flex items-center gap-2 text-xs sm:text-sm text-gray-700">
-              <MapPin className="w-4 h-4" />
-              <span>Harare</span>
+            <div className="relative location-dropdown">
+              <button
+                onClick={() => setIsLocationDropdownOpen(!isLocationDropdownOpen)}
+                className="flex items-center gap-2 text-xs sm:text-sm text-gray-700 hover:text-gray-900 transition-colors"
+              >
+                <MapPin className="w-4 h-4" />
+                <span>{userLocation}</span>
+                <ChevronDown className="w-3 h-3" />
+              </button>
+              {isLocationDropdownOpen && (
+                <div className="absolute top-full mt-1 right-0 bg-white border border-gray-200 rounded-lg shadow-lg z-50 min-w-[120px]">
+                  {locationOptions.map((location) => (
+                    <button
+                      key={location}
+                      onClick={() => handleLocationChange(location)}
+                      className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-50 transition-colors ${
+                        location === userLocation ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'
+                      }`}
+                    >
+                      {location}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             <button 
-              onClick={() => setSelectedCurrency('USD')}
-              className={`px-3 sm:px-4 py-2 text-xs sm:text-sm rounded-lg transition whitespace-nowrap ${
-                selectedCurrency === 'USD' 
-                  ? 'bg-blue-600 text-white hover:bg-blue-700' 
-                  : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
-              }`}
-            >
-              USD
-            </button>
-            <button 
-              onClick={() => setSelectedCurrency('ZIG')}
-              className={`px-3 sm:px-4 py-2 text-xs sm:text-sm rounded-lg transition whitespace-nowrap ${
-                selectedCurrency === 'ZIG' 
-                  ? 'bg-blue-600 text-white hover:bg-blue-700' 
-                  : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
-              }`}
-            >
-              ZIG
-            </button>
-            <button 
-              onClick={() => navigate('/login')}
+              onClick={async () => {
+                try {
+                  await apiService.logout();
+                } catch (error) {
+                  console.warn('Logout API call failed, but clearing local session anyway');
+                }
+                navigate('/login');
+              }}
               className="px-3 sm:px-4 py-2 bg-red-500 text-white text-xs sm:text-sm rounded-lg hover:bg-red-600 transition whitespace-nowrap"
             >
               Logout
@@ -193,134 +220,116 @@ const TraderDashboard = () => {
           <p className="text-sm sm:text-base text-gray-600">Personalized group buys created by admins based on your interests and activity · Save up to 40%</p>
         </div>
 
-        {/* Product Grid - Simplified for informal traders */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-12">
-          {recommendations.map((product) => (
-            <div 
-              key={product.id} 
-              className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-lg transition-all duration-200 group"
-              role="article"
-              aria-label={`${product.name} group buy`}
-            >
-              {/* Product Image with enhanced visual appeal */}
-              <div className="h-56 bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center relative overflow-hidden group-hover:from-blue-100 group-hover:to-indigo-200 transition-colors duration-300">
-                {product.image.startsWith('http') ? (
-                  <img 
-                    src={product.image} 
-                    alt={product.name} 
-                    className="h-40 object-contain group-hover:scale-105 transition-transform duration-300 filter drop-shadow-lg" 
-                  />
-                ) : (
-                  <span className="text-7xl group-hover:scale-105 transition-transform duration-300">{product.image}</span>
-                )}
-                {/* Enhanced match score badge */}
-                <div className="absolute top-3 left-3 bg-blue-600 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-md flex items-center gap-1.5 transform transition-transform group-hover:-translate-y-0.5">
-                  <div className="w-1.5 h-1.5 bg-blue-200 rounded-full animate-pulse"></div>
-                  {product.matchScore}% Match
-                </div>
-                {/* Enhanced savings badge */}
-                <div className="absolute top-3 right-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-md flex items-center gap-1.5 transform transition-transform group-hover:-translate-y-0.5">
-                  <DollarSign className="w-3.5 h-3.5" />
-                  Save 30%
-                </div>
-                {/* Time-limited tag if needed */}
-                <div className="absolute bottom-3 right-3 bg-orange-100 text-orange-800 text-xs font-semibold px-3 py-1.5 rounded-full shadow-sm flex items-center gap-1.5">
-                  <Calendar className="w-3.5 h-3.5" />
-                  2 days left
-                </div>
-              </div>
+        {/* Loading State */}
+        {isLoading && (
+          <div className="flex justify-center items-center py-12">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+          </div>
+        )}
 
-              {/* Enhanced Product Info */}
-              <div className="p-5">
-                {/* Enhanced recommendation reason */}
-                <div className="flex items-center gap-1.5 mb-2 transform transition-transform group-hover:translate-x-1">
-                  <div className="p-1.5 bg-blue-50 rounded-full">
-                    <Zap className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />
-                  </div>
-                  <p className="text-xs text-blue-600 font-medium">{product.reason}</p>
-                </div>
-                
-                <h3 className="text-lg font-bold text-gray-900 mb-2 line-clamp-2 leading-tight">{product.name}</h3>
-                
-                {/* Enhanced price display */}
-                <div className="mb-4">
-                  <div className="flex items-baseline gap-3">
-                    <div className="flex-1">
-                      <div className="flex items-baseline gap-2">
-                        <span className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-blue-800 bg-clip-text text-transparent">${product.price}</span>
-                        <span className="text-sm text-gray-400 line-through">${(product.price / 0.7).toFixed(2)}</span>
-                      </div>
-                      <p className="text-xs text-green-600 font-medium flex items-center gap-1">
-                        <DollarSign className="w-3.5 h-3.5" />
-                        Group Buy Price
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-medium text-gray-900">Limited Time</p>
-                      <p className="text-xs text-gray-500">Ends in 48h</p>
-                    </div>
-                  </div>
-                </div>
-                
-                {/* Enhanced participants display */}
-                <div className="mb-4">
-                  <div className="flex items-center justify-between text-sm mb-2">
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 bg-blue-50 rounded-full flex items-center justify-center">
-                        <Users className="w-4 h-4 text-blue-600" />
-                      </div>
-                      <div>
-                        <p className="font-medium text-gray-900">{product.participants} joined</p>
-                        <p className="text-xs text-gray-500">of 50 needed</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-medium text-green-600">{((product.participants / 50) * 100).toFixed(0)}%</p>
-                      <p className="text-xs text-gray-500">Complete</p>
-                    </div>
-                  </div>
-                  <div className="w-full bg-gray-100 rounded-full h-3 overflow-hidden">
-                    <div 
-                      className="bg-gradient-to-r from-blue-500 to-blue-600 h-3 rounded-full transition-all duration-500 ease-out shadow-sm"
-                      style={{ width: `${(product.participants / 50) * 100}%` }}
-                      role="progressbar"
-                      aria-valuenow={product.participants}
-                      aria-valuemin={0}
-                      aria-valuemax={50}
-                    >
-                      <div className="w-full h-full opacity-25 bg-stripes animate-move-stripes"></div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Enhanced call-to-action buttons */}
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => handleViewGroup(product.id)}
-                    className="flex-1 py-3 text-sm font-semibold text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-all duration-300 flex items-center justify-center gap-2 group relative overflow-hidden shadow-sm hover:shadow"
-                  >
-                    <Eye className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                    <span>View Details</span>
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent opacity-0 group-hover:opacity-20 translate-x-[-100%] group-hover:translate-x-[100%] transition-all duration-1000"></div>
-                  </button>
-                  <button 
-                    className="flex-1 bg-gradient-to-r from-blue-600 to-blue-700 text-white py-3 rounded-lg font-semibold hover:from-blue-700 hover:to-blue-800 active:from-blue-800 active:to-blue-900 transition-all duration-300 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 flex items-center justify-center gap-2"
-                    aria-label={`Join ${product.name} group buy`}
-                  >
-                    <span>Join Group</span>
-                    <ArrowUpRight className="w-4 h-4" />
-                  </button>
-                </div>
-                
-                {/* Participation incentive */}
-                <p className="text-xs text-gray-500 text-center mt-3">
-                  <span className="text-green-600 font-medium">+5 more people needed</span>
-                  {' '}to unlock additional 5% discount
-                </p>
-              </div>
+        {/* Error State */}
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-8">
+            <div className="flex items-center gap-2">
+              <div className="text-red-500"></div>
+              <p className="text-red-700">{error}</p>
             </div>
-          ))}
-        </div>
+          </div>
+        )}
+
+        {/* Product Grid - Simplified for informal traders */}
+        {!isLoading && !error && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-12">
+            {recommendations.map((product) => (
+              <div 
+                key={product.group_buy_id} 
+                className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-lg transition-all duration-200 group"
+                role="article"
+                aria-label={`${product.product_name} group buy`}
+              >
+                {/* Product Image with better visual appeal - Larger */}
+                <div className="h-56 bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center relative overflow-hidden">
+                  {product.product_image_url ? (
+                    <img 
+                      src={product.product_image_url} 
+                      alt={product.product_name} 
+                      className="h-40 object-contain group-hover:scale-105 transition-transform duration-200" 
+                    />
+                  ) : (
+                    <span className="text-7xl group-hover:scale-105 transition-transform duration-200">📦</span>
+                  )}
+                  {/* Match score badge */}
+                  <div className="absolute top-3 left-3 bg-blue-600 text-white text-xs font-bold px-3 py-1 rounded-full shadow-sm">
+                    {Math.round(product.recommendation_score * 100)}% Match
+                  </div>
+                  {/* Save badge */}
+                  <div className="absolute top-3 right-3 bg-green-500 text-white text-xs font-bold px-2 py-1 rounded-full shadow-sm">
+                    Save {Math.round(product.savings_factor * 100)}%
+                  </div>
+                </div>
+
+                {/* Product Info - Streamlined */}
+                <div className="p-5">
+                  {/* Recommendation reason - Simplified */}
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <Zap className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />
+                    <p className="text-xs text-blue-600 font-medium">{product.reason}</p>
+                  </div>
+                  
+                  <h3 className="text-lg font-bold text-gray-900 mb-2 line-clamp-2 leading-tight">{product.product_name}</h3>
+                  
+                  {/* Price with visual emphasis - Simplified */}
+                  <div className="mb-3">
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-2xl font-bold text-blue-600">${product.bulk_price}</span>
+                      <span className="text-sm text-gray-400 line-through">${product.unit_price}</span>
+                    </div>
+                    <p className="text-xs text-green-600 font-medium">Group Buy Price</p>
+                  </div>
+                  
+                  {/* Participants - Simplified */}
+                  <div className="mb-4">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="flex items-center gap-1 text-gray-700">
+                        <Users className="w-4 h-4" />
+                        <span className="font-medium">{product.participants_count} joined</span>
+                      </span>
+                      <span className="text-gray-500">{product.moq} needed</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden mt-1">
+                      <div 
+                        className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                        style={{ width: `${product.moq_progress}%` }}
+                        role="progressbar"
+                        aria-valuenow={product.participants_count}
+                        aria-valuemin={0}
+                        aria-valuemax={product.moq}
+                      ></div>
+                    </div>
+                  </div>
+
+                  {/* Simplified call-to-action */}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleViewGroup(product)}
+                      className="flex-1 py-3 text-sm font-semibold text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors flex items-center justify-center gap-1"
+                    >
+                      <Eye className="w-4 h-4" />
+                      View
+                    </button>
+                    <button 
+                      onClick={() => handleJoinGroup(product)}
+                      className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 active:bg-blue-800 transition-colors duration-150 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 shadow-sm"
+                      aria-label={`Join ${product.product_name} group buy`}
+                    >
+                      Join
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* How Group Buying Works - Educational, clear explanation - Responsive */}
         <div className="bg-gradient-to-br from-white to-blue-50 rounded-xl shadow-sm border border-blue-200 p-4 sm:p-6 lg:p-8">

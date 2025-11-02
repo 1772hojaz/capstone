@@ -3,9 +3,9 @@
 Test script to verify improved recommendation scores after database reset
 """
 
-from database import SessionLocal
-from models import User
-from ml import get_recommendations_for_user, load_models
+from db.database import SessionLocal
+from models.models import User
+from ml.ml import get_recommendations_for_user, load_models
 import random
 
 def main():
@@ -44,7 +44,7 @@ def main():
             print("   ⚠️  No recommendations generated")
             continue
         
-        print(f"   📊 Top 5 Recommendations:")
+        print("   📊 Top 5 Recommendations:")
         print("   " + "-"*76)
         
         for j, rec in enumerate(recs[:5], 1):

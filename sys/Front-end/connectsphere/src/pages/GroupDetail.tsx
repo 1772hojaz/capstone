@@ -1,72 +1,187 @@
-import { Search, MapPin, User, Users, ArrowLeft, Zap, Calendar, Tag, Clock } from 'lucide-react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { useState } from 'react';
+import { Search, MapPin, User, Users, ArrowLeft, Zap, Calendar, Tag, Clock, CreditCard, Truck, MapPin as MapPinIcon, ChevronDown } from 'lucide-react';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import apiService from '../services/api';
 
 export default function GroupDetail() {
   const navigate = useNavigate();
   const { id } = useParams();
-  const [selectedCurrency, setSelectedCurrency] = useState<'USD' | 'ZIG'>('USD');
+  const location = useLocation();
   const [joiningGroup, setJoiningGroup] = useState(false);
   const [joinSuccess, setJoinSuccess] = useState<string | null>(null);
+  const [showJoinForm, setShowJoinForm] = useState(false);
+  const [userLocation, setUserLocation] = useState<string>('Harare');
+  const [isLocationDropdownOpen, setIsLocationDropdownOpen] = useState(false);
 
-  // Mock group data - in real app, this would come from API based on the ID
-  const groupData = {
-    id: parseInt(id || '1'),
-    name: 'Wireless Mechanical Keyboard',
-    price: 89.99,
-    originalPrice: 129.99,
-    image: 'https://media.istockphoto.com/id/814423752/photo/eye-of-model-with-colorful-art-make-up-close-up.jpg?s=612x612&w=0&k=20&c=l15OdMWjgCKycMMShP8UK94ELVlEGvt7GmB_esHWPYE=',
-    description: 'High-performance mechanical keyboard with customizable RGB backlighting and durable switches. Features premium Cherry MX switches, full aluminum frame, and programmable keys for ultimate gaming and productivity experience.',
-    longDescription: 'This premium wireless mechanical keyboard combines cutting-edge technology with ergonomic design. The keyboard features Cherry MX Red switches for smooth, responsive typing, customizable RGB backlighting with 16.8 million colors, and a durable aluminum frame that can withstand heavy use. The wireless connectivity supports both 2.4GHz and Bluetooth 5.0, giving you the flexibility to connect to multiple devices. With a 70-hour battery life and fast charging capabilities, this keyboard is perfect for both office work and gaming sessions.',
-    participants: 35,
-    maxParticipants: 50,
-    category: 'Electronics',
-    created: '2024-01-10',
-    endDate: '2024-02-10',
-    matchScore: 95,
-    reason: 'Based on your interest in tech accessories',
-    adminCreated: true,
-    adminName: 'TechDeals Admin',
-    savings: 40.00,
-    discountPercentage: 30,
-    shippingInfo: 'Free shipping when group goal is reached',
-    estimatedDelivery: '2-3 weeks after group completion',
-    features: [
-      'Cherry MX Red mechanical switches',
-      'Customizable RGB backlighting',
-      'Wireless connectivity (2.4GHz + Bluetooth)',
-      '70-hour battery life',
-      'Aluminum frame construction',
-      'Programmable keys',
-      'Windows/Mac compatible'
-    ],
-    requirements: [
-      'Minimum 50 participants required',
-      'Payment due upon group completion',
-      'No refunds after group goal reached',
-      'Shipping to supported countries only'
-    ]
+  // Form state
+  const [formData, setFormData] = useState({
+    quantity: 1,
+    deliveryMethod: 'pickup',
+    paymentMethod: 'cash',
+    specialInstructions: '',
+    agreeToTerms: false
+  });
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+
+  // Location options
+  const locationOptions = ['Harare', 'Mbare', 'Glen View', 'Highfield', 'Bulawayo', 'Downtown', 'Uptown', 'Suburbs'];
+
+  // Get data from navigation state - could be recommendation (from trader dashboard) or group (from all groups)
+  const recommendation = location.state?.recommendation;
+  const group = location.state?.group;
+  const mode = location.state?.mode || 'view'; // Default to 'view' mode
+
+  // Use either recommendation or group data
+  const groupData = recommendation || group;
+
+  // If no data available, show error
+  if (!groupData) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col">
+        <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
+          <div className="px-3 sm:px-6 py-4">
+            <button
+              onClick={() => navigate(-1)}
+              className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span className="text-sm font-medium">Back</span>
+            </button>
+          </div>
+        </header>
+        <div className="flex justify-center items-center py-12">
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 max-w-md">
+            <div className="flex items-center gap-2">
+              <div className="text-red-500"></div>
+              <p className="text-red-700">Group details not available. Please go back to groups.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const progressPercentage = (groupData.participants_count / groupData.moq) * 100;
+  const isGoalReached = groupData.participants_count >= groupData.moq;
+
+  // Automatically show join form if user was redirected from recommendations in 'join' mode
+  useEffect(() => {
+    const fetchUserData = async () => {
+      try {
+        const userData = await apiService.getCurrentUser();
+        setUserLocation(userData.location_zone || 'Harare');
+      } catch (error) {
+        console.error('Failed to fetch user data:', error);
+      }
+    };
+
+    fetchUserData();
+
+    if (groupData && !isGoalReached && mode === 'join') {
+      setShowJoinForm(true);
+    }
+  }, [groupData, isGoalReached, mode]);
+
+  // Form validation
+  const validateForm = () => {
+    const errors: Record<string, string> = {};
+
+    if (formData.quantity < 1) {
+      errors.quantity = 'Quantity must be at least 1';
+    }
+
+    if (formData.quantity > 100) {
+      errors.quantity = 'Quantity cannot exceed 100';
+    }
+
+    if (!formData.deliveryMethod) {
+      errors.deliveryMethod = 'Please select a delivery method';
+    }
+
+    if (!formData.paymentMethod) {
+      errors.paymentMethod = 'Please select a payment method';
+    }
+
+    if (!formData.agreeToTerms) {
+      errors.agreeToTerms = 'You must agree to the terms and conditions';
+    }
+
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  // Location change handler
+  const handleLocationChange = async (newLocation: string) => {
+    try {
+      await apiService.updateProfile({ location_zone: newLocation });
+      setUserLocation(newLocation);
+      setIsLocationDropdownOpen(false);
+    } catch (error) {
+      console.error('Failed to update location:', error);
+    }
+  };
+
+  // Click outside handler
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (isLocationDropdownOpen && !(event.target as Element).closest('.location-dropdown')) {
+        setIsLocationDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isLocationDropdownOpen]);
+
+  // Form handlers
+  const handleFormChange = (field: string, value: any) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+    // Clear error when user starts typing
+    if (formErrors[field]) {
+      setFormErrors(prev => ({ ...prev, [field]: '' }));
+    }
   };
 
   // Join group handler
   const handleJoinGroup = async () => {
-    setJoiningGroup(true);
-    try {
-      // TODO: Replace with actual API call to join group
-      await new Promise(resolve => setTimeout(resolve, 1000));
+    // Prevent joining if already joined or goal reached
+    if (groupData.joined || isGoalReached) {
+      return;
+    }
+    
+    if (showJoinForm) {
+      // Validate form
+      if (!validateForm()) {
+        return;
+      }
 
-      setJoinSuccess(`Successfully joined "${groupData.name}"! Check My Groups to track progress.`);
-      setTimeout(() => setJoinSuccess(null), 5000);
-    } catch (error) {
-      console.error('Failed to join group:', error);
-      // TODO: Show error message
-    } finally {
-      setJoiningGroup(false);
+      // Submit form data
+      setJoiningGroup(true);
+      try {
+        const joinData = {
+          quantity: formData.quantity,
+          delivery_method: formData.deliveryMethod,
+          payment_method: formData.paymentMethod,
+          special_instructions: formData.specialInstructions || null
+        };
+
+        await apiService.joinGroup(groupData.group_buy_id || groupData.id, joinData);
+
+        setJoinSuccess(`Successfully joined "${groupData.product_name || groupData.name}"! Check My Groups to track progress.`);
+        setTimeout(() => setJoinSuccess(null), 5000);
+        setShowJoinForm(false);
+      } catch (error) {
+        console.error('Failed to join group:', error);
+        // TODO: Show error message to user
+        alert('Failed to join group. Please try again.');
+      } finally {
+        setJoiningGroup(false);
+      }
+    } else {
+      // Show form
+      setShowJoinForm(true);
     }
   };
-
-  const progressPercentage = (groupData.participants / groupData.maxParticipants) * 100;
-  const isGoalReached = groupData.participants >= groupData.maxParticipants;
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -123,30 +238,31 @@ export default function GroupDetail() {
                 className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent w-40 lg:w-48"
               />
             </div>
-            <div className="flex items-center gap-2 text-xs sm:text-sm text-gray-700">
-              <MapPin className="w-4 h-4" />
-              <span>Harare</span>
+            <div className="relative location-dropdown">
+              <button
+                onClick={() => setIsLocationDropdownOpen(!isLocationDropdownOpen)}
+                className="flex items-center gap-2 text-xs sm:text-sm text-gray-700 hover:text-gray-900 transition-colors"
+              >
+                <MapPin className="w-4 h-4" />
+                <span>{userLocation}</span>
+                <ChevronDown className="w-3 h-3" />
+              </button>
+              {isLocationDropdownOpen && (
+                <div className="absolute top-full mt-1 right-0 bg-white border border-gray-200 rounded-lg shadow-lg z-50 min-w-[120px]">
+                  {locationOptions.map((location) => (
+                    <button
+                      key={location}
+                      onClick={() => handleLocationChange(location)}
+                      className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-50 transition-colors ${
+                        location === userLocation ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'
+                      }`}
+                    >
+                      {location}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
-            <button
-              onClick={() => setSelectedCurrency('USD')}
-              className={`px-3 sm:px-4 py-2 text-xs sm:text-sm rounded-lg transition whitespace-nowrap ${
-                selectedCurrency === 'USD'
-                  ? 'bg-blue-600 text-white hover:bg-blue-700'
-                  : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
-              }`}
-            >
-              USD
-            </button>
-            <button
-              onClick={() => setSelectedCurrency('ZIG')}
-              className={`px-3 sm:px-4 py-2 text-xs sm:text-sm rounded-lg transition whitespace-nowrap ${
-                selectedCurrency === 'ZIG'
-                  ? 'bg-blue-600 text-white hover:bg-blue-700'
-                  : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
-              }`}
-            >
-              ZIG
-            </button>
             <button
               onClick={() => navigate('/login')}
               className="px-3 sm:px-4 py-2 bg-red-500 text-white text-xs sm:text-sm rounded-lg hover:bg-red-600 transition whitespace-nowrap"
@@ -190,10 +306,10 @@ export default function GroupDetail() {
             <div className="md:flex">
               {/* Product Image */}
               <div className="md:w-1/2 h-64 md:h-auto bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-8">
-                {groupData.image.startsWith('http') ? (
-                  <img src={groupData.image} alt={groupData.name} className="max-h-full max-w-full object-contain" />
+                {groupData.product_image_url || groupData.image ? (
+                  <img src={groupData.product_image_url || groupData.image} alt={groupData.product_name || groupData.name} className="max-h-full max-w-full object-contain" />
                 ) : (
-                  <span className="text-8xl">{groupData.image}</span>
+                  <span className="text-8xl">📦</span>
                 )}
               </div>
 
@@ -204,9 +320,9 @@ export default function GroupDetail() {
                   <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded-full">
                     {groupData.category}
                   </span>
-                  {groupData.matchScore && (
+                  {groupData.recommendation_score && (
                     <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-1 rounded-full">
-                      {groupData.matchScore}% Match
+                      {Math.round(groupData.recommendation_score * 100)}% Match
                     </span>
                   )}
                   <span className="text-xs font-medium text-purple-600 bg-purple-50 px-2 py-1 rounded-full">
@@ -214,16 +330,24 @@ export default function GroupDetail() {
                   </span>
                 </div>
 
-                <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-3">{groupData.name}</h1>
+                <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-3">{groupData.product_name || groupData.name}</h1>
 
                 {/* Price Section */}
                 <div className="mb-4">
                   <div className="flex items-baseline gap-3 mb-1">
-                    <span className="text-3xl font-bold text-blue-600">${groupData.price}</span>
-                    <span className="text-lg text-gray-400 line-through">${groupData.originalPrice}</span>
-                    <span className="text-lg font-semibold text-green-600">Save ${groupData.savings}</span>
+                    <span className="text-3xl font-bold text-blue-600">${groupData.bulk_price || groupData.price}</span>
+                    {groupData.unit_price && groupData.savings && (
+                      <>
+                        <span className="text-lg text-gray-400 line-through">${groupData.unit_price}</span>
+                        <span className="text-lg font-semibold text-green-600">Save ${groupData.savings}</span>
+                      </>
+                    )}
                   </div>
-                  <p className="text-sm text-gray-600">{groupData.discountPercentage}% off group buy price</p>
+                  {groupData.discount_percentage ? (
+                    <p className="text-sm text-gray-600">{groupData.discount_percentage}% off group buy price</p>
+                  ) : (
+                    <p className="text-sm text-gray-600">Group Buy Price</p>
+                  )}
                 </div>
 
                 {/* Progress Section */}
@@ -231,7 +355,7 @@ export default function GroupDetail() {
                   <div className="flex items-center justify-between mb-2">
                     <span className="flex items-center gap-2 text-sm font-medium text-gray-700">
                       <Users className="w-4 h-4" />
-                      <span>{groupData.participants} of {groupData.maxParticipants} joined</span>
+                      <span>{groupData.participants_count || groupData.participants} of {groupData.moq} joined</span>
                     </span>
                     <span className="text-sm text-gray-500">{Math.round(progressPercentage)}% complete</span>
                   </div>
@@ -246,25 +370,188 @@ export default function GroupDetail() {
                   {isGoalReached ? (
                     <p className="text-sm text-green-600 font-medium">🎉 Group goal reached! Processing orders...</p>
                   ) : (
-                    <p className="text-sm text-gray-600">{groupData.maxParticipants - groupData.participants} more participants needed</p>
+                    <p className="text-sm text-gray-600">{groupData.moq - (groupData.participants_count || groupData.participants)} more participants needed</p>
                   )}
                 </div>
 
                 {/* Action Buttons */}
-                <div className="flex gap-3">
-                  <button
-                    onClick={handleJoinGroup}
-                    disabled={joiningGroup || isGoalReached}
-                    className={`flex-1 px-6 py-3 text-sm font-semibold rounded-lg transition ${
-                      joiningGroup
-                        ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
-                        : isGoalReached
-                        ? 'bg-green-600 text-white hover:bg-green-700'
-                        : 'bg-blue-600 text-white hover:bg-blue-700'
-                    }`}
-                  >
-                    {joiningGroup ? 'Joining...' : isGoalReached ? 'Group Completed' : 'Join Group Buy'}
-                  </button>
+                <div className="space-y-4">
+                  {!showJoinForm ? (
+                    <button
+                      onClick={handleJoinGroup}
+                      disabled={isGoalReached || groupData.joined}
+                      className={`w-full px-6 py-3 text-sm font-semibold rounded-lg transition ${
+                        isGoalReached
+                          ? 'bg-green-600 text-white hover:bg-green-700'
+                          : groupData.joined
+                          ? 'bg-green-600 text-white cursor-not-allowed opacity-75'
+                          : 'bg-blue-600 text-white hover:bg-blue-700'
+                      }`}
+                    >
+                      {isGoalReached ? 'Group Completed' : groupData.joined ? 'Joined' : 'Join Group Buy'}
+                    </button>
+                  ) : (
+                    <div className="bg-gray-50 rounded-lg p-6 border border-gray-200">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-4">Join Group Buy</h3>
+
+                      <form className="space-y-4">
+                        {/* Quantity */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Quantity <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            max="100"
+                            value={formData.quantity}
+                            onChange={(e) => handleFormChange('quantity', parseInt(e.target.value) || 1)}
+                            className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                              formErrors.quantity ? 'border-red-500' : 'border-gray-300'
+                            }`}
+                            placeholder="Enter quantity"
+                          />
+                          {formErrors.quantity && (
+                            <p className="text-red-500 text-xs mt-1">{formErrors.quantity}</p>
+                          )}
+                        </div>
+
+                        {/* Delivery Method */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Delivery Method <span className="text-red-500">*</span>
+                          </label>
+                          <div className="space-y-2">
+                            <label className="flex items-center">
+                              <input
+                                type="radio"
+                                name="deliveryMethod"
+                                value="pickup"
+                                checked={formData.deliveryMethod === 'pickup'}
+                                onChange={(e) => handleFormChange('deliveryMethod', e.target.value)}
+                                className="text-blue-600 focus:ring-blue-500"
+                              />
+                              <span className="ml-2 text-sm text-gray-700 flex items-center gap-2">
+                                <MapPinIcon className="w-4 h-4" />
+                                Pickup at designated location
+                              </span>
+                            </label>
+                            <label className="flex items-center">
+                              <input
+                                type="radio"
+                                name="deliveryMethod"
+                                value="delivery"
+                                checked={formData.deliveryMethod === 'delivery'}
+                                onChange={(e) => handleFormChange('deliveryMethod', e.target.value)}
+                                className="text-blue-600 focus:ring-blue-500"
+                              />
+                              <span className="ml-2 text-sm text-gray-700 flex items-center gap-2">
+                                <Truck className="w-4 h-4" />
+                                Home delivery (+ $5.00)
+                              </span>
+                            </label>
+                          </div>
+                          {formErrors.deliveryMethod && (
+                            <p className="text-red-500 text-xs mt-1">{formErrors.deliveryMethod}</p>
+                          )}
+                        </div>
+
+                        {/* Payment Method */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Payment Method <span className="text-red-500">*</span>
+                          </label>
+                          <div className="space-y-2">
+                            <label className="flex items-center">
+                              <input
+                                type="radio"
+                                name="paymentMethod"
+                                value="cash"
+                                checked={formData.paymentMethod === 'cash'}
+                                onChange={(e) => handleFormChange('paymentMethod', e.target.value)}
+                                className="text-blue-600 focus:ring-blue-500"
+                              />
+                              <span className="ml-2 text-sm text-gray-700">Cash on pickup/delivery</span>
+                            </label>
+                            <label className="flex items-center">
+                              <input
+                                type="radio"
+                                name="paymentMethod"
+                                value="card"
+                                checked={formData.paymentMethod === 'card'}
+                                onChange={(e) => handleFormChange('paymentMethod', e.target.value)}
+                                className="text-blue-600 focus:ring-blue-500"
+                              />
+                              <span className="ml-2 text-sm text-gray-700 flex items-center gap-2">
+                                <CreditCard className="w-4 h-4" />
+                                Card payment
+                              </span>
+                            </label>
+                          </div>
+                          {formErrors.paymentMethod && (
+                            <p className="text-red-500 text-xs mt-1">{formErrors.paymentMethod}</p>
+                          )}
+                        </div>
+
+                        {/* Special Instructions */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Special Instructions (Optional)
+                          </label>
+                          <textarea
+                            value={formData.specialInstructions}
+                            onChange={(e) => handleFormChange('specialInstructions', e.target.value)}
+                            rows={3}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            placeholder="Any special delivery instructions or preferences..."
+                          />
+                        </div>
+
+                        {/* Terms Agreement */}
+                        <div>
+                          <label className="flex items-start">
+                            <input
+                              type="checkbox"
+                              checked={formData.agreeToTerms}
+                              onChange={(e) => handleFormChange('agreeToTerms', e.target.checked)}
+                              className="mt-1 text-blue-600 focus:ring-blue-500"
+                            />
+                            <span className="ml-2 text-sm text-gray-700">
+                              I agree to the{' '}
+                              <button className="text-blue-600 hover:underline">terms and conditions</button>
+                              {' '}and understand that payment is required upon group completion.
+                            </span>
+                          </label>
+                          {formErrors.agreeToTerms && (
+                            <p className="text-red-500 text-xs mt-1">{formErrors.agreeToTerms}</p>
+                          )}
+                        </div>
+
+                        {/* Form Buttons */}
+                        <div className="flex gap-3 pt-4">
+                          <button
+                            type="button"
+                            onClick={() => setShowJoinForm(false)}
+                            className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleJoinGroup}
+                            disabled={joiningGroup}
+                            className={`flex-1 px-4 py-2 text-sm font-semibold rounded-lg transition ${
+                              joiningGroup
+                                ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                                : 'bg-blue-600 text-white hover:bg-blue-700'
+                            }`}
+                          >
+                            {joiningGroup ? 'Joining...' : 'Confirm Join'}
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -277,35 +564,43 @@ export default function GroupDetail() {
               {/* Description */}
               <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                 <h2 className="text-xl font-semibold text-gray-900 mb-4">Description</h2>
-                <p className="text-gray-700 leading-relaxed mb-4">{groupData.longDescription}</p>
+                <p className="text-gray-700 leading-relaxed mb-4">{groupData.long_description || groupData.description}</p>
 
                 {/* Features */}
                 <div className="mb-4">
                   <h3 className="text-lg font-medium text-gray-900 mb-3">Key Features</h3>
-                  <ul className="space-y-2">
-                    {groupData.features.map((feature, index) => (
-                      <li key={index} className="flex items-start gap-2">
-                        <div className="w-1.5 h-1.5 bg-blue-600 rounded-full mt-2 flex-shrink-0"></div>
-                        <span className="text-gray-700">{feature}</span>
-                      </li>
-                    ))}
-                  </ul>
+                  {groupData.features && groupData.features.length > 0 ? (
+                    <ul className="space-y-2">
+                      {groupData.features.map((feature: string, index: number) => (
+                        <li key={index} className="flex items-start gap-2">
+                          <div className="w-1.5 h-1.5 bg-blue-600 rounded-full mt-2 flex-shrink-0"></div>
+                          <span className="text-gray-700">{feature}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-gray-600">No specific features listed for this group.</p>
+                  )}
                 </div>
               </div>
 
               {/* Requirements */}
               <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                 <h2 className="text-xl font-semibold text-gray-900 mb-4">Group Requirements</h2>
-                <ul className="space-y-3">
-                  {groupData.requirements.map((requirement, index) => (
-                    <li key={index} className="flex items-start gap-3">
-                      <div className="w-5 h-5 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                        <span className="text-xs font-medium text-blue-600">{index + 1}</span>
-                      </div>
-                      <span className="text-gray-700">{requirement}</span>
-                    </li>
-                  ))}
-                </ul>
+                {groupData.requirements && groupData.requirements.length > 0 ? (
+                  <ul className="space-y-3">
+                    {groupData.requirements.map((requirement: string, index: number) => (
+                      <li key={index} className="flex items-start gap-3">
+                        <div className="w-5 h-5 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                          <span className="text-xs font-medium text-blue-600">{index + 1}</span>
+                        </div>
+                        <span className="text-gray-700">{requirement}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-gray-600">Minimum {groupData.moq} participants required to start this group buy.</p>
+                )}
               </div>
             </div>
 
@@ -319,23 +614,25 @@ export default function GroupDetail() {
                     <Calendar className="w-5 h-5 text-gray-400" />
                     <div>
                       <p className="text-sm font-medium text-gray-900">Created</p>
-                      <p className="text-sm text-gray-600">{new Date(groupData.created).toLocaleDateString()}</p>
+                      <p className="text-sm text-gray-600">{new Date(groupData.created_at || groupData.created).toLocaleDateString()}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
                     <Clock className="w-5 h-5 text-gray-400" />
                     <div>
                       <p className="text-sm font-medium text-gray-900">Ends</p>
-                      <p className="text-sm text-gray-600">{new Date(groupData.endDate).toLocaleDateString()}</p>
+                      <p className="text-sm text-gray-600">{groupData.deadline ? new Date(groupData.deadline).toLocaleDateString() : 'No deadline set'}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <User className="w-5 h-5 text-gray-400" />
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">Created by</p>
-                      <p className="text-sm text-gray-600">{groupData.adminName}</p>
+                  {groupData.admin_name && (
+                    <div className="flex items-center gap-3">
+                      <User className="w-5 h-5 text-gray-400" />
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">Created by</p>
+                        <p className="text-sm text-gray-600">{groupData.admin_name}</p>
+                      </div>
                     </div>
-                  </div>
+                  )}
                   <div className="flex items-center gap-3">
                     <Tag className="w-5 h-5 text-gray-400" />
                     <div>
@@ -350,25 +647,32 @@ export default function GroupDetail() {
               <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Shipping & Delivery</h3>
                 <div className="space-y-3">
-                  <div className="flex items-start gap-3">
-                    <div className="w-2 h-2 bg-green-500 rounded-full mt-2"></div>
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">Shipping</p>
-                      <p className="text-sm text-gray-600">{groupData.shippingInfo}</p>
+                  {groupData.shipping_info && (
+                    <div className="flex items-start gap-3">
+                      <div className="w-2 h-2 bg-green-500 rounded-full mt-2"></div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">Shipping</p>
+                        <p className="text-sm text-gray-600">{groupData.shipping_info}</p>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-start gap-3">
-                    <div className="w-2 h-2 bg-blue-500 rounded-full mt-2"></div>
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">Estimated Delivery</p>
-                      <p className="text-sm text-gray-600">{groupData.estimatedDelivery}</p>
+                  )}
+                  {groupData.estimated_delivery && (
+                    <div className="flex items-start gap-3">
+                      <div className="w-2 h-2 bg-blue-500 rounded-full mt-2"></div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">Estimated Delivery</p>
+                        <p className="text-sm text-gray-600">{groupData.estimated_delivery}</p>
+                      </div>
                     </div>
-                  </div>
+                  )}
+                  {(!groupData.shipping_info && !groupData.estimated_delivery) && (
+                    <p className="text-sm text-gray-600">Shipping and delivery details will be provided once the group reaches its goal.</p>
+                  )}
                 </div>
               </div>
 
-              {/* Recommendation Reason */}
-              {groupData.reason && (
+              {/* Recommendation Reason - Only show for recommendations from trader dashboard */}
+              {recommendation && groupData.reason && (
                 <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-200 p-6">
                   <div className="flex items-start gap-3">
                     <Zap className="w-5 h-5 text-blue-600 mt-0.5" />
