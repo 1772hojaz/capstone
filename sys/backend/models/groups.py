@@ -488,7 +488,7 @@ async def get_past_groups_summary(
     response_model=List[GroupResponse],
     summary="Get All Active Groups",
     description="""
-    Retrieve all active admin-created group-buy opportunities.
+    Retrieve all active group-buy opportunities (both admin-created and user-created).
 
     Returns a list of groups with basic information including pricing, participants,
     and availability status. Groups are filtered to show only active ones.
@@ -499,11 +499,12 @@ async def get_past_groups_summary(
 async def get_all_groups(
     db: Session = Depends(get_db)
 ):
-    """Get all admin-created groups for browsing"""
-    groups = db.query(AdminGroup).filter(AdminGroup.is_active).all()
-    
+    """Get all active groups for browsing (both AdminGroups and GroupBuy groups)"""
     result = []
-    for group in groups:
+    
+    # Get active AdminGroups
+    admin_groups = db.query(AdminGroup).filter(AdminGroup.is_active).all()
+    for group in admin_groups:
         result.append(GroupResponse(
             id=group.id,
             name=group.name,
@@ -527,6 +528,45 @@ async def get_all_groups(
             features=group.features or [],
             requirements=group.requirements or [],
             longDescription=group.long_description,
+            status="active",
+            orderStatus="Open for joining"
+        ))
+    
+    # Get active GroupBuy groups
+    group_buy_groups = db.query(GroupBuy).filter(
+        GroupBuy.status == "active",
+        GroupBuy.deadline > datetime.utcnow()
+    ).all()
+    
+    for group in group_buy_groups:
+        # Calculate participants count
+        participants_count = db.query(Contribution).filter(
+            Contribution.group_buy_id == group.id
+        ).count()
+        
+        result.append(GroupResponse(
+            id=group.id,
+            name=group.product.name if group.product else f"Group Buy #{group.id}",
+            price=group.product.bulk_price if group.product else 0,
+            image=group.product.image_url if group.product else None,
+            description=group.product.description if group.product else "User-created group buy",
+            participants=participants_count,
+            category=group.product.category if group.product else "General",
+            created=group.created_at.isoformat(),
+            maxParticipants=None,  # GroupBuy doesn't have max participants
+            originalPrice=group.product.unit_price if group.product else 0,
+            endDate=group.deadline.isoformat(),
+            matchScore=75,  # Default match score for user-created groups
+            reason="User-created group buy",
+            adminCreated=False,
+            adminName=group.creator.full_name if group.creator else "User",
+            savings=(group.product.unit_price - group.product.bulk_price) if group.product else 0,
+            discountPercentage=round(group.product.savings_factor * 100) if group.product else 0,
+            shippingInfo="Pickup at designated location",
+            estimatedDelivery="2-3 weeks after group completion",
+            features=["Bulk pricing", "Community driven", "Flexible quantities"],
+            requirements=[f"Minimum {group.product.moq if group.product else 10} total units required"],
+            longDescription=group.product.description if group.product else f"Join this community group buy for {group.product.name if group.product else 'quality products'} at bulk prices.",
             status="active",
             orderStatus="Open for joining"
         ))

@@ -626,114 +626,58 @@ def get_recommendations_for_user(user: User, db: Session) -> List[dict]:
         else:
             cbf_scores_norm = cbf_scores * 0
         
-        # Get recommended categories from top GroupBuy recommendations
-        recommendations = []
+        # Get user's purchased products for personalization
         seen_products = set(tx.product_id for tx in transactions)
         
-        for gb in active_groups:
-            try:
-                prod_idx = product_ids.index(gb.product_id)
-                base_score = hybrid_scores_norm[prod_idx]
-                cf_score = cf_scores_norm[prod_idx]
-                cbf_score = cbf_scores_norm[prod_idx]
-                pop_score = pop_norm[prod_idx]
-                
-                # Start with normalized base score (0-1 range)
-                score = float(base_score)
-                
-                # Build diverse explanations based on component scores
-                reasons = []
-                if gb.product_id in seen_products:
-                    reasons.append("You've purchased this before")
-                
-                # Determine primary recommendation driver
-                if cf_score > cbf_score and cf_score > pop_score:
-                    if user.cluster_id is not None:
-                        reasons.append(f"Popular with similar traders (Cluster {user.cluster_id})")
-                elif cbf_score > cf_score and cbf_score > pop_score:
-                    reasons.append(f"Matches your interests in {gb.product.category or 'this category'}")
-                elif pop_score > 0.5:
-                    reasons.append("High demand product across all traders")
-                else:
-                    reasons.append("AI-recommended based on purchase patterns")
-                
-                moq_progress = gb.moq_progress
-                if moq_progress >= 75:
-                    score += 0.1
-                    reasons.append("Almost at target quantity")
-                elif moq_progress >= 50:
-                    score += 0.05
-                
-                days_remaining = (gb.deadline - datetime.utcnow()).days
-                if days_remaining <= 3:
-                    score += 0.05
-                    reasons.append("Ending soon")
-                
-                savings = gb.product.savings_factor * 100
-                if savings >= 20:
-                    reasons.append(f"{savings:.0f}% savings")
-                
-                # Cap score to max 1.0
-                score = min(score, 1.0)
-                
-                recommendations.append({
-                    "group_buy": gb,
-                    "score": score,
-                    "category": gb.product.category or "general",
-                    "reasons": reasons
-                })
-            except ValueError:
-                continue
-        
-        # Sort by hybrid score and get top categories
-        recommendations.sort(key=lambda x: x["score"], reverse=True)
-        top_categories = list(set(rec["category"] for rec in recommendations[:5]))
-        
-        # Now get AdminGroups that match these categories
-        admin_groups = db.query(AdminGroup).filter(
-            AdminGroup.is_active,
-            AdminGroup.category.in_(top_categories)
-        ).all()
-        
-        # If no matching categories, get all active AdminGroups
-        if not admin_groups:
-            admin_groups = db.query(AdminGroup).filter(
-                AdminGroup.is_active
-            ).all()
-        
-        # Create final recommendations from AdminGroups
+        # Now create final recommendations directly from GroupBuy groups
         final_recommendations = []
-        for admin_group in admin_groups[:10]:
-            # Find the matching GroupBuy recommendation for scoring
-            matching_rec = next((rec for rec in recommendations if rec["category"] == admin_group.category), None)
+        for gb in active_groups[:10]:  # Limit to top 10 groups
+            # Calculate score for each group
+            score = 0.5  # Default score
+            reasons = ["Available group buy"]
             
-            if matching_rec:
-                score = matching_rec["score"]
-                reasons = matching_rec["reasons"]
-            else:
-                score = 0.5  # Default score for AdminGroups without direct ML match
-                reasons = ["Admin-created group buy"]
+            # Boost score based on group metrics
+            moq_progress = gb.moq_progress
+            if moq_progress >= 75:
+                score += 0.1
+                reasons.append("Almost at target quantity")
+            elif moq_progress >= 50:
+                score += 0.05
             
-            # Calculate MOQ progress for AdminGroup
-            moq_progress = (admin_group.participants / admin_group.max_participants) * 100
+            days_remaining = (gb.deadline - datetime.utcnow()).days
+            if days_remaining <= 3:
+                score += 0.05
+                reasons.append("Ending soon")
+            
+            savings = gb.product.savings_factor * 100 if gb.product else 0
+            if savings >= 20:
+                score += 0.1
+                reasons.append(f"{savings:.0f}% savings")
+            
+            # Check if user has purchased this product before
+            if gb.product_id in seen_products:
+                score += 0.2
+                reasons.append("You've purchased this before")
+            
+            score = min(score, 1.0)
             
             final_recommendations.append({
-                "group_buy_id": admin_group.id,
-                "product_id": None,  # AdminGroups don't have product_id
-                "product_name": admin_group.name,
-                "product_image_url": admin_group.image,
-                "unit_price": admin_group.original_price,
-                "bulk_price": admin_group.price,
-                "moq": admin_group.max_participants,
-                "savings_factor": admin_group.discount_percentage / 100.0,
-                "savings": admin_group.discount_percentage,
-                "location_zone": "Mbare",  # All AdminGroups are for Mbare
-                "deadline": admin_group.end_date,
-                "total_quantity": admin_group.participants,
+                "group_buy_id": gb.id,
+                "product_id": gb.product_id,
+                "product_name": gb.product.name if gb.product else "Unknown Product",
+                "product_image_url": gb.product.image_url if gb.product else None,
+                "unit_price": gb.product.unit_price if gb.product else 0,
+                "bulk_price": gb.product.bulk_price if gb.product else 0,
+                "moq": gb.product.moq if gb.product else 10,
+                "savings_factor": gb.product.savings_factor if gb.product else 0.1,
+                "savings": (gb.product.savings_factor * 100) if gb.product else 10,
+                "location_zone": gb.location_zone,
+                "deadline": gb.deadline,
+                "total_quantity": gb.total_quantity,
                 "moq_progress": moq_progress,
-                "participants_count": admin_group.participants,
+                "participants_count": gb.participants_count,
                 "recommendation_score": score,
-                "reason": ", ".join(reasons) if reasons else "AI-recommended based on your preferences",
+                "reason": ", ".join(reasons) if reasons else "Recommended for you",
                 "ml_scores": {
                     "collaborative_filtering": 0.3,
                     "content_based": 0.4,
@@ -741,17 +685,17 @@ def get_recommendations_for_user(user: User, db: Session) -> List[dict]:
                     "hybrid": score
                 },
                 # Additional detailed fields for GroupDetail page
-                "description": admin_group.description,
-                "long_description": admin_group.long_description or admin_group.description,
-                "category": admin_group.category,
-                "created_at": admin_group.created,
+                "description": gb.product.description if gb.product else "High-quality product available at bulk pricing",
+                "long_description": gb.product.description if gb.product else f"Join this group buy to get quality products at discounted prices. Minimum order quantity: {gb.product.moq if gb.product else 10} units.",
+                "category": gb.product.category if gb.product else "General",
+                "created_at": gb.created_at,
                 "admin_created": True,
-                "admin_name": admin_group.admin_name,
-                "discount_percentage": admin_group.discount_percentage,
-                "shipping_info": admin_group.shipping_info,
-                "estimated_delivery": admin_group.estimated_delivery,
-                "features": admin_group.features or [],
-                "requirements": admin_group.requirements or []
+                "admin_name": "ConnectSphere Admin",
+                "discount_percentage": (gb.product.savings_factor * 100) if gb.product else 10,
+                "shipping_info": "Free shipping when group goal is reached",
+                "estimated_delivery": "2-3 weeks after group completion",
+                "features": ["Bulk pricing", "Quality guaranteed", "Group savings"],
+                "requirements": [f"Minimum {gb.product.moq if gb.product else 10} participants required", "Full payment required to join"]
             })
         
         # Sort by recommendation score
