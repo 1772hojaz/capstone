@@ -15,7 +15,6 @@ const SupplierLoginPage = () => {
     password: '',
     companyName: '',
     businessAddress: '',
-    taxId: '',
     phoneNumber: '',
     fullName: '',
     locationZone: 'HARARE', // Default location zone
@@ -115,7 +114,6 @@ const SupplierLoginPage = () => {
           password: formData.password,
           company_name: formData.companyName,
           business_address: formData.businessAddress,
-          tax_id: formData.taxId,
           phone_number: formData.phoneNumber,
           full_name: formData.fullName,
           location_zone: formData.locationZone,
@@ -128,7 +126,6 @@ const SupplierLoginPage = () => {
           password: '',
           companyName: '',
           businessAddress: '',
-          taxId: '',
           phoneNumber: '',
           fullName: '',
           locationZone: 'HARARE',
@@ -385,27 +382,7 @@ const SupplierLoginPage = () => {
                   )}
                 </div>
 
-                {/* Tax ID (Required) */}
-                <div>
-                  <label htmlFor="taxId" className="block text-sm font-medium text-gray-700">
-                    Tax ID <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    id="taxId"
-                    name="taxId"
-                    type="text"
-                    required
-                    value={formData.taxId}
-                    onChange={handleInputChange}
-                    className={`mt-1 block w-full px-3 py-2 border rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 ${
-                      errors.taxId ? 'border-red-300' : 'border-gray-300'
-                    }`}
-                    placeholder="Enter your tax ID"
-                  />
-                  {errors.taxId && (
-                    <p className="mt-1 text-sm text-red-600">{errors.taxId}</p>
-                  )}
-                </div>
+
 
                 {/* Location Zone */}
                 <div>
