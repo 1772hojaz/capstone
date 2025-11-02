@@ -5,7 +5,6 @@ import apiService from '../services/api';
 
 export default function GroupList() {
   const navigate = useNavigate();
-  const [selectedCurrency, setSelectedCurrency] = useState<'USD' | 'ZIG'>('USD');
   const [showQRCode, setShowQRCode] = useState(false);
   const [selectedQRGroup, setSelectedQRGroup] = useState<any>(null);
   const [showGroupDetails, setShowGroupDetails] = useState(false);
@@ -16,6 +15,9 @@ export default function GroupList() {
   const [pastGroupsSummary, setPastGroupsSummary] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [readyForCollectionSearch, setReadyForCollectionSearch] = useState('');
+  const [activeGroupsSearch, setActiveGroupsSearch] = useState('');
+  const [userLocation, setUserLocation] = useState<string>('Harare');
 
   // Fetch user's groups and past groups summary on component mount
   useEffect(() => {
@@ -23,6 +25,10 @@ export default function GroupList() {
       try {
         setLoading(true);
         setError(null);
+
+        // Fetch user data to get location
+        const userData = await apiService.getCurrentUser();
+        setUserLocation(userData.location_zone || 'Harare');
 
         // Fetch user's groups and past groups summary in parallel
         const [groupsResponse, summaryResponse] = await Promise.all([
@@ -105,6 +111,31 @@ export default function GroupList() {
     }
   };
 
+  // Filter functions for search
+  const filteredReadyForCollection = activeGroups.filter(group => {
+    if (group.status !== 'ready_for_pickup') return false;
+    if (!readyForCollectionSearch) return true;
+    
+    const searchTerm = readyForCollectionSearch.toLowerCase();
+    return (
+      group.name?.toLowerCase().includes(searchTerm) ||
+      group.description?.toLowerCase().includes(searchTerm) ||
+      group.pickupLocation?.toLowerCase().includes(searchTerm)
+    );
+  });
+
+  const filteredActiveGroups = activeGroups.filter(group => {
+    if (group.status === 'ready_for_pickup') return false;
+    if (!activeGroupsSearch) return true;
+    
+    const searchTerm = activeGroupsSearch.toLowerCase();
+    return (
+      group.name?.toLowerCase().includes(searchTerm) ||
+      group.description?.toLowerCase().includes(searchTerm) ||
+      group.pickupLocation?.toLowerCase().includes(searchTerm)
+    );
+  });
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* Header */}
@@ -162,28 +193,8 @@ export default function GroupList() {
             </div>
             <div className="flex items-center gap-2 text-xs sm:text-sm text-gray-700">
               <MapPin className="w-4 h-4" />
-              <span>Harare</span>
+              <span>{userLocation}</span>
             </div>
-            <button 
-              onClick={() => setSelectedCurrency('USD')}
-              className={`px-3 sm:px-4 py-2 text-xs sm:text-sm rounded-lg transition whitespace-nowrap ${
-                selectedCurrency === 'USD' 
-                  ? 'bg-blue-600 text-white hover:bg-blue-700' 
-                  : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
-              }`}
-            >
-              USD
-            </button>
-            <button 
-              onClick={() => setSelectedCurrency('ZIG')}
-              className={`px-3 sm:px-4 py-2 text-xs sm:text-sm rounded-lg transition whitespace-nowrap ${
-                selectedCurrency === 'ZIG' 
-                  ? 'bg-blue-600 text-white hover:bg-blue-700' 
-                  : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
-              }`}
-            >
-              ZIG
-            </button>
             <button 
               onClick={() => navigate('/login')}
               className="px-3 sm:px-4 py-2 bg-red-500 text-white text-xs sm:text-sm rounded-lg hover:bg-red-600 transition whitespace-nowrap"
@@ -226,94 +237,135 @@ export default function GroupList() {
           {/* Two Column Layout for Ready for Collection and My Active Groups */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Ready for Collection Section */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 max-h-[400px] overflow-y-auto overflow-x-hidden">
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200">
               <div className="p-4 sm:p-6 border-b border-gray-200 sticky top-0 bg-white z-10">
-                <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Ready for Collection</h2>
-                <p className="text-sm text-gray-600 mt-1">Groups that are ready for pickup at your selected location</p>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                  <div>
+                    <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Ready for Collection</h2>
+                    <p className="text-sm text-gray-600 mt-1">Groups that are ready for pickup at your selected location</p>
+                  </div>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Search groups..."
+                      value={readyForCollectionSearch}
+                      onChange={(e) => setReadyForCollectionSearch(e.target.value)}
+                      className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent w-48"
+                    />
+                  </div>
+                </div>
               </div>
               
-              <div className="p-4 sm:p-6">
+              {/* Ready for Collection - Scrollable Content */}
+              <div className="max-h-[400px] overflow-y-auto overflow-x-hidden">
                 {loading ? (
-                  <div className="text-center py-8">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600 mx-auto"></div>
-                    <h3 className="text-lg font-medium text-gray-900 mt-4">Loading ready for collection...</h3>
-                    <p className="text-gray-600">Checking for groups ready for pickup</p>
+                  <div className="p-4 sm:p-6">
+                    <div className="text-center py-8">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600 mx-auto"></div>
+                      <h3 className="text-lg font-medium text-gray-900 mt-4">Loading ready for collection...</h3>
+                      <p className="text-gray-600">Checking for groups ready for pickup</p>
+                    </div>
                   </div>
                 ) : error ? (
-                  <div className="text-center py-8">
-                    <div className="text-red-500 mb-4">
-                      <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
+                  <div className="p-4 sm:p-6">
+                    <div className="text-center py-8">
+                      <div className="text-red-500 mb-4">
+                        <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </div>
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">Failed to load groups</h3>
+                      <p className="text-gray-600">{error}</p>
                     </div>
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">Failed to load groups</h3>
-                    <p className="text-gray-600">{error}</p>
                   </div>
-                ) : activeGroups.filter(group => group.status === 'ready_for_pickup').length === 0 ? (
-                  <div className="text-center py-8">
-                    <div className="text-gray-400 mb-4">
-                      <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-                      </svg>
+                ) : filteredReadyForCollection.length === 0 ? (
+                  <div className="p-4 sm:p-6">
+                    <div className="text-center py-8">
+                      <div className="text-gray-400 mb-4">
+                        <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                        </svg>
+                      </div>
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">
+                        {readyForCollectionSearch ? 'No groups match your search' : 'No groups ready for collection'}
+                      </h3>
+                      <p className="text-gray-600">
+                        {readyForCollectionSearch ? 'Try adjusting your search terms' : 'Groups will appear here when they\'re ready for pickup'}
+                      </p>
                     </div>
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">No groups ready for collection</h3>
-                    <p className="text-gray-600">Groups will appear here when they're ready for pickup</p>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 gap-4">
-                    {activeGroups.filter(group => group.status === 'ready_for_pickup').map((group) => (
-                      <div key={group.id} className="bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded-lg p-4 hover:shadow-md transition">
-                        <div className="flex items-start justify-between mb-3">
-                          <div className="flex-1">
-                            <h3 className="font-semibold text-gray-900 mb-1">{group.name}</h3>
-                            <p className="text-sm text-gray-600 mb-2 line-clamp-2">{group.description}</p>
-                            <div className="flex items-center gap-4 text-sm text-gray-600">
-                              <span className="flex items-center gap-1">
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                                </svg>
-                                {group.pickupLocation}
+                  <div className="p-4 sm:p-6">
+                    <div className="grid grid-cols-1 gap-4">
+                      {filteredReadyForCollection.map((group) => (
+                        <div key={group.id} className="bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded-lg p-4 hover:shadow-md transition">
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex-1">
+                              <h3 className="font-semibold text-gray-900 mb-1">{group.name}</h3>
+                              <p className="text-sm text-gray-600 mb-2 line-clamp-2">{group.description}</p>
+                              <div className="flex items-center gap-4 text-sm text-gray-600">
+                                <span className="flex items-center gap-1">
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                  </svg>
+                                  {group.pickupLocation}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="flex-shrink-0 ml-4">
+                              <span className="inline-flex px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-700">
+                                Ready for Pickup
                               </span>
                             </div>
                           </div>
-                          <div className="flex-shrink-0 ml-4">
-                            <span className="inline-flex px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-700">
-                              Ready for Pickup
-                            </span>
+                          
+                          <div className="flex items-center justify-between">
+                            <div className="text-sm text-gray-600">
+                              <span className="font-medium text-gray-900">{group.price}</span> per person
+                            </div>
+                            <button
+                              onClick={() => handleShowQRCode(group)}
+                              className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition font-medium flex items-center gap-2"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M12 12l3-3m-3 3l-3-3m-3 6h2.01M12 12l-3 3m3-3l3 3M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                              Show QR Code
+                            </button>
                           </div>
                         </div>
-                        
-                        <div className="flex items-center justify-between">
-                          <div className="text-sm text-gray-600">
-                            <span className="font-medium text-gray-900">{group.price}</span> per person
-                          </div>
-                          <button
-                            onClick={() => handleShowQRCode(group)}
-                            className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition font-medium flex items-center gap-2"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M12 12l3-3m-3 3l-3-3m-3 6h2.01M12 12l-3 3m3-3l3 3M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            Show QR Code
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
             </div>
 
             {/* My Active Groups Section */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 max-h-[700px] overflow-y-auto overflow-x-hidden scrollable-container">
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200">
               <div className="p-4 sm:p-6 border-b border-gray-200 sticky top-0 bg-white z-10">
-                <h2 className="text-xl sm:text-2xl font-bold text-gray-900">My Active Groups</h2>
-                <p className="text-sm text-gray-600 mt-1">Groups you've joined that are currently active</p>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                  <div>
+                    <h2 className="text-xl sm:text-2xl font-bold text-gray-900">My Active Groups</h2>
+                    <p className="text-sm text-gray-600 mt-1">Groups you've joined that are currently active</p>
+                  </div>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Search groups..."
+                      value={activeGroupsSearch}
+                      onChange={(e) => setActiveGroupsSearch(e.target.value)}
+                      className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent w-48"
+                    />
+                  </div>
+                </div>
               </div>
               
               {/* My Active Groups - Responsive Table */}
-              <div className="p-4 sm:p-6">
+              <div className="max-h-[600px] overflow-y-auto overflow-x-hidden">
                 {loading ? (
                   <div className="text-center py-8">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
@@ -330,68 +382,72 @@ export default function GroupList() {
                     <h3 className="text-lg font-medium text-gray-900 mb-2">Failed to load groups</h3>
                     <p className="text-gray-600">{error}</p>
                   </div>
-                ) : activeGroups.filter(group => group.status !== 'ready_for_pickup').length === 0 ? (
+                ) : filteredActiveGroups.length === 0 ? (
                   <div className="text-center py-8">
                     <div className="text-gray-400 mb-4">
                       <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
                       </svg>
                     </div>
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">No active groups</h3>
-                    <p className="text-gray-600">You haven't joined any active groups yet</p>
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">
+                      {activeGroupsSearch ? 'No groups match your search' : 'No active groups'}
+                    </h3>
+                    <p className="text-gray-600">
+                      {activeGroupsSearch ? 'Try adjusting your search terms' : 'You haven\'t joined any active groups yet'}
+                    </p>
                   </div>
                 ) : (
-                  <div>
+                  <div className="p-4 sm:p-6">
                     <table className="w-full">
-                    <thead className="bg-gray-50 border-b border-gray-200 sticky top-[73px] z-10">
-                      <tr>
-                        <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50">Group Name</th>
-                        <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50">Status</th>
-                        <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50">Progress</th>
-                        <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50">Due Date</th>
-                        <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200">
-                      {activeGroups.filter(group => group.status !== 'ready_for_pickup').map((group) => (
-                        <tr key={group.id} className="hover:bg-gray-50">
-                          <td className="px-3 sm:px-6 py-3 sm:py-4 text-sm text-gray-900">{group.name}</td>
-                          <td className="px-3 sm:px-6 py-3 sm:py-4">
-                            <span className={`inline-flex px-2 sm:px-2.5 py-0.5 sm:py-1 text-xs font-medium rounded-full ${
-                              group.status === 'forming' ? 'bg-blue-100 text-blue-700' :
-                              group.status === 'active' ? 'bg-green-100 text-green-700' :
-                              group.status === 'payment_pending' ? 'bg-yellow-100 text-yellow-700' :
-                              group.status === 'processing' ? 'bg-purple-100 text-purple-700' :
-                              group.status === 'ready_for_pickup' ? 'bg-orange-100 text-orange-700' :
-                              group.status === 'completed' ? 'bg-blue-100 text-blue-700' :
-                              'bg-red-100 text-red-700'
-                            }`}>
-                              {group.status === 'forming' ? 'Forming Group' :
-                               group.status === 'active' ? 'Active' :
-                               group.status === 'payment_pending' ? 'Payment Due' :
-                               group.status === 'processing' ? 'Processing' :
-                               group.status === 'ready_for_pickup' ? 'Ready for Pickup' :
-                               group.status === 'completed' ? 'Completed' :
-                               'Cancelled'}
-                            </span>
-                          </td>
-                          <td className="px-3 sm:px-6 py-3 sm:py-4 text-sm text-gray-700">{group.progress}</td>
-                          <td className="px-3 sm:px-6 py-3 sm:py-4 text-sm text-gray-700">{group.dueDate}</td>
-                          <td className="px-3 sm:px-6 py-3 sm:py-4">
-                            <div className="flex gap-2">
-                              <button
-                                onClick={() => handleViewGroupDetails(group)}
-                                className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 bg-blue-50 rounded-md hover:bg-blue-100 transition"
-                              >
-                                <Eye className="w-3 h-3" />
-                                View Group
-                              </button>
-                            </div>
-                          </td>
+                      <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
+                        <tr>
+                          <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50">Group Name</th>
+                          <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50">Status</th>
+                          <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50">Progress</th>
+                          <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50">Due Date</th>
+                          <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50">Actions</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200">
+                        {filteredActiveGroups.map((group) => (
+                          <tr key={group.id} className="hover:bg-gray-50">
+                            <td className="px-3 sm:px-6 py-3 sm:py-4 text-sm text-gray-900">{group.name}</td>
+                            <td className="px-3 sm:px-6 py-3 sm:py-4">
+                              <span className={`inline-flex px-2 sm:px-2.5 py-0.5 sm:py-1 text-xs font-medium rounded-full ${
+                                group.status === 'forming' ? 'bg-blue-100 text-blue-700' :
+                                group.status === 'active' ? 'bg-green-100 text-green-700' :
+                                group.status === 'payment_pending' ? 'bg-yellow-100 text-yellow-700' :
+                                group.status === 'processing' ? 'bg-purple-100 text-purple-700' :
+                                group.status === 'ready_for_pickup' ? 'bg-orange-100 text-orange-700' :
+                                group.status === 'completed' ? 'bg-blue-100 text-blue-700' :
+                                'bg-red-100 text-red-700'
+                              }`}>
+                                {group.status === 'forming' ? 'Forming Group' :
+                                 group.status === 'active' ? 'Active' :
+                                 group.status === 'payment_pending' ? 'Payment Due' :
+                                 group.status === 'processing' ? 'Processing' :
+                                 group.status === 'ready_for_pickup' ? 'Ready for Pickup' :
+                                 group.status === 'completed' ? 'Completed' :
+                                 'Cancelled'}
+                              </span>
+                            </td>
+                            <td className="px-3 sm:px-6 py-3 sm:py-4 text-sm text-gray-700">{group.progress}</td>
+                            <td className="px-3 sm:px-6 py-3 sm:py-4 text-sm text-gray-700">{group.dueDate}</td>
+                            <td className="px-3 sm:px-6 py-3 sm:py-4">
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => handleViewGroupDetails(group)}
+                                  className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 bg-blue-50 rounded-md hover:bg-blue-100 transition"
+                                >
+                                  <Eye className="w-3 h-3" />
+                                  View Group
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 )}
               </div>

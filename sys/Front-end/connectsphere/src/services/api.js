@@ -159,26 +159,7 @@ class ApiService {
   async getAllGroups(params = {}) {
     const queryString = new URLSearchParams(params).toString();
     const endpoint = queryString ? `/api/groups?${queryString}` : '/api/groups';
-    // Public endpoint - don't send auth token
-    const url = `${this.baseURL}${endpoint}`;
-    
-    try {
-      const response = await fetch(url, {
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || `API Error: ${response.status}`);
-      }
-
-      return response.json();
-    } catch (error) {
-      console.error(`API request failed: ${endpoint}`, error);
-      throw error;
-    }
+    return this.request(endpoint);
   }
 
   // Past groups summary

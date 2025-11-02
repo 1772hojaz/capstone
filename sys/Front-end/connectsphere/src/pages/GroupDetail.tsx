@@ -7,10 +7,10 @@ export default function GroupDetail() {
   const navigate = useNavigate();
   const { id } = useParams();
   const location = useLocation();
-  const [selectedCurrency, setSelectedCurrency] = useState<'USD' | 'ZIG'>('USD');
   const [joiningGroup, setJoiningGroup] = useState(false);
   const [joinSuccess, setJoinSuccess] = useState<string | null>(null);
   const [showJoinForm, setShowJoinForm] = useState(false);
+  const [userLocation, setUserLocation] = useState<string>('Harare');
 
   // Form state
   const [formData, setFormData] = useState({
@@ -62,6 +62,17 @@ export default function GroupDetail() {
 
   // Automatically show join form if user was redirected from recommendations in 'join' mode
   useEffect(() => {
+    const fetchUserData = async () => {
+      try {
+        const userData = await apiService.getCurrentUser();
+        setUserLocation(userData.location_zone || 'Harare');
+      } catch (error) {
+        console.error('Failed to fetch user data:', error);
+      }
+    };
+
+    fetchUserData();
+
     if (groupData && !isGoalReached && mode === 'join') {
       setShowJoinForm(true);
     }
@@ -106,6 +117,11 @@ export default function GroupDetail() {
 
   // Join group handler
   const handleJoinGroup = async () => {
+    // Prevent joining if already joined or goal reached
+    if (groupData.joined || isGoalReached) {
+      return;
+    }
+    
     if (showJoinForm) {
       // Validate form
       if (!validateForm()) {
@@ -197,28 +213,8 @@ export default function GroupDetail() {
             </div>
             <div className="flex items-center gap-2 text-xs sm:text-sm text-gray-700">
               <MapPin className="w-4 h-4" />
-              <span>Harare</span>
+              <span>{userLocation}</span>
             </div>
-            <button
-              onClick={() => setSelectedCurrency('USD')}
-              className={`px-3 sm:px-4 py-2 text-xs sm:text-sm rounded-lg transition whitespace-nowrap ${
-                selectedCurrency === 'USD'
-                  ? 'bg-blue-600 text-white hover:bg-blue-700'
-                  : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
-              }`}
-            >
-              USD
-            </button>
-            <button
-              onClick={() => setSelectedCurrency('ZIG')}
-              className={`px-3 sm:px-4 py-2 text-xs sm:text-sm rounded-lg transition whitespace-nowrap ${
-                selectedCurrency === 'ZIG'
-                  ? 'bg-blue-600 text-white hover:bg-blue-700'
-                  : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
-              }`}
-            >
-              ZIG
-            </button>
             <button
               onClick={() => navigate('/login')}
               className="px-3 sm:px-4 py-2 bg-red-500 text-white text-xs sm:text-sm rounded-lg hover:bg-red-600 transition whitespace-nowrap"
@@ -335,14 +331,16 @@ export default function GroupDetail() {
                   {!showJoinForm ? (
                     <button
                       onClick={handleJoinGroup}
-                      disabled={isGoalReached}
+                      disabled={isGoalReached || groupData.joined}
                       className={`w-full px-6 py-3 text-sm font-semibold rounded-lg transition ${
                         isGoalReached
                           ? 'bg-green-600 text-white hover:bg-green-700'
+                          : groupData.joined
+                          ? 'bg-green-600 text-white cursor-not-allowed opacity-75'
                           : 'bg-blue-600 text-white hover:bg-blue-700'
                       }`}
                     >
-                      {isGoalReached ? 'Group Completed' : 'Join Group Buy'}
+                      {isGoalReached ? 'Group Completed' : groupData.joined ? 'Joined' : 'Join Group Buy'}
                     </button>
                   ) : (
                     <div className="bg-gray-50 rounded-lg p-6 border border-gray-200">

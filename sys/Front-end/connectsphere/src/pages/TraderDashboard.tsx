@@ -6,10 +6,10 @@ import apiService from '../services/api';
 const TraderDashboard = () => {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCurrency, setSelectedCurrency] = useState<'USD' | 'ZIG'>('USD');
   const [recommendations, setRecommendations] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [userLocation, setUserLocation] = useState<string>('Harare');
 
   // Load recommendations on component mount
   useEffect(() => {
@@ -17,6 +17,11 @@ const TraderDashboard = () => {
       try {
         setIsLoading(true);
         setError(null);
+
+        // Fetch user data to get location
+        const userData = await apiService.getCurrentUser();
+        setUserLocation(userData.location_zone || 'Harare');
+
         const response = await apiService.getRecommendations();
         setRecommendations(response);
       } catch (err) {
@@ -101,28 +106,8 @@ const TraderDashboard = () => {
             </div>
             <div className="flex items-center gap-2 text-xs sm:text-sm text-gray-700">
               <MapPin className="w-4 h-4" />
-              <span>Harare</span>
+              <span>{userLocation}</span>
             </div>
-            <button 
-              onClick={() => setSelectedCurrency('USD')}
-              className={`px-3 sm:px-4 py-2 text-xs sm:text-sm rounded-lg transition whitespace-nowrap ${
-                selectedCurrency === 'USD' 
-                  ? 'bg-blue-600 text-white hover:bg-blue-700' 
-                  : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
-              }`}
-            >
-              USD
-            </button>
-            <button 
-              onClick={() => setSelectedCurrency('ZIG')}
-              className={`px-3 sm:px-4 py-2 text-xs sm:text-sm rounded-lg transition whitespace-nowrap ${
-                selectedCurrency === 'ZIG' 
-                  ? 'bg-blue-600 text-white hover:bg-blue-700' 
-                  : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
-              }`}
-            >
-              ZIG
-            </button>
             <button 
               onClick={async () => {
                 try {

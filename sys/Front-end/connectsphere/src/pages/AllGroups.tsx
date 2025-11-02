@@ -5,7 +5,6 @@ import apiService from '../services/api';
 
 export default function AllGroups() {
   const navigate = useNavigate();
-  const [selectedCurrency, setSelectedCurrency] = useState<'USD' | 'ZIG'>('USD');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [sortBy, setSortBy] = useState<'participants' | 'price-low' | 'price-high' | 'newest'>('participants');
@@ -14,21 +13,29 @@ export default function AllGroups() {
   const [groups, setGroups] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [userLocation, setUserLocation] = useState<string>('Harare');
 
   // Categories for filtering
   const categories = ['All', 'Electronics', 'Appliances', 'Furniture', 'Food & Beverages', 'Gaming', 'Home & Garden', 'Sports & Fitness'];
 
-  // Fetch groups data on component mount
+    // Fetch groups data on component mount
   useEffect(() => {
     const fetchGroups = async () => {
       try {
         setLoading(true);
         setError(null);
+
+        // Fetch user data to get location
+        const userData = await apiService.getCurrentUser();
+        setUserLocation(userData.location_zone || 'Harare');
+
         const groupsData = await apiService.getAllGroups();
         setGroups(groupsData);
       } catch (err) {
         console.error('Failed to fetch groups:', err);
         setError(err instanceof Error ? err.message : String(err));
+        // Fallback to empty array
+        setGroups([]);
       } finally {
         setLoading(false);
       }
@@ -144,28 +151,8 @@ export default function AllGroups() {
             </div>
             <div className="flex items-center gap-2 text-xs sm:text-sm text-gray-700">
               <MapPin className="w-4 h-4" />
-              <span>Harare</span>
+              <span>{userLocation}</span>
             </div>
-            <button 
-              onClick={() => setSelectedCurrency('USD')}
-              className={`px-3 sm:px-4 py-2 text-xs sm:text-sm rounded-lg transition whitespace-nowrap ${
-                selectedCurrency === 'USD' 
-                  ? 'bg-blue-600 text-white hover:bg-blue-700' 
-                  : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
-              }`}
-            >
-              USD
-            </button>
-            <button 
-              onClick={() => setSelectedCurrency('ZIG')}
-              className={`px-3 sm:px-4 py-2 text-xs sm:text-sm rounded-lg transition whitespace-nowrap ${
-                selectedCurrency === 'ZIG' 
-                  ? 'bg-blue-600 text-white hover:bg-blue-700' 
-                  : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
-              }`}
-            >
-              ZIG
-            </button>
             <button 
               onClick={() => navigate('/login')}
               className="px-3 sm:px-4 py-2 bg-red-500 text-white text-xs sm:text-sm rounded-lg hover:bg-red-600 transition whitespace-nowrap"
@@ -420,11 +407,14 @@ export default function AllGroups() {
                       </button>
                       <button
                         onClick={() => handleJoinGroup(group)}
+                        disabled={group.joined}
                         className={`flex-1 py-3 text-sm font-semibold rounded-lg transition-colors ${
-                          'bg-blue-600 text-white hover:bg-blue-700'
+                          group.joined 
+                            ? 'bg-green-600 text-white cursor-not-allowed opacity-75' 
+                            : 'bg-blue-600 text-white hover:bg-blue-700'
                         }`}
                       >
-                        Join
+                        {group.joined ? 'Joined' : 'Join'}
                       </button>
                     </div>
                   </div>
@@ -474,11 +464,14 @@ export default function AllGroups() {
                         </button>
                         <button
                           onClick={() => handleJoinGroup(group)}
+                          disabled={group.joined}
                           className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-colors ${
-                            'bg-blue-600 text-white hover:bg-blue-700'
+                            group.joined 
+                              ? 'bg-green-600 text-white cursor-not-allowed opacity-75' 
+                              : 'bg-blue-600 text-white hover:bg-blue-700'
                           }`}
                         >
-                          Join
+                          {group.joined ? 'Joined' : 'Join'}
                         </button>
                       </div>
                     </div>
