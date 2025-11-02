@@ -72,19 +72,41 @@ const SupplierLoginPage = () => {
 
     try {
       if (isLogin) {
-        // Login logic
-        const response = await apiService.login({
-          email: formData.email,
-          password: formData.password,
+        // Supplier-specific login logic - bypass apiService to prevent auto-redirect
+        const response = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            email: formData.email,
+            password: formData.password,
+          }),
         });
 
-        if (response.access_token) {
-          localStorage.setItem('token', response.access_token);
+        const data = await response.json();
+
+        if (!response.ok) {
+          if (response.status === 401) {
+            throw new Error('Invalid supplier credentials. Please check your email and password.');
+          }
+          throw new Error(data.detail || 'Login failed. Please try again.');
+        }
+
+        // Check if the user is actually a supplier
+        if (!data.is_supplier) {
+          throw new Error('This account is not registered as a supplier. Please register as a supplier or use the trader login.');
+        }
+
+        if (data.access_token) {
+          localStorage.setItem('token', data.access_token);
           localStorage.setItem('userType', 'supplier');
           setSuccessMessage('Login successful! Redirecting...');
           setTimeout(() => {
             navigate('/supplier/dashboard');
           }, 1500);
+        } else {
+          throw new Error('Login failed. Please check your credentials.');
         }
       } else {
         // Registration logic
@@ -113,14 +135,22 @@ const SupplierLoginPage = () => {
         });
       }
     } catch (error: any) {
-      console.error('Auth error:', error);
-      if (error.response?.data?.detail) {
-        setErrors({ general: error.response.data.detail });
-      } else if (error.message) {
-        setErrors({ general: error.message });
-      } else {
-        setErrors({ general: 'An unexpected error occurred. Please try again.' });
+      console.error('Supplier auth error:', error);
+      
+      let errorMessage = 'An unexpected error occurred. Please try again.';
+      
+      if (error.message) {
+        errorMessage = error.message;
+      } else if (error.response?.data?.detail) {
+        errorMessage = error.response.data.detail;
       }
+      
+      // Ensure error messages are supplier-specific
+      if (errorMessage.includes('Invalid credentials') || errorMessage.includes('Unauthorized')) {
+        errorMessage = 'Invalid supplier credentials. Please check your email and password, or register as a new supplier.';
+      }
+      
+      setErrors({ general: errorMessage });
     } finally {
       setIsLoading(false);
     }
@@ -219,7 +249,7 @@ const SupplierLoginPage = () => {
                   autoComplete="email"
                   required
                   value={formData.email}
-                  onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                  onChange={handleInputChange}
                   className={`block w-full px-3 py-2 border rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 ${
                     errors.email ? 'border-red-300' : 'border-gray-300'
                   }`}
@@ -245,7 +275,7 @@ const SupplierLoginPage = () => {
                   autoComplete={isLogin ? 'current-password' : 'new-password'}
                   required
                   value={formData.password}
-                  onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                  onChange={handleInputChange}
                   className={`block w-full px-3 py-2 border rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 ${
                     errors.password ? 'border-red-300' : 'border-gray-300'
                   }`}
@@ -278,7 +308,7 @@ const SupplierLoginPage = () => {
                     type="text"
                     required
                     value={formData.fullName}
-                    onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                    onChange={handleInputChange}
                     className={`mt-1 block w-full px-3 py-2 border rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 ${
                       errors.fullName ? 'border-red-300' : 'border-gray-300'
                     }`}
@@ -300,7 +330,7 @@ const SupplierLoginPage = () => {
                     type="text"
                     required
                     value={formData.companyName}
-                    onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                    onChange={handleInputChange}
                     className={`mt-1 block w-full px-3 py-2 border rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 ${
                       errors.companyName ? 'border-red-300' : 'border-gray-300'
                     }`}
@@ -322,7 +352,7 @@ const SupplierLoginPage = () => {
                     type="text"
                     required
                     value={formData.businessAddress}
-                    onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                    onChange={handleInputChange}
                     className={`mt-1 block w-full px-3 py-2 border rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 ${
                       errors.businessAddress ? 'border-red-300' : 'border-gray-300'
                     }`}
@@ -344,7 +374,7 @@ const SupplierLoginPage = () => {
                     type="tel"
                     required
                     value={formData.phoneNumber}
-                    onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                    onChange={handleInputChange}
                     className={`mt-1 block w-full px-3 py-2 border rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 ${
                       errors.phoneNumber ? 'border-red-300' : 'border-gray-300'
                     }`}
@@ -366,7 +396,7 @@ const SupplierLoginPage = () => {
                     type="text"
                     required
                     value={formData.taxId}
-                    onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                    onChange={handleInputChange}
                     className={`mt-1 block w-full px-3 py-2 border rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 ${
                       errors.taxId ? 'border-red-300' : 'border-gray-300'
                     }`}
@@ -387,7 +417,7 @@ const SupplierLoginPage = () => {
                     name="locationZone"
                     required
                     value={formData.locationZone}
-                    onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                    onChange={handleInputChange}
                     className={`mt-1 block w-full px-3 py-2 border rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 ${
                       errors.locationZone ? 'border-red-300' : 'border-gray-300'
                     }`}
@@ -414,8 +444,9 @@ const SupplierLoginPage = () => {
               <label className="flex items-center">
                 <input
                   type="checkbox"
+                  name="rememberMe"
                   checked={formData.rememberMe}
-                  onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                  onChange={handleInputChange}
                   className="mr-2 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
                 <span className="text-gray-600">Remember me</span>
