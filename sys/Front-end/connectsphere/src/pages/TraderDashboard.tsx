@@ -1,4 +1,4 @@
-import { Search, MapPin, User, Zap, Users, Eye } from 'lucide-react';
+import { Search, MapPin, User, Zap, Users, Eye, ChevronDown } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import apiService from '../services/api';
@@ -10,6 +10,10 @@ const TraderDashboard = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [userLocation, setUserLocation] = useState<string>('Harare');
+  const [isLocationDropdownOpen, setIsLocationDropdownOpen] = useState(false);
+
+  // Location options
+  const locationOptions = ['Harare', 'Mbare', 'Glen View', 'Highfield', 'Bulawayo', 'Downtown', 'Uptown', 'Suburbs'];
 
   // Load recommendations on component mount
   useEffect(() => {
@@ -46,6 +50,29 @@ const TraderDashboard = () => {
   const handleJoinGroup = (recommendation: any) => {
     navigate(`/group/${recommendation.group_buy_id}`, { state: { recommendation, mode: 'join' } });
   };
+
+  // Location change handler
+  const handleLocationChange = async (newLocation: string) => {
+    try {
+      await apiService.updateProfile({ location_zone: newLocation });
+      setUserLocation(newLocation);
+      setIsLocationDropdownOpen(false);
+    } catch (error) {
+      console.error('Failed to update location:', error);
+    }
+  };
+
+  // Click outside handler
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (isLocationDropdownOpen && !(event.target as Element).closest('.location-dropdown')) {
+        setIsLocationDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isLocationDropdownOpen]);
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -104,9 +131,30 @@ const TraderDashboard = () => {
                 className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent w-40 lg:w-48"
               />
             </div>
-            <div className="flex items-center gap-2 text-xs sm:text-sm text-gray-700">
-              <MapPin className="w-4 h-4" />
-              <span>{userLocation}</span>
+            <div className="relative location-dropdown">
+              <button
+                onClick={() => setIsLocationDropdownOpen(!isLocationDropdownOpen)}
+                className="flex items-center gap-2 text-xs sm:text-sm text-gray-700 hover:text-gray-900 transition-colors"
+              >
+                <MapPin className="w-4 h-4" />
+                <span>{userLocation}</span>
+                <ChevronDown className="w-3 h-3" />
+              </button>
+              {isLocationDropdownOpen && (
+                <div className="absolute top-full mt-1 right-0 bg-white border border-gray-200 rounded-lg shadow-lg z-50 min-w-[120px]">
+                  {locationOptions.map((location) => (
+                    <button
+                      key={location}
+                      onClick={() => handleLocationChange(location)}
+                      className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-50 transition-colors ${
+                        location === userLocation ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'
+                      }`}
+                    >
+                      {location}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             <button 
               onClick={async () => {

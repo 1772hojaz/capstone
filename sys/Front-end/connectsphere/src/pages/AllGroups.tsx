@@ -1,4 +1,4 @@
-import { Search, MapPin, User, Users, Filter, SortAsc, Grid, List, X, Eye } from 'lucide-react';
+import { Search, MapPin, User, Users, Filter, SortAsc, Grid, List, X, Eye, ChevronDown } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useState, useMemo, useEffect } from 'react';
 import apiService from '../services/api';
@@ -14,9 +14,34 @@ export default function AllGroups() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [userLocation, setUserLocation] = useState<string>('Harare');
+  const [isLocationDropdownOpen, setIsLocationDropdownOpen] = useState(false);
 
-  // Categories for filtering
-  const categories = ['All', 'Electronics', 'Appliances', 'Furniture', 'Food & Beverages', 'Gaming', 'Home & Garden', 'Sports & Fitness'];
+  const locationOptions = [
+    'Harare',
+    'Mbare',
+    'Glen View',
+    'Highfield',
+    'Bulawayo',
+    'Downtown',
+    'Uptown',
+    'Suburbs'
+  ];
+
+  const handleLocationChange = async (newLocation: string) => {
+    try {
+      await apiService.updateProfile({ location_zone: newLocation });
+      setUserLocation(newLocation);
+      setIsLocationDropdownOpen(false);
+    } catch (err) {
+      console.error('Failed to update location:', err);
+    }
+  };
+
+  // Categories for filtering - dynamically generated from groups data
+  const categories = useMemo(() => {
+    const uniqueCategories = new Set(groups.map(group => group.category).filter(Boolean));
+    return Array.from(uniqueCategories).sort();
+  }, [groups]);
 
     // Fetch groups data on component mount
   useEffect(() => {
@@ -43,6 +68,18 @@ export default function AllGroups() {
 
     fetchGroups();
   }, []);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (isLocationDropdownOpen && !(event.target as Element).closest('.location-dropdown')) {
+        setIsLocationDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isLocationDropdownOpen]);
 
   // View group handler - pass the full group data with view mode
   const handleViewGroup = (group: any) => {
@@ -149,9 +186,30 @@ export default function AllGroups() {
                 className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent w-40 lg:w-48"
               />
             </div>
-            <div className="flex items-center gap-2 text-xs sm:text-sm text-gray-700">
-              <MapPin className="w-4 h-4" />
-              <span>{userLocation}</span>
+            <div className="relative location-dropdown">
+              <button
+                onClick={() => setIsLocationDropdownOpen(!isLocationDropdownOpen)}
+                className="flex items-center gap-2 text-xs sm:text-sm text-gray-700 hover:text-gray-900 transition-colors"
+              >
+                <MapPin className="w-4 h-4" />
+                <span>{userLocation}</span>
+                <ChevronDown className="w-3 h-3" />
+              </button>
+              {isLocationDropdownOpen && (
+                <div className="absolute top-full mt-1 right-0 bg-white border border-gray-200 rounded-lg shadow-lg z-50 min-w-[120px]">
+                  {locationOptions.map((location) => (
+                    <button
+                      key={location}
+                      onClick={() => handleLocationChange(location)}
+                      className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-50 transition-colors ${
+                        location === userLocation ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'
+                      }`}
+                    >
+                      {location}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             <button 
               onClick={() => navigate('/login')}
@@ -236,7 +294,7 @@ export default function AllGroups() {
                   onChange={(e) => setSelectedCategory(e.target.value)}
                   className="pl-9 pr-8 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none bg-white"
                 >
-                  <option value="">All Categories</option>
+                  <option value="All">All Categories</option>
                   {categories.map((category) => (
                     <option key={category} value={category}>{category}</option>
                   ))}
@@ -298,11 +356,11 @@ export default function AllGroups() {
                     </button>
                   </span>
                 )}
-                {selectedCategory && (
+                {selectedCategory && selectedCategory !== 'All' && (
                   <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">
                     Category: {selectedCategory}
                     <button
-                      onClick={() => setSelectedCategory('')}
+                      onClick={() => setSelectedCategory('All')}
                       className="hover:bg-green-200 rounded-full p-0.5"
                     >
                       <X className="w-3 h-3" />
@@ -312,7 +370,7 @@ export default function AllGroups() {
                 <button
                   onClick={() => {
                     setSearchQuery('');
-                    setSelectedCategory('');
+                    setSelectedCategory('All');
                   }}
                   className="text-sm text-gray-500 hover:text-gray-700 underline"
                 >

@@ -1,4 +1,4 @@
-import { Search, MapPin, User, Users, ArrowLeft, Zap, Calendar, Tag, Clock, CreditCard, Truck, MapPin as MapPinIcon } from 'lucide-react';
+import { Search, MapPin, User, Users, ArrowLeft, Zap, Calendar, Tag, Clock, CreditCard, Truck, MapPin as MapPinIcon, ChevronDown } from 'lucide-react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import apiService from '../services/api';
@@ -11,6 +11,7 @@ export default function GroupDetail() {
   const [joinSuccess, setJoinSuccess] = useState<string | null>(null);
   const [showJoinForm, setShowJoinForm] = useState(false);
   const [userLocation, setUserLocation] = useState<string>('Harare');
+  const [isLocationDropdownOpen, setIsLocationDropdownOpen] = useState(false);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -21,6 +22,9 @@ export default function GroupDetail() {
     agreeToTerms: false
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+
+  // Location options
+  const locationOptions = ['Harare', 'Mbare', 'Glen View', 'Highfield', 'Bulawayo', 'Downtown', 'Uptown', 'Suburbs'];
 
   // Get data from navigation state - could be recommendation (from trader dashboard) or group (from all groups)
   const recommendation = location.state?.recommendation;
@@ -105,6 +109,29 @@ export default function GroupDetail() {
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
   };
+
+  // Location change handler
+  const handleLocationChange = async (newLocation: string) => {
+    try {
+      await apiService.updateProfile({ location_zone: newLocation });
+      setUserLocation(newLocation);
+      setIsLocationDropdownOpen(false);
+    } catch (error) {
+      console.error('Failed to update location:', error);
+    }
+  };
+
+  // Click outside handler
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (isLocationDropdownOpen && !(event.target as Element).closest('.location-dropdown')) {
+        setIsLocationDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isLocationDropdownOpen]);
 
   // Form handlers
   const handleFormChange = (field: string, value: any) => {
@@ -211,9 +238,30 @@ export default function GroupDetail() {
                 className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent w-40 lg:w-48"
               />
             </div>
-            <div className="flex items-center gap-2 text-xs sm:text-sm text-gray-700">
-              <MapPin className="w-4 h-4" />
-              <span>{userLocation}</span>
+            <div className="relative location-dropdown">
+              <button
+                onClick={() => setIsLocationDropdownOpen(!isLocationDropdownOpen)}
+                className="flex items-center gap-2 text-xs sm:text-sm text-gray-700 hover:text-gray-900 transition-colors"
+              >
+                <MapPin className="w-4 h-4" />
+                <span>{userLocation}</span>
+                <ChevronDown className="w-3 h-3" />
+              </button>
+              {isLocationDropdownOpen && (
+                <div className="absolute top-full mt-1 right-0 bg-white border border-gray-200 rounded-lg shadow-lg z-50 min-w-[120px]">
+                  {locationOptions.map((location) => (
+                    <button
+                      key={location}
+                      onClick={() => handleLocationChange(location)}
+                      className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-50 transition-colors ${
+                        location === userLocation ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'
+                      }`}
+                    >
+                      {location}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             <button
               onClick={() => navigate('/login')}
@@ -623,8 +671,8 @@ export default function GroupDetail() {
                 </div>
               </div>
 
-              {/* Recommendation Reason */}
-              {groupData.reason && (
+              {/* Recommendation Reason - Only show for recommendations from trader dashboard */}
+              {recommendation && groupData.reason && (
                 <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-200 p-6">
                   <div className="flex items-start gap-3">
                     <Zap className="w-5 h-5 text-blue-600 mt-0.5" />
