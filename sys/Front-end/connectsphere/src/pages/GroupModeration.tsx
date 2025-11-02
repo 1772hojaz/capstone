@@ -390,7 +390,7 @@ const GroupModeration = () => {
               />
             </div>
           </div>
-          <div className="p-6 max-h-[500px] overflow-y-auto space-y-4 bg-gray-50">
+          <div className="p-6 max-h-[500px] overflow-y-auto space-y-4 bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
             {activeGroups
               .filter((group) => {
                 if (!activeGroupsSearch.trim()) return true;
@@ -518,7 +518,7 @@ const GroupModeration = () => {
               />
             </div>
           </div>
-          <div className="p-6 max-h-[500px] overflow-y-auto space-y-4 bg-gray-50">
+          <div className="p-6 max-h-[500px] overflow-y-auto space-y-4 bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50">
             {readyForPaymentGroupsData
               .filter((group: any) => {
                 if (!readyForPaymentSearch.trim()) return true;
