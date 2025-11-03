@@ -21,3 +21,4 @@ python-dotenv==1.0.0
 qrcode[pil]==7.4.2
 cryptography==42.0.4
 cloudinary==1.36.0
+requests==2.31.0

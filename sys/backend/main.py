@@ -20,6 +20,7 @@ from ml.ml import router as ml_router
 from models.admin import router as admin_router
 from models.settings import router as settings_router
 from models.supplier import router as supplier_router
+from payment.payment_router import router as payment_router
 from ml.ml_scheduler import scheduler, start_scheduler
 from websocket.websocket_manager import manager
 
@@ -241,6 +242,7 @@ app.include_router(ml_router, prefix="/api/ml", tags=["Machine Learning"])
 app.include_router(admin_router, prefix="/api/admin", tags=["Admin"])
 app.include_router(settings_router, prefix="/api/settings", tags=["Settings"])
 app.include_router(supplier_router, prefix="/api/supplier", tags=["Supplier"])
+app.include_router(payment_router, prefix="/api/payment", tags=["Payment"])
 
 if __name__ == "__main__":
     print("DEBUG: Starting server with updated code...")
