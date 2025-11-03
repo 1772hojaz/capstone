@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime, timedelta
 from db.database import get_db
-from models.models import User, GroupBuy, Product, Transaction, MLModel, AdminGroup, AdminGroupJoin, QRCodeGenerateRequest, QRCodeGenerateResponse, QRCodeScanResponse, UserProductPurchaseInfo, QRCodePickup, QRScanHistory
+from models.models import User, GroupBuy, Product, Transaction, MLModel, AdminGroup, AdminGroupJoin, QRCodeGenerateRequest, QRCodeGenerateResponse, QRCodeScanResponse, UserProductPurchaseInfo, QRCodePickup, QRScanHistory, Contribution, ChatMessage
 from models.groups import decrypt_qr_data
 from authentication.auth import verify_admin
 import cloudinary
@@ -58,6 +58,8 @@ class UserDetail(BaseModel):
     total_transactions: int
     total_spent: float
     created_at: datetime
+    is_supplier: bool = False
+    is_active: bool = True
 
 class ReportData(BaseModel):
     period: str
@@ -91,9 +93,14 @@ class CreateGroupRequest(BaseModel):
 class UpdateGroupRequest(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
+    long_description: Optional[str] = None
     category: Optional[str] = None
-    product_name: Optional[str] = None
-    regular_price: Optional[float] = None
+    price: Optional[float] = None
+    original_price: Optional[float] = None
+    max_participants: Optional[int] = None
+    end_date: Optional[str] = None
+    shipping_info: Optional[str] = None
+    estimated_delivery: Optional[str] = None
 
 class ImageUploadResponse(BaseModel):
     image_url: str
@@ -174,6 +181,42 @@ async def get_all_group_buys(
     
     return result
 
+@router.get("/users/stats")
+async def get_user_statistics(
+    admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Get user statistics for admin dashboard"""
+    total_users = db.query(User).filter(~User.is_admin).count()
+    suppliers = db.query(User).filter(User.is_supplier, ~User.is_admin).count()
+    active_users = db.query(User).join(Transaction).filter(
+        ~User.is_admin,
+        Transaction.created_at >= datetime.utcnow() - timedelta(days=30)
+    ).distinct().count()
+    
+    # Users by location
+    location_stats = db.query(
+        User.location_zone,
+        func.count(User.id).label('count')
+    ).filter(~User.is_admin).group_by(User.location_zone).all()
+    
+    # Recent registrations
+    recent_registrations = db.query(User).filter(
+        ~User.is_admin,
+        User.created_at >= datetime.utcnow() - timedelta(days=7)
+    ).count()
+    
+    return {
+        "total_users": total_users,
+        "suppliers": suppliers,
+        "active_users": active_users,
+        "recent_registrations": recent_registrations,
+        "location_distribution": [
+            {"location": location, "count": count} 
+            for location, count in location_stats
+        ]
+    }
+
 @router.get("/users", response_model=List[UserDetail])
 async def get_all_users(
     location_zone: Optional[str] = None,
@@ -211,10 +254,139 @@ async def get_all_users(
             cluster_id=user.cluster_id,
             total_transactions=transaction_count or 0,
             total_spent=float(total_spent),
-            created_at=user.created_at
+            created_at=user.created_at,
+            is_supplier=user.is_supplier or False,
+            is_active=getattr(user, 'is_active', True)
         ))
     
     return result
+
+@router.get("/users/{user_id}", response_model=UserDetail)
+async def get_user_details(
+    user_id: int,
+    admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Get detailed information about a specific user"""
+    user = db.query(User).filter(User.id == user_id, ~User.is_admin).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    
+    transaction_count = db.query(func.count(Transaction.id)).filter(
+        Transaction.user_id == user.id
+    ).scalar()
+    
+    total_spent = db.query(func.sum(Transaction.amount)).filter(
+        Transaction.user_id == user.id
+    ).scalar() or 0.0
+    
+    return UserDetail(
+        id=user.id,
+        email=user.email,
+        full_name=user.full_name or "",
+        location_zone=user.location_zone,
+        cluster_id=user.cluster_id,
+        total_transactions=transaction_count or 0,
+        total_spent=float(total_spent),
+        created_at=user.created_at,
+        is_supplier=user.is_supplier or False,
+        is_active=getattr(user, 'is_active', True)
+    )
+
+@router.put("/users/{user_id}")
+async def update_user(
+    user_id: int,
+    user_data: dict,
+    admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Update user information (Admin only)"""
+    user = db.query(User).filter(User.id == user_id, ~User.is_admin).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    
+    # Update allowed fields
+    allowed_fields = ['full_name', 'location_zone', 'is_supplier']
+    for field, value in user_data.items():
+        if field in allowed_fields and hasattr(user, field):
+            setattr(user, field, value)
+    
+    try:
+        db.commit()
+        db.refresh(user)
+        return {"message": "User updated successfully", "user": {
+            "id": user.id,
+            "email": user.email,
+            "full_name": user.full_name,
+            "location_zone": user.location_zone,
+            "is_supplier": user.is_supplier
+        }}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update user")
+
+@router.delete("/users/{user_id}")
+async def delete_user(
+    user_id: int,
+    admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Delete a user account (Admin only)"""
+    user = db.query(User).filter(User.id == user_id, ~User.is_admin).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    
+    try:
+        # Delete related records first (cascade should handle this, but being explicit)
+        db.query(Transaction).filter(Transaction.user_id == user_id).delete()
+        db.query(Contribution).filter(Contribution.user_id == user_id).delete()
+        db.query(ChatMessage).filter(ChatMessage.user_id == user_id).delete()
+        
+        # Delete the user
+        db.delete(user)
+        db.commit()
+        return {"message": "User deleted successfully"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete user")
+
+@router.post("/users/{user_id}/toggle-supplier")
+async def toggle_supplier_status(
+    user_id: int,
+    admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Toggle supplier status for a user"""
+    user = db.query(User).filter(User.id == user_id, ~User.is_admin).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    
+    user.is_supplier = not user.is_supplier
+    db.commit()
+    
+    return {
+        "message": f"User {'promoted to' if user.is_supplier else 'demoted from'} supplier",
+        "is_supplier": user.is_supplier
+    }
+
+@router.post("/users/{user_id}/toggle-active")
+async def toggle_user_active_status(
+    user_id: int,
+    admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Toggle user active/suspended status"""
+    user = db.query(User).filter(User.id == user_id, ~User.is_admin).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    
+    user.is_active = not user.is_active
+    db.commit()
+    
+    return {
+        "message": f"User {'activated' if user.is_active else 'suspended'}",
+        "is_active": user.is_active
+    }
 
 @router.post("/groups/{group_id}/complete")
 async def complete_group_buy(
@@ -1299,7 +1471,55 @@ async def create_admin_group(
         db.rollback()
         raise HTTPException(status_code=500, detail="Failed to create group")
 
-@router.put("/groups/{group_id}/update")
+@router.get("/groups/{group_id}")
+async def get_admin_group_details(
+    group_id: int,
+    admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Get detailed information about a specific admin group"""
+    try:
+        # Get the group
+        group = db.query(AdminGroup).filter(AdminGroup.id == group_id).first()
+        if not group:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Group not found"
+            )
+
+        # Get participant count from AdminGroupJoin
+        participant_count = db.query(func.count(AdminGroupJoin.id)).filter(
+            AdminGroupJoin.admin_group_id == group_id
+        ).scalar() or 0
+
+        return {
+            "id": group.id,
+            "name": group.name,
+            "description": group.description,
+            "long_description": group.long_description,
+            "category": group.category,
+            "price": group.price,
+            "original_price": group.original_price,
+            "image": group.image,
+            "max_participants": group.max_participants,
+            "participants": participant_count,
+            "end_date": group.end_date.isoformat() if group.end_date else None,
+            "admin_name": group.admin_name,
+            "shipping_info": group.shipping_info,
+            "estimated_delivery": group.estimated_delivery,
+            "features": group.features or [],
+            "requirements": group.requirements or [],
+            "is_active": group.is_active,
+            "created": group.created.isoformat() if group.created else None
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error getting admin group {group_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get group details")
+
+@router.put("/groups/{group_id}")
 async def update_admin_group(
     group_id: int,
     group_data: UpdateGroupRequest,
@@ -1321,12 +1541,26 @@ async def update_admin_group(
             group.name = group_data.name
         if group_data.description is not None:
             group.description = group_data.description
+        if group_data.long_description is not None:
+            group.long_description = group_data.long_description
         if group_data.category is not None:
             group.category = group_data.category
-        if group_data.product_name is not None:
-            group.name = group_data.product_name  # Update group name with product name
-        if group_data.regular_price is not None:
-            group.original_price = group_data.regular_price
+        if group_data.price is not None:
+            group.price = group_data.price
+        if group_data.original_price is not None:
+            group.original_price = group_data.original_price
+        if group_data.max_participants is not None:
+            group.max_participants = group_data.max_participants
+        if group_data.end_date is not None:
+            try:
+                end_date_obj = datetime.fromisoformat(group_data.end_date.replace('Z', '+00:00'))
+                group.end_date = end_date_obj
+            except (ValueError, AttributeError):
+                raise HTTPException(status_code=400, detail="Invalid end_date format")
+        if group_data.shipping_info is not None:
+            group.shipping_info = group_data.shipping_info
+        if group_data.estimated_delivery is not None:
+            group.estimated_delivery = group_data.estimated_delivery
 
         db.commit()
         db.refresh(group)

@@ -320,6 +320,38 @@ class ApiService {
     return response.json();
   }
 
+  async uploadSupplierImage(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const token = this.getAuthToken();
+    const config = {
+      method: 'POST',
+      headers: {},
+      body: formData,
+    };
+
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+
+    const url = `${this.baseURL}/api/supplier/upload-image`;
+    const response = await fetch(url, config);
+
+    if (response.status === 401) {
+      localStorage.removeItem('token');
+      window.location.href = '/login';
+      throw new Error('Unauthorized - redirecting to login');
+    }
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || `API Error: ${response.status}`);
+    }
+
+    return response.json();
+  }
+
   async createAdminGroup(groupData) {
     return this.request('/api/admin/groups/create', {
       method: 'POST',
@@ -483,6 +515,43 @@ class ApiService {
         // Don't set Content-Type, let the browser set it with boundary for FormData
         ...this.getAuthToken() ? { Authorization: `Bearer ${this.getAuthToken()}` } : {},
       },
+    });
+  }
+
+  // Supplier Group Moderation Methods
+  async getSupplierActiveGroups() {
+    return this.request("/api/supplier/groups/active");
+  }
+
+  async getSupplierReadyForPaymentGroups() {
+    return this.request("/api/supplier/groups/ready-for-payment");
+  }
+
+  async getSupplierGroupModerationStats() {
+    return this.request("/api/supplier/groups/moderation-stats");
+  }
+
+  async getSupplierGroupDetails(groupId) {
+    return this.request(`/api/supplier/groups/${groupId}`);
+  }
+
+  async processSupplierGroupPayment(groupId) {
+    return this.request(`/api/supplier/groups/${groupId}/process-payment`, {
+      method: 'POST'
+    });
+  }
+
+  async generateSupplierGroupQR(groupId) {
+    return this.request(`/api/supplier/groups/${groupId}/qr/generate`, {
+      method: 'POST'
+    });
+  }
+
+  // Supplier Group Creation
+  async createSupplierGroup(groupData) {
+    return this.request('/api/supplier/groups/create', {
+      method: 'POST',
+      body: JSON.stringify(groupData),
     });
   }
 

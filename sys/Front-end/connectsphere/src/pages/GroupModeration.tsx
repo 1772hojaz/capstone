@@ -430,6 +430,7 @@ const GroupModeration = () => {
                       <span className="px-2 py-1 bg-gray-100 rounded-full">Category: <span className="font-semibold text-gray-800">{group.category}</span></span>
                       <span className="px-2 py-1 bg-gray-100 rounded-full">Due: <span className="font-semibold text-gray-800">{group.dueDate}</span></span>
                       <span className="px-2 py-1 bg-blue-100 rounded-full">Amount: <span className="font-semibold text-blue-700">{group.totalAmount}</span></span>
+                      <span className="px-2 py-1 bg-purple-100 rounded-full">Created by: <span className="font-semibold text-purple-700">{group.creator}</span></span>
                     </div>
 
                     {/* Product Details */}
@@ -551,6 +552,14 @@ const GroupModeration = () => {
                       <div className="bg-white p-3 rounded-xl shadow-sm">
                         <p className="text-xs text-gray-500 mb-1 font-medium">Total Amount</p>
                         <p className="text-lg font-bold text-green-600">{group.totalAmount}</p>
+                      </div>
+                      <div className="bg-white p-3 rounded-xl shadow-sm">
+                        <p className="text-xs text-gray-500 mb-1 font-medium">Category</p>
+                        <p className="text-sm font-bold text-gray-900">{group.category}</p>
+                      </div>
+                      <div className="bg-white p-3 rounded-xl shadow-sm">
+                        <p className="text-xs text-gray-500 mb-1 font-medium">Created by</p>
+                        <p className="text-sm font-bold text-purple-600">{group.creator}</p>
                       </div>
                     </div>
                   </div>
@@ -1082,6 +1091,11 @@ const GroupModeration = () => {
                     )}
                   </div>
 
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Created by</label>
+                    <p className="text-base text-purple-600 font-medium">{selectedGroup.creator || selectedGroup.admin_name || 'Admin'}</p>
+                  </div>
+
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
                     {isEditMode ? (
@@ -1352,6 +1366,10 @@ const GroupModeration = () => {
                       <div>
                         <p className="text-blue-600">Total Amount</p>
                         <p className="font-medium text-blue-900">{selectedPaymentGroup.totalAmount}</p>
+                      </div>
+                      <div>
+                        <p className="text-blue-600">Created by</p>
+                        <p className="font-medium text-purple-600">{selectedPaymentGroup.creator}</p>
                       </div>
                     </div>
                     

@@ -563,7 +563,7 @@ async def get_all_groups(
             id=group.id,
             name=group.product.name if group.product else f"Group Buy #{group.id}",
             price=group.product.bulk_price if group.product else 0,
-            image=group.product.image_url if group.product else None,
+            image=group.product.image_url if group.product and group.product.image_url else "/api/placeholder/300/200",
             description=group.product.description if group.product else "User-created group buy",
             participants=participants_count,
             category=group.product.category if group.product else "General",

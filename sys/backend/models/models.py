@@ -13,6 +13,7 @@ class User(Base):
     full_name = Column(String)
     is_admin = Column(Boolean, default=False)
     is_supplier = Column(Boolean, default=False)
+    is_active = Column(Boolean, default=True)
     location_zone = Column(String, nullable=False)
     cluster_id = Column(Integer, nullable=True)
     
@@ -210,6 +211,9 @@ class AdminGroup(Base):
     requirements = Column(JSON)  # List of requirement strings
     is_active = Column(Boolean, default=True)
     
+    # Link to supplier's product if provided
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=True)
+    
     # Additional product fields
     product_name = Column(String)
     product_description = Column(Text)
@@ -231,6 +235,7 @@ class AdminGroup(Base):
     # Relationships
     joins = relationship("AdminGroupJoin", back_populates="admin_group")
     supplier_orders = relationship("SupplierOrder", backref="admin_group")
+    product = relationship("Product", backref="admin_groups")
 
 class AdminGroupJoin(Base):
     __tablename__ = "admin_group_joins"

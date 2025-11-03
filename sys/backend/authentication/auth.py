@@ -6,7 +6,7 @@ import bcrypt
 from datetime import datetime, timedelta
 import jwt
 import os
-from typing import List
+from typing import List, Optional
 from db.database import get_db
 from models.models import User
 
@@ -35,7 +35,7 @@ class SupplierRegister(BaseModel):
     full_name: str
     company_name: str
     business_address: str
-    tax_id: str
+    tax_id: Optional[str] = None
     phone_number: str
     location_zone: str
 
