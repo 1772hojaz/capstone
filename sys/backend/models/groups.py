@@ -107,6 +107,8 @@ class JoinGroupRequest(BaseModel):
     delivery_method: str  # "pickup" or "delivery"
     payment_method: str   # "cash" or "card"
     special_instructions: Optional[str] = None
+    payment_transaction_id: Optional[str] = None  # For card payments
+    payment_reference: Optional[str] = None       # For card payments
 
     class Config:
         schema_extra = {
@@ -290,12 +292,13 @@ async def get_my_groups(
 ):
     """Get all groups the current user has joined"""
     try:
-        # Get user's contributions and the associated group buys
+        groups_data = []
+        
+        # Get user's contributions and the associated group buys (GroupBuy groups)
         contributions = db.query(Contribution).filter(
             Contribution.user_id == user.id
         ).all()
         
-        groups_data = []
         for contrib in contributions:
             group_buy = contrib.group_buy
             if group_buy:
@@ -358,7 +361,68 @@ async def get_my_groups(
                     "requirements": [f"Minimum {group_buy.product.moq} participants required"],
                     "longDescription": group_buy.product.description or f"Join this group buy to get {group_buy.product.name} at discounted bulk pricing.",
                     "category": group_buy.product.category or "General",
-                    "endDate": group_buy.deadline.strftime("%Y-%m-%dT%H:%M:%SZ") if group_buy.deadline else None
+                    "endDate": group_buy.deadline.strftime("%Y-%m-%dT%H:%M:%SZ") if group_buy.deadline else None,
+                    "quantity": contrib.quantity  # Add user's quantity
+                }
+                groups_data.append(group_data)
+        
+        # Get user's AdminGroup joins (AdminGroup groups)
+        admin_group_joins = db.query(AdminGroupJoin).filter(
+            AdminGroupJoin.user_id == user.id
+        ).all()
+        
+        for join in admin_group_joins:
+            admin_group = join.admin_group
+            if admin_group:
+                # Get pickup location for this admin group
+                pickup_location = admin_group.shipping_info or "Downtown Market"  # Default
+                
+                # Calculate progress
+                progress = f"{admin_group.participants}/{admin_group.max_participants or 'unlimited'}"
+                
+                # Format due date
+                due_date = admin_group.end_date.strftime("%b %d, %Y") if admin_group.end_date else "No deadline"
+                
+                # Determine status based on admin group state
+                if not admin_group.is_active:
+                    status = "cancelled"
+                    order_status = "Cancelled"
+                elif admin_group.end_date and admin_group.end_date < datetime.utcnow():
+                    status = "completed"
+                    order_status = "Completed - Ready for pickup"
+                else:
+                    status = "active"
+                    order_status = "Active - Payment completed"
+                
+                group_data = {
+                    "id": admin_group.id,
+                    "name": admin_group.name,
+                    "description": admin_group.description or f"Admin group buy for {admin_group.name}",
+                    "price": f"${admin_group.price:.2f}",
+                    "originalPrice": f"${admin_group.original_price:.2f}",
+                    "image": admin_group.image or "/api/placeholder/300/200",
+                    "status": status,
+                    "progress": progress,
+                    "dueDate": due_date,
+                    "pickupLocation": pickup_location,
+                    "orderStatus": order_status,
+                    "savings": f"${admin_group.savings:.2f}",
+                    "participants": admin_group.participants,
+                    "maxParticipants": admin_group.max_participants,
+                    "created": admin_group.created.strftime("%b %d, %Y") if admin_group.created else "",
+                    "matchScore": 95,  # Default high score for joined groups
+                    "reason": "You joined this admin group",
+                    "adminCreated": True,
+                    "adminName": admin_group.admin_name or "Admin",
+                    "discountPercentage": admin_group.discount_percentage,
+                    "shippingInfo": admin_group.shipping_info or "Pickup at designated location",
+                    "estimatedDelivery": admin_group.estimated_delivery or "2-3 weeks after group completion",
+                    "features": admin_group.features or ["Bulk pricing", "Quality guaranteed", "Group savings"],
+                    "requirements": admin_group.requirements or [],
+                    "longDescription": admin_group.long_description or admin_group.description,
+                    "category": admin_group.category or "General",
+                    "endDate": admin_group.end_date.strftime("%Y-%m-%dT%H:%M:%SZ") if admin_group.end_date else None,
+                    "quantity": join.quantity  # Add user's quantity
                 }
                 groups_data.append(group_data)
         
@@ -808,7 +872,9 @@ async def join_group(
                 quantity=request.quantity,
                 delivery_method=request.delivery_method,
                 payment_method=request.payment_method,
-                special_instructions=request.special_instructions
+                special_instructions=request.special_instructions,
+                payment_transaction_id=request.payment_transaction_id,
+                payment_reference=request.payment_reference
             )
 
             db.add(join_record)
@@ -816,19 +882,20 @@ async def join_group(
             # Update group participant count
             admin_group.participants += 1
 
-            # Create initial transaction record
-            from models import Transaction
-            transaction = Transaction(
-                user_id=user.id,
-                group_buy_id=None,  # Admin groups don't have group_buy_id
-                product_id=None,  # Will be set when group completes
-                quantity=request.quantity,
-                amount=upfront_amount,
-                transaction_type="upfront",
-                location_zone=user.location_zone or "Unknown"
-            )
+            # Create initial transaction record only if admin group has a linked product
+            if admin_group.product_id:
+                from models import Transaction
+                transaction = Transaction(
+                    user_id=user.id,
+                    group_buy_id=None,  # Admin groups don't have group_buy_id
+                    product_id=admin_group.product_id,
+                    quantity=request.quantity,
+                    amount=upfront_amount,
+                    transaction_type="upfront",
+                    location_zone=user.location_zone or "Unknown"
+                )
+                db.add(transaction)
 
-            db.add(transaction)
             db.commit()
 
             return {

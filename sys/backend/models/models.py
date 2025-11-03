@@ -247,6 +247,8 @@ class AdminGroupJoin(Base):
     delivery_method = Column(String, nullable=False)  # "pickup" or "delivery"
     payment_method = Column(String, nullable=False)   # "cash" or "card"
     special_instructions = Column(Text, nullable=True)
+    payment_transaction_id = Column(String, nullable=True)  # For card payments
+    payment_reference = Column(String, nullable=True)       # For card payments
     joined_at = Column(DateTime, default=datetime.utcnow)
     
     # Relationships

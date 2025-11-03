@@ -25,7 +25,7 @@ class FlutterwaveService:
                 "tx_ref": tx_ref,
                 "amount": str(amount),
                 "currency": currency,
-                "redirect_url": redirect_url or "http://localhost:8000/payment/callback",
+                "redirect_url": redirect_url or "http://localhost:8000/api/payment/callback",
                 "payment_options": "card,mobilemoney,ussd",
                 "customer": {
                     "email": email,
@@ -41,10 +41,20 @@ class FlutterwaveService:
                 json=payload,
                 headers=self.headers
             )
-            response.raise_for_status()
-            result = response.json()
-            logger.info(f"Payment initialized: {result}")
-            return result
+
+            # Try to parse response body, log useful details and return payload to caller
+            try:
+                result = response.json()
+            except ValueError:
+                result = {"message": response.text}
+
+            if response.ok:
+                logger.info(f"Payment initialized: {result}")
+                return result
+            else:
+                # Log full response for easier debugging (includes errors like DCC Rate messages)
+                logger.error(f"Payment initialization returned error: status={response.status_code}, body={result}")
+                return result
         except requests.exceptions.RequestException as e:
             logger.error(f"Payment initialization failed: {str(e)}")
             raise

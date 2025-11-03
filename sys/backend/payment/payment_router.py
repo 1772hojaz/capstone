@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends, status, Response
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from typing import Optional
 from payment.flutterwave_service import flutterwave_service
@@ -26,6 +27,13 @@ async def initialize_payment(
     current_user: User = Depends(get_current_user)
 ):
     """Initialize a payment transaction with Flutterwave"""
+    # Validate that the payment email matches the authenticated user's email
+    if payment.email != current_user.email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Payment email must match authenticated user email"
+        )
+    
     try:
         response = flutterwave_service.initialize_payment(
             amount=payment.amount,
@@ -56,33 +64,41 @@ async def verify_payment(
             detail=f"Payment verification failed: {str(e)}"
         )
 
-@router.post("/callback", response_model=dict)
+@router.get("/callback")
 async def payment_callback(
     transaction_id: str,
     tx_ref: str,
     status: str
 ):
-    """Handle Flutterwave payment callback"""
+    """Handle Flutterwave payment callback (webhook)"""
     try:
-        # Verify the payment
+        logger.info(f"Payment callback received: tx_ref={tx_ref}, transaction_id={transaction_id}, status={status}")
+
+        # Verify the payment with Flutterwave
         verification = flutterwave_service.verify_payment(transaction_id)
-        
-        # Here you would update your database with payment status
-        # For example, mark an order as paid, update user balance, etc.
-        
-        return {
-            "status": "success",
-            "message": "Payment callback processed",
-            "transaction_id": transaction_id,
-            "tx_ref": tx_ref,
-            "payment_status": verification.get("data", {}).get("status")
-        }
+        payment_status = verification.get("data", {}).get("status", "unknown")
+
+        logger.info(f"Payment verification result: {payment_status}")
+
+        # Redirect back to frontend with payment result
+        frontend_url = "http://localhost:5173"  # Vite dev server default port
+
+        if payment_status == "successful":
+            # Redirect to success page with transaction details
+            redirect_url = f"{frontend_url}/payment/success?tx_ref={tx_ref}&transaction_id={transaction_id}&status=success"
+        else:
+            # Redirect to failure page
+            redirect_url = f"{frontend_url}/payment/failure?tx_ref={tx_ref}&transaction_id={transaction_id}&status={payment_status}"
+
+        logger.info(f"Redirecting to: {redirect_url}")
+        return RedirectResponse(url=redirect_url, status_code=302)
+
     except Exception as e:
         logger.error(f"Callback processing failed: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Callback processing failed: {str(e)}"
-        )
+        # On error, redirect to failure page
+        frontend_url = "http://localhost:5173"
+        redirect_url = f"{frontend_url}/payment/failure?tx_ref={tx_ref}&transaction_id={transaction_id}&status=error"
+        return RedirectResponse(url=redirect_url, status_code=302)
 
 @router.get("/fee", response_model=dict)
 async def get_transaction_fee(
