@@ -7,5 +7,3 @@ Client Secret
 Encryption Key
 lLus8OEFYep4Fjj3ciZnreBYz1JajcrXWuB0KxOmBbs=
 
-
-
