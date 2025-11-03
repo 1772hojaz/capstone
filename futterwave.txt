@@ -1,0 +1,11 @@
+Client ID
+12a8c4c6-9bc6-4f80-9ea9-5a26842f2d53
+
+Client Secret
+6nCZym5JnoZBhmYBFhMve34qcNiIkpou
+
+Encryption Key
+lLus8OEFYep4Fjj3ciZnreBYz1JajcrXWuB0KxOmBbs=
+
+
+
