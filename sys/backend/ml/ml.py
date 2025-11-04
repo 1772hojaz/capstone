@@ -21,6 +21,7 @@ from authentication.auth import verify_token, get_current_user
 from websocket.websocket_manager import manager
 from .explainability import explain_recommendation, explain_cluster_assignment, generate_counterfactual_explanation
 from .lime_explainer import explain_with_lime
+from models.groups import get_creator_display_name
 import logging
 
 logger = logging.getLogger(__name__)
@@ -94,7 +95,7 @@ class RecommendationResponse(BaseModel):
     category: Optional[str] = None
     created_at: Optional[datetime] = None
     admin_created: bool = True
-    admin_name: Optional[str] = "ConnectSphere Admin"
+    admin_name: Optional[str] = "Admin"
     discount_percentage: float = 0.0
     shipping_info: Optional[str] = "Free shipping when group goal is reached"
     estimated_delivery: Optional[str] = "2-3 weeks after group completion"
@@ -628,19 +629,6 @@ def get_recommendations_for_user(user: User, db: Session) -> List[dict]:
         else:
             hybrid_scores_norm = hybrid_scores * 0
         
-        # Normalize individual component scores for display
-        cf_min, cf_max = cf_scores.min(), cf_scores.max()
-        if cf_max > cf_min:
-            cf_scores_norm = (cf_scores - cf_min) / (cf_max - cf_min)
-        else:
-            cf_scores_norm = cf_scores * 0
-        
-        cbf_min, cbf_max = cbf_scores.min(), cbf_scores.max()
-        if cbf_max > cbf_min:
-            cbf_scores_norm = (cbf_scores - cbf_min) / (cbf_max - cbf_min)
-        else:
-            cbf_scores_norm = cbf_scores * 0
-        
         # Get user's purchased products for personalization
         seen_products = set(tx.product_id for tx in transactions)
         
@@ -705,7 +693,7 @@ def get_recommendations_for_user(user: User, db: Session) -> List[dict]:
                 "category": gb.product.category if gb.product else "General",
                 "created_at": gb.created_at,
                 "admin_created": True,
-                "admin_name": "ConnectSphere Admin",
+                "admin_name": "Admin",
                 "discount_percentage": (gb.product.savings_factor * 100) if gb.product else 10,
                 "shipping_info": "Free shipping when group goal is reached",
                 "estimated_delivery": "2-3 weeks after group completion",
@@ -804,7 +792,7 @@ def get_simple_recommendations(user: User, db: Session, active_groups) -> List[d
                 "category": gb.product.category or "General",
                 "created_at": gb.created_at,
                 "admin_created": True,
-                "admin_name": "ConnectSphere Admin",
+                "admin_name": "Admin",
                 "discount_percentage": savings,
                 "shipping_info": "Free shipping when group goal is reached",
                 "estimated_delivery": "2-3 weeks after group completion",
@@ -950,7 +938,7 @@ def get_similarity_based_recommendations(user: User, db: Session, active_groups:
                     "category": group_buy.product.category or "General",
                     "created_at": group_buy.created_at,
                     "admin_created": True,
-                    "admin_name": "ConnectSphere Admin",
+                    "admin_name": "Admin",
                     "discount_percentage": savings,
                     "shipping_info": "Free shipping when group goal is reached",
                     "estimated_delivery": "2-3 weeks after group completion",
@@ -1662,7 +1650,7 @@ def get_user_similarity_based_recommendations(user_id: int, db: Session, limit: 
             'category': rec['group'].product.category if rec['group'].product else 'General',
             'created_at': rec['group'].created_at,
             'admin_created': True,
-            'admin_name': "ConnectSphere Admin",
+            'admin_name': "Admin",
             'discount_percentage': (rec['group'].product.savings_factor * 100) if rec['group'].product else 10,
             'shipping_info': "Free shipping when group goal is reached",
             'estimated_delivery': "2-3 weeks after group completion",

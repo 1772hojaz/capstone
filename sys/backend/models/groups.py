@@ -67,6 +67,8 @@ class GroupDetailResponse(BaseModel):
     estimatedDelivery: str
     features: List[str]
     requirements: List[str]
+    progressPercentage: Optional[float] = None
+    remainingNeeded: Optional[int] = None
 
 class GroupCreateRequest(BaseModel):
     name: str
@@ -204,6 +206,18 @@ def generate_qr_code_image(qr_content: str) -> str:
 
     # Return plain base64 (frontend will prefix with data URI as needed)
     return img_base64
+
+def get_creator_display_name(creator: User) -> str:
+    """Get the appropriate display name for a group creator"""
+    if not creator:
+        return "Admin"
+    
+    if creator.is_admin:
+        return "Admin"
+    elif creator.is_supplier and creator.company_name:
+        return creator.company_name
+    else:
+        return creator.full_name
 
 
 @router.get("/{group_id}/qr-code")
@@ -353,7 +367,7 @@ async def get_my_groups(
                     "matchScore": 95,  # Default high score for joined groups
                     "reason": "You joined this group",
                     "adminCreated": True,
-                    "adminName": group_buy.creator.full_name if group_buy.creator else "Admin",
+                    "adminName": get_creator_display_name(group_buy.creator),
                     "discountPercentage": int(group_buy.product.savings_factor * 100),
                     "shippingInfo": "Free shipping when group goal is reached",
                     "estimatedDelivery": "2-3 weeks after group completion",
@@ -474,7 +488,7 @@ async def get_my_groups(
                     "matchScore": 95,
                     "reason": "Completed group (Testing)",
                     "adminCreated": True,
-                    "adminName": group_buy.creator.full_name if group_buy.creator else "Admin",
+                    "adminName": get_creator_display_name(group_buy.creator),
                     "discountPercentage": int(group_buy.product.savings_factor * 100),
                     "shippingInfo": "Free shipping when group goal is reached",
                     "estimatedDelivery": "2-3 weeks after group completion",
@@ -638,7 +652,7 @@ async def get_all_groups(
             matchScore=75,  # Default match score for user-created groups
             reason="User-created group buy",
             adminCreated=False,
-            adminName=group.creator.full_name if group.creator else "User",
+            adminName=get_creator_display_name(group.creator),
             savings=(group.product.unit_price - group.product.bulk_price) if group.product else 0,
             discountPercentage=round(group.product.savings_factor * 100) if group.product else 0,
             shippingInfo="Pickup at designated location",
@@ -705,35 +719,77 @@ async def get_group_detail(
     group_id: int,
     db: Session = Depends(get_db)
 ):
-    """Get detailed information about a specific admin group"""
-    group = db.query(AdminGroup).filter(AdminGroup.id == group_id).first()
-    if not group:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
+    """Get detailed information about a specific group (AdminGroup or GroupBuy)"""
     
-    return GroupDetailResponse(
-        id=group.id,
-        name=group.name,
-        price=group.price,
-        originalPrice=group.original_price,
-        image=group.image,
-        description=group.description,
-        longDescription=group.long_description or group.description,
-        participants=group.participants,
-        maxParticipants=group.max_participants,
-        category=group.category,
-        created=group.created.isoformat(),
-        endDate=group.end_date.isoformat(),
-        matchScore=85,  # Default match score
-        reason="Admin-created group buy",
-        adminCreated=True,
-        adminName=group.admin_name,
-        savings=group.savings,
-        discountPercentage=group.discount_percentage,
-        shippingInfo=group.shipping_info,
-        estimatedDelivery=group.estimated_delivery,
-        features=group.features or [],
-        requirements=group.requirements or []
-    )
+    # First try to find as AdminGroup
+    admin_group = db.query(AdminGroup).filter(AdminGroup.id == group_id).first()
+    if admin_group:
+        return GroupDetailResponse(
+            id=admin_group.id,
+            name=admin_group.name,
+            price=admin_group.price,
+            originalPrice=admin_group.original_price,
+            image=admin_group.image,
+            description=admin_group.description,
+            longDescription=admin_group.long_description or admin_group.description,
+            participants=admin_group.participants,
+            maxParticipants=admin_group.max_participants,
+            category=admin_group.category,
+            created=admin_group.created.isoformat(),
+            endDate=admin_group.end_date.isoformat(),
+            matchScore=85,  # Default match score
+            reason="Admin-created group buy",
+            adminCreated=True,
+            adminName=admin_group.admin_name,  # For AdminGroups, this is already set correctly
+            savings=admin_group.savings,
+            discountPercentage=admin_group.discount_percentage,
+            shippingInfo=admin_group.shipping_info,
+            estimatedDelivery=admin_group.estimated_delivery,
+            features=admin_group.features or [],
+            requirements=admin_group.requirements or []
+        )
+    
+    # If not AdminGroup, try GroupBuy
+    group_buy = db.query(GroupBuy).filter(GroupBuy.id == group_id).first()
+    if group_buy:
+        # Calculate participants count
+        participants_count = db.query(Contribution).filter(
+            Contribution.group_buy_id == group_id
+        ).count()
+        
+        # Calculate progress
+        progress_percentage = group_buy.moq_progress
+        remaining_needed = max(0, group_buy.product.moq - group_buy.total_quantity) if group_buy.product else 0
+        
+        return GroupDetailResponse(
+            id=group_buy.id,
+            name=group_buy.product.name if group_buy.product else f"Group Buy #{group_buy.id}",
+            price=group_buy.product.bulk_price if group_buy.product else 0,
+            originalPrice=group_buy.product.unit_price if group_buy.product else 0,
+            image=group_buy.product.image_url if group_buy.product and group_buy.product.image_url else "/api/placeholder/300/200",
+            description=group_buy.product.description if group_buy.product else "User-created group buy",
+            longDescription=group_buy.product.description if group_buy.product else "Join this community group buy for quality products at bulk prices.",
+            participants=participants_count,
+            maxParticipants=group_buy.product.moq if group_buy.product else None,
+            category=group_buy.product.category if group_buy.product else "General",
+            created=group_buy.created_at.isoformat(),
+            endDate=group_buy.deadline.isoformat(),
+            matchScore=75,  # Default match score for user-created groups
+            reason="User-created group buy",
+            adminCreated=False,
+            adminName=get_creator_display_name(group_buy.creator),
+            savings=(group_buy.product.unit_price - group_buy.product.bulk_price) if group_buy.product else 0,
+            discountPercentage=round(group_buy.product.savings_factor * 100) if group_buy.product else 0,
+            shippingInfo="Pickup at designated location",
+            estimatedDelivery="2-3 weeks after group completion",
+            features=["Bulk pricing", "Community driven", "Flexible quantities"],
+            requirements=[f"Minimum {group_buy.product.moq if group_buy.product else 10} total units required"],
+            progressPercentage=progress_percentage,
+            remainingNeeded=remaining_needed
+        )
+    
+    # If neither found
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
 
 @router.put("/{group_id}/contribution")
 async def update_contribution(
@@ -1026,7 +1082,7 @@ async def create_admin_group(
             image=request.image,
             max_participants=request.maxParticipants,
             end_date=end_date,
-            admin_name=user.full_name or "Admin",
+            admin_name=get_creator_display_name(user),
             shipping_info=request.shippingInfo,
             estimated_delivery=request.estimatedDelivery,
             features=request.features,
@@ -1053,7 +1109,7 @@ async def create_admin_group(
             matchScore=85,  # Default match score for admin groups
             reason="Admin-created group buy",
             adminCreated=True,
-            adminName=admin_group.admin_name,
+            adminName=get_creator_display_name(user),
             savings=admin_group.savings,
             discountPercentage=admin_group.discount_percentage,
             shippingInfo=admin_group.shipping_info,

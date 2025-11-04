@@ -26,30 +26,35 @@ def create_suppliers_and_related_data(db):
         {
             "email": "supplier1@mbare.co.zw",
             "full_name": "Mbare Fruits Supplier",
+            "company_name": "Mbare Fruits Wholesale Ltd",
             "location_zone": "Mbare",
             "business_type": "fruits_wholesale"
         },
         {
             "email": "supplier2@mbare.co.zw", 
             "full_name": "Mbare Vegetables Co",
+            "company_name": "Mbare Fresh Vegetables Co",
             "location_zone": "Mbare",
             "business_type": "vegetables_wholesale"
         },
         {
             "email": "supplier3@mbare.co.zw",
             "full_name": "Mbare Grains & Legumes",
+            "company_name": "Mbare Grains & Legumes Supply",
             "location_zone": "Mbare", 
             "business_type": "grains_legumes"
         },
         {
             "email": "supplier4@mbare.co.zw",
             "full_name": "Mbare Poultry Farm",
+            "company_name": "Mbare Poultry & Eggs Farm",
             "location_zone": "Glen View",
             "business_type": "poultry"
         },
         {
             "email": "supplier5@mbare.co.zw",
             "full_name": "Mbare Fish & Protein",
+            "company_name": "Mbare Fisheries & Protein Supplies",
             "location_zone": "Highfield",
             "business_type": "fish_protein"
         }
@@ -61,6 +66,7 @@ def create_suppliers_and_related_data(db):
             email=supplier_data["email"],
             hashed_password=hash_password("supplier123"),
             full_name=supplier_data["full_name"],
+            company_name=supplier_data["company_name"],
             location_zone=supplier_data["location_zone"],
             is_admin=False,
             is_supplier=True

@@ -117,7 +117,7 @@ async def get_dashboard_stats(
     total_users = db.query(func.count(User.id)).filter(~User.is_admin).scalar()
     total_products = db.query(func.count(Product.id)).filter(Product.is_active).scalar()
     total_transactions = db.query(func.count(Transaction.id)).scalar()
-    active_group_buys = db.query(func.count(GroupBuy.id)).filter(GroupBuy.status == "active").scalar()
+    active_group_buys = db.query(func.count(AdminGroup.id)).filter(AdminGroup.is_active).scalar()
     completed_group_buys = db.query(func.count(GroupBuy.id)).filter(GroupBuy.status == "completed").scalar()
     
     # Calculate total revenue from transactions (includes upfront and final payments)
@@ -836,38 +836,33 @@ async def get_active_groups_for_moderation(
 ):
     """Get active groups for admin moderation dashboard"""
     try:
-        # Get all active admin groups
-        active_groups = db.query(AdminGroup).filter(AdminGroup.is_active).all()
+        # Get all active user-created group buys
+        active_groups = db.query(GroupBuy).filter(GroupBuy.status == "active").all()
 
         result = []
         for group in active_groups:
-            # Get participant count from AdminGroupJoin
-            participant_count = db.query(func.count(AdminGroupJoin.id)).filter(
-                AdminGroupJoin.admin_group_id == group.id
-            ).scalar() or 0
-
-            # Calculate total amount
-            total_amount = participant_count * group.price
+            # Calculate total amount from contributions
+            total_amount = group.total_contributions
 
             result.append({
                 "id": group.id,
-                "name": group.name,
-                "creator": group.admin_name or "Admin",
-                "category": group.category,
-                "members": participant_count,
-                "targetMembers": group.max_participants or 0,
+                "name": group.product.name,
+                "creator": group.creator.email,
+                "category": group.product.category,
+                "members": group.participants_count,
+                "targetMembers": group.product.moq or 0,
                 "totalAmount": f"${total_amount:.2f}",
-                "dueDate": group.end_date.strftime("%Y-%m-%d") if group.end_date else "No deadline",
-                "description": group.description,
+                "dueDate": group.deadline.strftime("%Y-%m-%d") if group.deadline else "No deadline",
+                "description": group.product.description,
                 "status": "active",
                 "product": {
-                    "name": group.name,  # Using group name as product name for simplicity
-                    "description": group.long_description or group.description,
-                    "regularPrice": f"${group.original_price:.2f}" if group.original_price else f"${group.price:.2f}",
-                    "bulkPrice": f"${group.price:.2f}",
-                    "image": group.image or "/api/placeholder/300/200",
-                    "totalStock": "N/A",  # Admin groups don't have stock limits
-                    "specifications": "Admin managed group buy",
+                    "name": group.product.name,
+                    "description": group.product.description or "",
+                    "regularPrice": f"${group.product.unit_price:.2f}",
+                    "bulkPrice": f"${group.product.bulk_price:.2f}",
+                    "image": group.product.image_url or "/api/placeholder/300/200",
+                    "totalStock": "N/A",  # User groups don't have stock limits
+                    "specifications": f"MOQ: {group.product.moq}",
                     "manufacturer": "Various",
                     "warranty": "As per product"
                 }
@@ -886,42 +881,37 @@ async def get_ready_for_payment_groups(
 ):
     """Get groups that have reached their target and are ready for payment processing"""
     try:
-        # Get admin groups that have reached their target (100% complete)
-        ready_groups = db.query(AdminGroup).filter(
-            AdminGroup.is_active,
-            AdminGroup.max_participants.isnot(None),
-            AdminGroup.participants >= AdminGroup.max_participants
+        # Get user-created groups that have reached MOQ and are active
+        # Use explicit join to avoid SQLAlchemy relationship issues
+        ready_groups = db.query(GroupBuy).join(Product).filter(
+            GroupBuy.status == "active",
+            GroupBuy.total_quantity >= Product.moq
         ).all()
 
         result = []
         for group in ready_groups:
-            # Get participant count from AdminGroupJoin
-            participant_count = db.query(func.count(AdminGroupJoin.id)).filter(
-                AdminGroupJoin.admin_group_id == group.id
-            ).scalar() or 0
-
-            # Calculate total amount
-            total_amount = participant_count * group.price
+            # Calculate total amount from contributions
+            total_amount = group.total_contributions
 
             result.append({
                 "id": group.id,
-                "name": group.name,
-                "creator": group.admin_name or "Admin",
-                "category": group.category,
-                "members": participant_count,
-                "targetMembers": group.max_participants or 0,
+                "name": group.product.name,
+                "creator": group.creator.email,
+                "category": group.product.category,
+                "members": group.participants_count,
+                "targetMembers": group.product.moq or 0,
                 "totalAmount": f"${total_amount:.2f}",
-                "dueDate": group.end_date.strftime("%Y-%m-%d") if group.end_date else "No deadline",
-                "description": group.description,
+                "dueDate": group.deadline.strftime("%Y-%m-%d") if group.deadline else "No deadline",
+                "description": group.product.description,
                 "status": "ready_for_payment",
                 "product": {
-                    "name": group.name,
-                    "description": group.long_description or group.description,
-                    "regularPrice": f"${group.original_price:.2f}" if group.original_price else f"${group.price:.2f}",
-                    "bulkPrice": f"${group.price:.2f}",
-                    "image": group.image or "/api/placeholder/300/200",
+                    "name": group.product.name,
+                    "description": group.product.description or "",
+                    "regularPrice": f"${group.product.unit_price:.2f}",
+                    "bulkPrice": f"${group.product.bulk_price:.2f}",
+                    "image": group.product.image_url or "/api/placeholder/300/200",
                     "totalStock": "N/A",
-                    "specifications": "Admin managed group buy",
+                    "specifications": f"MOQ: {group.product.moq}",
                     "manufacturer": "Various",
                     "warranty": "As per product"
                 }
@@ -940,28 +930,30 @@ async def get_group_moderation_stats(
 ):
     """Get statistics for group moderation dashboard"""
     try:
-        # Active groups count
-        active_groups_count = db.query(func.count(AdminGroup.id)).filter(
-            AdminGroup.is_active
+        # Active groups count (user-created groups)
+        active_groups_count = db.query(func.count(GroupBuy.id)).filter(
+            GroupBuy.status == "active"
         ).scalar() or 0
 
-        # Total members across all active groups
-        total_members = db.query(func.sum(AdminGroup.participants)).filter(
-            AdminGroup.is_active
+        # Total members across all active groups (count contributions, not use property)
+        total_members = db.query(func.count(Contribution.id)).filter(
+            Contribution.group_buy_id.in_(
+                db.query(GroupBuy.id).filter(GroupBuy.status == "active")
+            )
         ).scalar() or 0
 
-        # Ready for payment groups count (groups that are 100% complete)
-        ready_for_payment_count = db.query(func.count(AdminGroup.id)).filter(
-            AdminGroup.is_active,
-            AdminGroup.max_participants.isnot(None),
-            AdminGroup.participants >= AdminGroup.max_participants
+        # Ready for payment groups count (groups that have reached MOQ)
+        # Use explicit join to avoid SQLAlchemy relationship issues
+        ready_for_payment_count = db.query(func.count(GroupBuy.id)).join(Product).filter(
+            GroupBuy.status == "active",
+            GroupBuy.total_quantity >= Product.moq
         ).scalar() or 0
 
         # Required action count (groups that need attention - could be expired, problematic, etc.)
         # For now, let's count groups that are past their deadline but still active
-        required_action_count = db.query(func.count(AdminGroup.id)).filter(
-            AdminGroup.is_active,
-            AdminGroup.end_date < datetime.utcnow()
+        required_action_count = db.query(func.count(GroupBuy.id)).filter(
+            GroupBuy.status == "active",
+            GroupBuy.deadline < datetime.utcnow()
         ).scalar() or 0
 
         return {
