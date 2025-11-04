@@ -97,6 +97,7 @@ class UpdateGroupRequest(BaseModel):
     category: Optional[str] = None
     price: Optional[float] = None
     original_price: Optional[float] = None
+    image: Optional[str] = None
     max_participants: Optional[int] = None
     end_date: Optional[str] = None
     shipping_info: Optional[str] = None
@@ -1541,6 +1542,8 @@ async def update_admin_group(
             group.price = group_data.price
         if group_data.original_price is not None:
             group.original_price = group_data.original_price
+        if group_data.image is not None:
+            group.image = group_data.image
         if group_data.max_participants is not None:
             group.max_participants = group_data.max_participants
         if group_data.end_date is not None:
@@ -1580,84 +1583,45 @@ async def update_admin_group(
         db.rollback()
         raise HTTPException(status_code=500, detail="Failed to update group")
 
-@router.delete("/groups/{group_id}")
-async def delete_admin_group(
+@router.put("/groups/{group_id}/image")
+async def update_group_buy_image(
     group_id: int,
+    image_url: str,
     admin = Depends(verify_admin),
     db: Session = Depends(get_db)
 ):
-    """Delete an admin-managed group buying opportunity"""
+    """Update the image for a user-created group-buy (GroupBuy)"""
     try:
-        # Get the group
-        group = db.query(AdminGroup).filter(AdminGroup.id == group_id).first()
-        if not group:
+        # Find the GroupBuy
+        group_buy = db.query(GroupBuy).filter(GroupBuy.id == group_id).first()
+        if not group_buy:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Group not found"
+                detail="Group-buy not found"
             )
 
-        # Check if group has participants
-        participant_count = db.query(func.count(AdminGroupJoin.id)).filter(
-            AdminGroupJoin.admin_group_id == group_id
-        ).scalar() or 0
+        # Update the product's image_url
+        if group_buy.product:
+            group_buy.product.image_url = image_url
+            db.commit()
 
-        if participant_count > 0:
+            return {
+                "message": "Group image updated successfully",
+                "group_id": group_id,
+                "image_url": image_url
+            }
+        else:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Cannot delete group with {participant_count} participants. Remove all participants first."
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Product not found for this group"
             )
-
-        # Delete associated image from Cloudinary if it exists
-        if group.image:
-            try:
-                # Extract public_id from Cloudinary URL
-                # URL format: https://res.cloudinary.com/{cloud_name}/image/upload/{version}/{public_id}.{format}
-                if 'cloudinary.com' in group.image and '/upload/' in group.image:
-                    # Find the part after '/upload/'
-                    upload_part = group.image.split('/upload/')[1]
-                    # Remove version number (starts with 'v' followed by digits)
-                    if upload_part.startswith('v') and len(upload_part) > 1:
-                        # Find the next '/' after the version
-                        version_end = upload_part.find('/')
-                        if version_end != -1:
-                            public_id_with_ext = upload_part[version_end + 1:]
-                        else:
-                            public_id_with_ext = upload_part[1:]  # Remove 'v' if no path
-                    else:
-                        public_id_with_ext = upload_part
-                    
-                    # Remove file extension to get public_id
-                    if '.' in public_id_with_ext:
-                        public_id = '.'.join(public_id_with_ext.split('.')[:-1])
-                    else:
-                        public_id = public_id_with_ext
-                    
-                    if public_id:
-                        # Delete from Cloudinary
-                        result = cloudinary.uploader.destroy(public_id)
-                        print(f"Successfully deleted image from Cloudinary: {public_id}, result: {result}")
-                    else:
-                        print(f"Warning: Could not extract public_id from URL: {group.image}")
-            except Exception as cloudinary_error:
-                print(f"Warning: Failed to delete image from Cloudinary: {cloudinary_error}")
-                print(f"Image URL was: {group.image}")
-                # Don't fail the entire operation if image deletion fails
-
-        # Delete the group
-        db.delete(group)
-        db.commit()
-
-        return {
-            "message": "Group deleted successfully",
-            "group_id": group_id
-        }
 
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error deleting admin group {group_id}: {e}")
+        print(f"Error updating group buy image {group_id}: {e}")
         db.rollback()
-        raise HTTPException(status_code=500, detail="Failed to delete group")
+        raise HTTPException(status_code=500, detail="Failed to update group image")
 
 @router.get("/qr/scan-history")
 async def get_qr_scan_history(

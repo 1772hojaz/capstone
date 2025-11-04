@@ -22,8 +22,19 @@ class User(Base):
     business_address = Column(Text)
     tax_id = Column(String)
     phone_number = Column(String)
+    business_type = Column(String, default="retailer")  # wholesaler, retailer, manufacturer, distributor
+    business_description = Column(Text)
+    website_url = Column(String)
     supplier_rating = Column(Float, default=0.0)
     total_orders_fulfilled = Column(Integer, default=0)
+    is_verified = Column(Boolean, default=False)
+    verification_status = Column(String, default="pending")  # pending, submitted, verified, rejected
+    
+    # Banking information
+    bank_account_name = Column(String)
+    bank_account_number = Column(String)
+    bank_name = Column(String)
+    payment_terms = Column(String, default="net_30")  # net_30, net_15, cod, prepaid
     
     # User preferences for better recommendations
     preferred_categories = Column(JSON, default=list)  # List of preferred product categories

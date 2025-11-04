@@ -38,6 +38,31 @@ class SupplierRegister(BaseModel):
     tax_id: Optional[str] = None
     phone_number: str
     location_zone: str
+    business_type: Optional[str] = "retailer"
+    business_description: Optional[str] = None
+    website_url: Optional[str] = None
+    bank_account_name: Optional[str] = None
+    bank_account_number: Optional[str] = None
+    bank_name: Optional[str] = None
+    payment_terms: Optional[str] = "net_30"
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "email": "supplier@example.com",
+                "password": "secure_password123",
+                "full_name": "John Supplier",
+                "company_name": "Supplier Inc.",
+                "business_address": "123 Business St, City, Province",
+                "tax_id": "123456789",
+                "phone_number": "+1234567890",
+                "location_zone": "central",
+                "business_type": "wholesaler",
+                "business_description": "Quality electronics supplier",
+                "website_url": "https://supplier-inc.com",
+                "payment_terms": "net_30"
+            }
+        }
 
 class UserLogin(BaseModel):
     email: EmailStr
@@ -50,6 +75,32 @@ class Token(BaseModel):
     is_admin: bool
     is_supplier: bool
     location_zone: str
+    full_name: str
+    email: str
+    company_name: Optional[str] = None
+    
+class SupplierProfile(BaseModel):
+    id: int
+    email: str
+    full_name: str
+    company_name: Optional[str] = None
+    business_address: Optional[str] = None
+    tax_id: Optional[str] = None
+    phone_number: Optional[str] = None
+    location_zone: str
+    business_type: Optional[str] = None
+    business_description: Optional[str] = None
+    website_url: Optional[str] = None
+    bank_account_name: Optional[str] = None
+    bank_account_number: Optional[str] = None
+    bank_name: Optional[str] = None
+    payment_terms: Optional[str] = None
+    is_verified: bool = False
+    verification_status: str = "pending"
+    created_at: Optional[datetime] = None
+    
+    class Config:
+        from_attributes = True
 
 class UserProfile(BaseModel):
     id: int
@@ -96,6 +147,32 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     password_bytes = plain_password.encode('utf-8')[:72]
     hashed_bytes = hashed_password.encode('utf-8')
     return bcrypt.checkpw(password_bytes, hashed_bytes)
+
+def validate_password_strength(password: str) -> bool:
+    """Validate password meets security requirements"""
+    if len(password) < 8:
+        return False
+    if not any(c.isupper() for c in password):
+        return False
+    if not any(c.islower() for c in password):
+        return False
+    if not any(c.isdigit() for c in password):
+        return False
+    return True
+
+def sanitize_phone_number(phone: str) -> str:
+    """Clean and format phone number"""
+    import re
+    # Remove all non-digit characters except +
+    cleaned = re.sub(r'[^\d+]', '', phone)
+    return cleaned
+
+def validate_business_email(email: str) -> bool:
+    """Basic validation for business email addresses"""
+    # Reject common personal email providers
+    personal_domains = ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com']
+    domain = email.split('@')[1].lower()
+    return domain not in personal_domains
 
 def create_access_token(data: dict) -> str:
     to_encode = data.copy()
@@ -179,7 +256,10 @@ async def login(credentials: UserLogin, db: Session = Depends(get_db)):
         user_id=user.id,
         is_admin=user.is_admin,
         is_supplier=user.is_supplier,
-        location_zone=user.location_zone
+        location_zone=user.location_zone,
+        full_name=user.full_name,
+        email=user.email,
+        company_name=user.company_name if user.is_supplier else None
     )
 
 @router.get("/me", response_model=UserProfile)
@@ -280,13 +360,181 @@ async def change_password(
     
     return {"message": "Password changed successfully"}
 
+@router.get("/supplier/profile", response_model=SupplierProfile)
+async def get_supplier_profile(user: User = Depends(verify_token), db: Session = Depends(get_db)):
+    """Get supplier profile information"""
+    if not user.is_supplier:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Supplier access required"
+        )
+    
+    return SupplierProfile.from_orm(user)
+
+@router.put("/supplier/profile", response_model=SupplierProfile)
+async def update_supplier_profile(
+    full_name: Optional[str] = None,
+    company_name: Optional[str] = None,
+    business_address: Optional[str] = None,
+    tax_id: Optional[str] = None,
+    phone_number: Optional[str] = None,
+    location_zone: Optional[str] = None,
+    business_type: Optional[str] = None,
+    business_description: Optional[str] = None,
+    website_url: Optional[str] = None,
+    bank_account_name: Optional[str] = None,
+    bank_account_number: Optional[str] = None,
+    bank_name: Optional[str] = None,
+    payment_terms: Optional[str] = None,
+    user: User = Depends(verify_token),
+    db: Session = Depends(get_db)
+):
+    """Update supplier profile information"""
+    if not user.is_supplier:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Supplier access required"
+        )
+    
+    # Check if company name is being changed and is unique
+    if company_name and company_name != user.company_name:
+        existing_company = db.query(User).filter(
+            User.company_name == company_name,
+            User.is_supplier.is_(True),
+            User.id != user.id
+        ).first()
+        if existing_company:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail="Company name already in use"
+            )
+    
+    # Update fields
+    if full_name is not None:
+        user.full_name = full_name
+    if company_name is not None:
+        user.company_name = company_name
+    if business_address is not None:
+        user.business_address = business_address
+    if tax_id is not None:
+        user.tax_id = tax_id
+    if phone_number is not None:
+        user.phone_number = sanitize_phone_number(phone_number)
+    if location_zone is not None:
+        user.location_zone = location_zone
+    if business_type is not None:
+        user.business_type = business_type
+    if business_description is not None:
+        user.business_description = business_description
+    if website_url is not None:
+        user.website_url = website_url
+    if bank_account_name is not None:
+        user.bank_account_name = bank_account_name
+    if bank_account_number is not None:
+        user.bank_account_number = bank_account_number
+    if bank_name is not None:
+        user.bank_name = bank_name
+    if payment_terms is not None:
+        user.payment_terms = payment_terms
+    
+    db.commit()
+    db.refresh(user)
+    
+    return SupplierProfile.from_orm(user)
+
+@router.post("/supplier/verify-business")
+async def request_business_verification(
+    user: User = Depends(verify_token),
+    db: Session = Depends(get_db)
+):
+    """Request business verification for supplier account"""
+    if not user.is_supplier:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Supplier access required"
+        )
+    
+    # Check if required fields are provided
+    required_fields = {
+        "company_name": user.company_name,
+        "business_address": user.business_address,
+        "tax_id": user.tax_id,
+        "phone_number": user.phone_number
+    }
+    
+    missing_fields = [field for field, value in required_fields.items() if not value]
+    if missing_fields:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Missing required fields for verification: {', '.join(missing_fields)}"
+        )
+    
+    # Update verification status
+    user.verification_status = "submitted"
+    db.commit()
+    
+    return {
+        "message": "Verification request submitted successfully",
+        "status": "submitted",
+        "estimated_review_time": "2-3 business days"
+    }
+
+@router.get("/supplier/verification-status")
+async def get_verification_status(user: User = Depends(verify_token)):
+    """Get current verification status"""
+    if not user.is_supplier:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Supplier access required"
+        )
+    
+    status_descriptions = {
+        "pending": "Account created, verification not yet requested",
+        "submitted": "Verification documents submitted, under review",
+        "verified": "Account verified and approved",
+        "rejected": "Verification rejected, please update information"
+    }
+    
+    return {
+        "status": user.verification_status or "pending",
+        "is_verified": user.is_verified or False,
+        "description": status_descriptions.get(user.verification_status, "Unknown status")
+    }
+
 @router.post("/register-supplier", response_model=Token)
 async def register_supplier(supplier_data: SupplierRegister, db: Session = Depends(get_db)):
-    """Register a new supplier"""
+    """Register a new supplier with enhanced validation"""
+    # Validate password strength
+    if not validate_password_strength(supplier_data.password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must be at least 8 characters with uppercase, lowercase, and number"
+        )
+    
+    # Validate business email (optional warning)
+    if not validate_business_email(supplier_data.email):
+        # Just log for now, don't block registration
+        print(f"Warning: Personal email domain used for business registration: {supplier_data.email}")
+    
     # Check if user exists
     existing_user = db.query(User).filter(User.email == supplier_data.email).first()
     if existing_user:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
+    
+    # Check if company name already exists
+    if supplier_data.company_name:
+        existing_company = db.query(User).filter(
+            User.company_name == supplier_data.company_name,
+            User.is_supplier.is_(True)
+        ).first()
+        if existing_company:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail="Company name already registered"
+            )
+    
+    # Sanitize phone number
+    cleaned_phone = sanitize_phone_number(supplier_data.phone_number)
     
     # Create new supplier
     new_supplier = User(
@@ -296,10 +544,19 @@ async def register_supplier(supplier_data: SupplierRegister, db: Session = Depen
         company_name=supplier_data.company_name,
         business_address=supplier_data.business_address,
         tax_id=supplier_data.tax_id,
-        phone_number=supplier_data.phone_number,
+        phone_number=cleaned_phone,
         location_zone=supplier_data.location_zone,
+        business_type=supplier_data.business_type,
+        business_description=supplier_data.business_description,
+        website_url=supplier_data.website_url,
+        bank_account_name=supplier_data.bank_account_name,
+        bank_account_number=supplier_data.bank_account_number,
+        bank_name=supplier_data.bank_name,
+        payment_terms=supplier_data.payment_terms,
         is_supplier=True,
-        is_admin=False
+        is_admin=False,
+        is_verified=False,
+        verification_status="pending"
     )
     
     db.add(new_supplier)
@@ -307,7 +564,11 @@ async def register_supplier(supplier_data: SupplierRegister, db: Session = Depen
     db.refresh(new_supplier)
     
     # Create token
-    access_token = create_access_token({"user_id": new_supplier.id, "email": new_supplier.email})
+    access_token = create_access_token({
+        "user_id": new_supplier.id, 
+        "email": new_supplier.email,
+        "is_supplier": True
+    })
     
     return Token(
         access_token=access_token,
@@ -315,5 +576,8 @@ async def register_supplier(supplier_data: SupplierRegister, db: Session = Depen
         user_id=new_supplier.id,
         is_admin=new_supplier.is_admin,
         is_supplier=new_supplier.is_supplier,
-        location_zone=new_supplier.location_zone
+        location_zone=new_supplier.location_zone,
+        full_name=new_supplier.full_name,
+        email=new_supplier.email,
+        company_name=new_supplier.company_name
     )

@@ -1,9 +1,7 @@
-Client ID
-12a8c4c6-9bc6-4f80-9ea9-5a26842f2d53
-
-Client Secret
-6nCZym5JnoZBhmYBFhMve34qcNiIkpou
-
-Encryption Key
-lLus8OEFYep4Fjj3ciZnreBYz1JajcrXWuB0KxOmBbs=
+Public key
+FLWPUBK_TEST-9451b8a5c95b08dae2ae0366bd89a079-X
+Secret key
+FLWSECK_TEST-d55e0d7ae8a0e08b6d6078ba1f5094c2-X
+Encryption key
+FLWSECK_TEST4ff4b95e2452
 

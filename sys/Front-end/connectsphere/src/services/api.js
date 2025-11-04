@@ -555,6 +555,26 @@ class ApiService {
     });
   }
 
+  // Payment methods
+  async initializePayment(paymentData) {
+    return this.request('/api/payment/initialize', {
+      method: 'POST',
+      body: JSON.stringify(paymentData),
+    });
+  }
+
+  async verifyPayment(transactionId) {
+    return this.request('/api/payment/verify', {
+      method: 'POST',
+      body: JSON.stringify({ transaction_id: transactionId }),
+    });
+  }
+
+  async getTransactionFee(amount, currency = 'USD') {
+    const params = new URLSearchParams({ amount: amount.toString(), currency });
+    return this.request(`/api/payment/fee?${params}`);
+  }
+
   // Utility methods
   isAuthenticated() {
     return !!this.getAuthToken();

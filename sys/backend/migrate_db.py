@@ -31,8 +31,17 @@ def migrate_database():
             ("business_address", "TEXT"),
             ("tax_id", "VARCHAR"),
             ("phone_number", "VARCHAR"),
+            ("business_type", "VARCHAR DEFAULT 'retailer'"),
+            ("business_description", "TEXT"),
+            ("website_url", "VARCHAR"),
             ("supplier_rating", "FLOAT DEFAULT 0.0"),
             ("total_orders_fulfilled", "INTEGER DEFAULT 0"),
+            ("is_verified", "BOOLEAN DEFAULT 0"),
+            ("verification_status", "VARCHAR DEFAULT 'pending'"),
+            ("bank_account_name", "VARCHAR"),
+            ("bank_account_number", "VARCHAR"),
+            ("bank_name", "VARCHAR"),
+            ("payment_terms", "VARCHAR DEFAULT 'net_30'"),
             ("preferred_categories", "JSON DEFAULT '[]'"),
             ("budget_range", "VARCHAR DEFAULT 'medium'"),
             ("experience_level", "VARCHAR DEFAULT 'beginner'"),
@@ -44,7 +53,8 @@ def migrate_database():
             ("weekly_summary", "BOOLEAN DEFAULT 1"),
             ("price_alerts_enabled", "BOOLEAN DEFAULT 0"),
             ("show_recommendations", "BOOLEAN DEFAULT 1"),
-            ("auto_join_groups", "BOOLEAN DEFAULT 1")
+            ("auto_join_groups", "BOOLEAN DEFAULT 1"),
+            ("created_at", "DATETIME DEFAULT CURRENT_TIMESTAMP")
         ]
 
         added_count = 0

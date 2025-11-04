@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { ShoppingCart, Users, DollarSign, TrendingUp, Clock, CheckCircle, AlertCircle, Search, Download, Plus, X } from 'lucide-react';
+import { ShoppingCart, Users, DollarSign, TrendingUp, Clock, CheckCircle, AlertCircle, Search, Download, Plus, X, Package, Edit2, Save, XCircle } from 'lucide-react';
 import SupplierLayout from '../components/SupplierLayout';
 import apiService from '../services/api';
 
@@ -55,6 +55,10 @@ const SupplierDashboard: React.FC = () => {
   const [moderationStats, setModerationStats] = useState<any>(null);
   const [selectedGroup, setSelectedGroup] = useState<any>(null);
   const [showGroupDetails, setShowGroupDetails] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editedGroup, setEditedGroup] = useState<any>(null);
+  const [editedImage, setEditedImage] = useState<File | null>(null);
+  const [editedImagePreview, setEditedImagePreview] = useState<string | null>(null);
   const [processingPayment, setProcessingPayment] = useState(false);
   const [generatingQR, setGeneratingQR] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -233,6 +237,10 @@ const SupplierDashboard: React.FC = () => {
     try {
       const groupDetails = await apiService.getSupplierGroupDetails(groupId);
       setSelectedGroup(groupDetails);
+      setEditedGroup({ ...groupDetails });
+      setEditedImage(null);
+      setEditedImagePreview(null);
+      setIsEditMode(false);
       setShowGroupDetails(true);
     } catch (error) {
       console.error('Error fetching group details:', error);
@@ -251,96 +259,142 @@ const SupplierDashboard: React.FC = () => {
 
   return (
     <SupplierLayout>
-      {/* Tabs - Clear visual hierarchy and state */}
-      <div className="bg-white border-b border-gray-200 shadow-sm sticky top-[73px] z-40">
-        <div className="px-3 sm:px-6">
-          <nav className="flex gap-4 sm:gap-8" role="tablist" aria-label="Supplier sections">
-            <button
-              onClick={() => setActiveTab('orders')}
-              className={`py-4 text-sm font-medium border-b-2 transition focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-                activeTab === 'orders' 
-                  ? 'border-blue-600 text-blue-600 font-semibold' 
-                  : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300'
-              }`}
-              role="tab"
-              aria-selected={activeTab === 'orders'}
-              aria-controls="orders-panel"
-            >
-              Orders
-            </button>
-            <button
-              onClick={() => setActiveTab('analytics')}
-              className={`py-4 text-sm font-medium border-b-2 transition focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-                activeTab === 'analytics' 
-                  ? 'border-blue-600 text-blue-600 font-semibold' 
-                  : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300'
-              }`}
-              role="tab"
-              aria-selected={activeTab === 'analytics'}
-              aria-controls="analytics-panel"
-            >
-              Analytics
-            </button>
-            <button
-              onClick={() => setActiveTab('products')}
-              className={`py-4 text-sm font-medium border-b-2 transition focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-                activeTab === 'products' 
-                  ? 'border-blue-600 text-blue-600 font-semibold' 
-                  : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300'
-              }`}
-              role="tab"
-              aria-selected={activeTab === 'products'}
-              aria-controls="groups-panel"
-            >
-              Groups
-            </button>
-            <button
-              onClick={() => setActiveTab('invoices')}
-              className={`py-4 text-sm font-medium border-b-2 transition focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-                activeTab === 'invoices' 
-                  ? 'border-blue-600 text-blue-600 font-semibold' 
-                  : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300'
-              }`}
-              role="tab"
-              aria-selected={activeTab === 'invoices'}
-              aria-controls="invoices-panel"
-            >
-              Invoices
-            </button>
-            <button
-              onClick={() => setActiveTab('payments')}
-              className={`py-4 text-sm font-medium border-b-2 transition focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-                activeTab === 'payments' 
-                  ? 'border-blue-600 text-blue-600 font-semibold' 
-                  : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300'
-              }`}
-              role="tab"
-              aria-selected={activeTab === 'payments'}
-              aria-controls="payments-panel"
-            >
-              Payments
-            </button>
-            <button
-              onClick={() => setActiveTab('notifications')}
-              className={`py-4 text-sm font-medium border-b-2 transition focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-                activeTab === 'notifications' 
-                  ? 'border-blue-600 text-blue-600 font-semibold' 
-                  : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300'
-              }`}
-              role="tab"
-              aria-selected={activeTab === 'notifications'}
-              aria-controls="notifications-panel"
-            >
-              Notifications
-            </button>
+      {/* Enhanced Header with Quick Actions */}
+      <div className="bg-gradient-to-r from-blue-50 to-indigo-100 border-b border-gray-200 mb-6">
+        <div className="px-6 py-8">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Supplier Dashboard</h1>
+              <p className="text-gray-600 mt-2">Manage your products, orders, and group buying opportunities</p>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <button
+                onClick={() => window.location.href = '/supplier/profile'}
+                className="inline-flex items-center px-4 py-2 bg-white text-gray-700 font-medium rounded-lg border border-gray-300 hover:bg-gray-50 transition-colors duration-200 shadow-md"
+              >
+                <Edit2 className="w-4 h-4 mr-2" />
+                Edit Profile
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Enhanced Metrics Cards */}
+      {metrics && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8 px-6">
+          <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-shadow duration-200 border border-blue-200">
+            <div className="flex items-center justify-between mb-4">
+              <div className="p-3 bg-blue-500 rounded-xl shadow-md">
+                <ShoppingCart className="w-6 h-6 text-white" />
+              </div>
+              <div className="text-right">
+                <p className="text-sm font-medium text-blue-600">This Month</p>
+                <p className="text-xs text-blue-500">vs last month</p>
+              </div>
+            </div>
+            <p className="text-2xl font-bold text-gray-900 mb-1">{metrics.pending_orders}</p>
+            <p className="text-sm text-gray-600 font-medium">Pending Orders</p>
+            {metrics.pending_orders > 0 && (
+              <div className="mt-3 flex items-center text-xs text-blue-600">
+                <Clock className="w-3 h-3 mr-1" />
+                Requires action
+              </div>
+            )}
+          </div>
+
+          <div className="bg-gradient-to-br from-green-50 to-emerald-100 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-shadow duration-200 border border-green-200">
+            <div className="flex items-center justify-between mb-4">
+              <div className="p-3 bg-green-500 rounded-xl shadow-md">
+                <Users className="w-6 h-6 text-white" />
+              </div>
+              <div className="text-right">
+                <p className="text-sm font-medium text-green-600">Active</p>
+                <p className="text-xs text-green-500">Live groups</p>
+              </div>
+            </div>
+            <p className="text-2xl font-bold text-gray-900 mb-1">{metrics.active_groups}</p>
+            <p className="text-sm text-gray-600 font-medium">Active Groups</p>
+            <div className="mt-3 flex items-center text-xs text-green-600">
+              <TrendingUp className="w-3 h-3 mr-1" />
+              Growing participation
+            </div>
+          </div>
+
+          <div className="bg-gradient-to-br from-purple-50 to-violet-100 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-shadow duration-200 border border-purple-200">
+            <div className="flex items-center justify-between mb-4">
+              <div className="p-3 bg-purple-500 rounded-xl shadow-md">
+                <DollarSign className="w-6 h-6 text-white" />
+              </div>
+              <div className="text-right">
+                <p className="text-sm font-medium text-purple-600">30 Days</p>
+                <p className="text-xs text-purple-500">Revenue</p>
+              </div>
+            </div>
+            <p className="text-2xl font-bold text-gray-900 mb-1">${metrics.monthly_revenue.toFixed(2)}</p>
+            <p className="text-sm text-gray-600 font-medium">Monthly Revenue</p>
+            <div className="mt-3 flex items-center text-xs text-purple-600">
+              <TrendingUp className="w-3 h-3 mr-1" />
+              +12% from last month
+            </div>
+          </div>
+
+          <div className="bg-gradient-to-br from-orange-50 to-amber-100 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-shadow duration-200 border border-orange-200">
+            <div className="flex items-center justify-between mb-4">
+              <div className="p-3 bg-orange-500 rounded-xl shadow-md">
+                <TrendingUp className="w-6 h-6 text-white" />
+              </div>
+              <div className="text-right">
+                <p className="text-sm font-medium text-orange-600">Total</p>
+                <p className="text-xs text-orange-500">Saved</p>
+              </div>
+            </div>
+            <p className="text-2xl font-bold text-gray-900 mb-1">${metrics.total_savings_generated.toFixed(2)}</p>
+            <p className="text-sm text-gray-600 font-medium">Savings Generated</p>
+            <div className="mt-3 flex items-center text-xs text-orange-600">
+              <Users className="w-3 h-3 mr-1" />
+              For customers
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tabs - Enhanced design */}
+      <div className="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-40 mx-6 rounded-t-xl">
+        <div className="px-6">
+          <nav className="flex gap-8" role="tablist" aria-label="Supplier sections">
+            {[
+              { id: 'orders', label: 'Orders & Fulfillment', icon: ShoppingCart },
+              { id: 'analytics', label: 'Analytics & Insights', icon: TrendingUp },
+              { id: 'products', label: 'Product Management', icon: Package },
+              { id: 'groups', label: 'Group Management', icon: Users }
+            ].map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                onClick={() => setActiveTab(id)}
+                className={`flex items-center py-4 text-sm font-medium border-b-2 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                  activeTab === id 
+                    ? 'border-blue-600 text-blue-600 font-semibold' 
+                    : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300'
+                }`}
+                role="tab"
+                aria-selected={activeTab === id}
+                aria-controls={`${id}-panel`}
+              >
+                <Icon className="w-4 h-4 mr-2" />
+                {label}
+              </button>
+            ))}
           </nav>
         </div>
       </div>
 
-      {/* Main Content */}
-      <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+      {/* Tab Content Container */}
+      <div className="bg-white mx-6 rounded-b-xl shadow-sm border border-t-0 border-gray-200">
+        <main className="flex-1 p-6">
+          {/* Tab Content */}
+      <main className="flex-1 px-6 py-8">
         {/* Tab Content */}
-                {/* Tab Content */}
         {activeTab === 'orders' && (
           <div className="space-y-8">
             {/* Order Management */}
@@ -493,13 +547,6 @@ const SupplierDashboard: React.FC = () => {
             <div>
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-lg font-semibold text-gray-900">Group Moderation</h2>
-                <button
-                  onClick={() => setShowCreateModal(true)}
-                  className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 font-medium"
-                >
-                  <Plus className="w-5 h-5" />
-                  Create New Group
-                </button>
               </div>
               
               {/* Moderation Stats */}
@@ -552,159 +599,9 @@ const SupplierDashboard: React.FC = () => {
                 </div>
               )}
 
-              {/* Group Moderation Sections - Side by Side */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                {/* Active Groups for Moderation */}
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="p-2 bg-blue-100 rounded-lg">
-                    <Users className="w-5 h-5 text-blue-600" />
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-900">Active Groups</h3>
-                    <p className="text-sm text-gray-600">Groups using your products that are currently active</p>
-                  </div>
-                </div>
-                {activeGroups.length === 0 ? (
-                  <div className="text-center py-12">
-                    <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">No active groups</h3>
-                    <p className="text-gray-600">Groups using your products will appear here when they become active.</p>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="border-b border-gray-200">
-                          <th className="text-left py-3 px-4 font-medium text-gray-900">Group Details</th>
-                          <th className="text-left py-3 px-4 font-medium text-gray-900">Progress</th>
-                          <th className="text-left py-3 px-4 font-medium text-gray-900">Product</th>
-                          <th className="text-right py-3 px-4 font-medium text-gray-900">Total Amount</th>
-                          <th className="text-center py-3 px-4 font-medium text-gray-900">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {activeGroups.map((group) => (
-                          <tr key={group.id} className="border-b border-gray-100 hover:bg-gray-50">
-                            <td className="py-4 px-4">
-                              <div className="font-medium text-gray-900">{group.name}</div>
-                              <div className="text-sm text-gray-600">by {group.creator}</div>
-                              <div className="text-sm text-gray-600">Due: {group.dueDate}</div>
-                            </td>
-                            <td className="py-4 px-4">
-                              <div className="text-sm text-gray-900">{group.members}/{group.targetMembers} members</div>
-                              <div className="w-full bg-gray-200 rounded-full h-2 mt-1">
-                                <div
-                                  className="bg-blue-600 h-2 rounded-full"
-                                  style={{ width: `${Math.min((group.members / group.targetMembers) * 100, 100)}%` }}
-                                ></div>
-                              </div>
-                            </td>
-                            <td className="py-4 px-4">
-                              <div className="text-sm font-medium text-gray-900">{group.product.name}</div>
-                              <div className="text-sm text-gray-600">{group.product.regularPrice} → {group.product.bulkPrice}</div>
-                            </td>
-                            <td className="py-4 px-4 text-right">
-                              <div className="font-semibold text-gray-900">{group.totalAmount}</div>
-                            </td>
-                            <td className="py-4 px-4">
-                              <div className="flex justify-center gap-2">
-                                <Button
-                                  onClick={() => handleViewGroupDetails(group.id)}
-                                  variant="outline"
-                                  size="sm"
-                                >
-                                  View Details
-                                </Button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
 
-              {/* Groups Ready for Payment */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="p-2 bg-green-100 rounded-lg">
-                    <DollarSign className="w-5 h-5 text-green-600" />
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-900">Ready for Payment</h3>
-                    <p className="text-sm text-gray-600">Groups that have reached target and are ready for payment processing</p>
-                  </div>
-                </div>
 
-                {readyForPaymentGroups.length === 0 ? (
-                  <div className="text-center py-12">
-                    <DollarSign className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">No groups ready for payment</h3>
-                    <p className="text-gray-600">Groups will appear here when they reach their target participation.</p>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="border-b border-gray-200">
-                          <th className="text-left py-3 px-4 font-medium text-gray-900">Group Details</th>
-                          <th className="text-left py-3 px-4 font-medium text-gray-900">Participants</th>
-                          <th className="text-left py-3 px-4 font-medium text-gray-900">Product</th>
-                          <th className="text-right py-3 px-4 font-medium text-gray-900">Total Amount</th>
-                          <th className="text-center py-3 px-4 font-medium text-gray-900">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {readyForPaymentGroups.map((group) => (
-                          <tr key={group.id} className="border-b border-gray-100 hover:bg-gray-50">
-                            <td className="py-4 px-4">
-                              <div className="font-medium text-gray-900">{group.name}</div>
-                              <div className="text-sm text-gray-600">by {group.creator}</div>
-                              <div className="text-sm text-gray-600">Category: {group.category}</div>
-                            </td>
-                            <td className="py-4 px-4">
-                              <div className="text-sm text-gray-900">{group.members} members</div>
-                              <div className="text-sm text-green-600">Target reached ✓</div>
-                            </td>
-                            <td className="py-4 px-4">
-                              <div className="text-sm font-medium text-gray-900">{group.product.name}</div>
-                              <div className="text-sm text-gray-600">{group.product.bulkPrice} each</div>
-                            </td>
-                            <td className="py-4 px-4 text-right">
-                              <div className="font-semibold text-gray-900">{group.totalAmount}</div>
-                            </td>
-                            <td className="py-4 px-4">
-                              <div className="flex justify-center gap-2">
-                                <Button
-                                  onClick={() => handleProcessPayment(group.id)}
-                                  disabled={processingPayment}
-                                  size="sm"
-                                  className="bg-green-600 hover:bg-green-700"
-                                >
-                                  {processingPayment ? 'Processing...' : 'Process Payment'}
-                                </Button>
-                                <Button
-                                  onClick={() => handleGenerateQR(group.id)}
-                                  disabled={generatingQR}
-                                  variant="outline"
-                                  size="sm"
-                                >
-                                  {generatingQR ? 'Generating...' : 'Generate QR'}
-                                </Button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-              </div>
-
-              {/* Legacy Group Orders Sections - Side by Side */}
+              {/* Orders Related to Products */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Pending Group Orders */}
                 <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
@@ -862,6 +759,239 @@ const SupplierDashboard: React.FC = () => {
                   </div>
                 )}
               </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'groups' && (
+          <div className="space-y-8">
+            {/* Group Management Header */}
+            <div className="flex justify-between items-center">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900">Group Management</h2>
+                <p className="text-gray-600 mt-1">Manage your active groups and track payment-ready opportunities</p>
+              </div>
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="inline-flex items-center px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors duration-200 shadow-md hover:shadow-lg"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Create New Group
+              </button>
+            </div>
+
+            {/* Group Management Stats */}
+            {moderationStats && (
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                <div className="bg-gradient-to-br from-blue-50 via-blue-50 to-indigo-100 rounded-2xl shadow-md hover:shadow-xl transition-all duration-300 p-6 border border-blue-100">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="p-2.5 bg-blue-500 rounded-xl shadow-lg">
+                      <Users className="w-5 h-5 text-white" />
+                    </div>
+                    <div className="px-3 py-1 bg-blue-100 rounded-full">
+                      <p className="text-xs font-semibold text-blue-700">Active</p>
+                    </div>
+                  </div>
+                  <p className="text-sm font-medium text-gray-600 mb-1">Active Groups</p>
+                  <p className="text-3xl font-bold text-blue-600">{moderationStats.active_groups || 0}</p>
+                </div>
+
+                <div className="bg-gradient-to-br from-green-50 via-green-50 to-emerald-100 rounded-2xl shadow-md hover:shadow-xl transition-all duration-300 p-6 border border-green-100">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="p-2.5 bg-green-500 rounded-xl shadow-lg">
+                      <Package className="w-5 h-5 text-white" />
+                    </div>
+                    <div className="px-3 py-1 bg-green-100 rounded-full">
+                      <p className="text-xs font-semibold text-green-700">Ready</p>
+                    </div>
+                  </div>
+                  <p className="text-sm font-medium text-gray-600 mb-1">Ready for Payment</p>
+                  <p className="text-3xl font-bold text-green-600">{moderationStats.ready_for_payment || 0}</p>
+                </div>
+
+                <div className="bg-gradient-to-br from-purple-50 via-purple-50 to-violet-100 rounded-2xl shadow-md hover:shadow-xl transition-all duration-300 p-6 border border-purple-100">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="p-2.5 bg-purple-500 rounded-xl shadow-lg">
+                      <Users className="w-5 h-5 text-white" />
+                    </div>
+                    <div className="px-3 py-1 bg-purple-100 rounded-full">
+                      <p className="text-xs font-semibold text-purple-700">Total</p>
+                    </div>
+                  </div>
+                  <p className="text-sm font-medium text-gray-600 mb-1">Total Members</p>
+                  <p className="text-3xl font-bold text-purple-600">{moderationStats.total_members || 0}</p>
+                </div>
+
+                <div className="bg-gradient-to-br from-orange-50 via-orange-50 to-amber-100 rounded-2xl shadow-md hover:shadow-xl transition-all duration-300 p-6 border border-orange-100">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="p-2.5 bg-orange-500 rounded-xl shadow-lg">
+                      <Clock className="w-5 h-5 text-white" />
+                    </div>
+                    <div className="px-3 py-1 bg-orange-100 rounded-full">
+                      <p className="text-xs font-semibold text-orange-700">Pending</p>
+                    </div>
+                  </div>
+                  <p className="text-sm font-medium text-gray-600 mb-1">Pending Orders</p>
+                  <p className="text-3xl font-bold text-orange-600">{moderationStats.pending_orders || 0}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Active Groups and Ready for Payment Sections */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Active Groups */}
+              <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+                <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-blue-50 via-indigo-50 to-blue-50">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2.5 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl shadow-md">
+                        <Users className="w-6 h-6 text-white" />
+                      </div>
+                      <div>
+                        <h3 className="text-xl font-bold text-gray-900">Active Groups</h3>
+                        <p className="text-sm text-gray-500 mt-0.5">Currently active group buying opportunities</p>
+                      </div>
+                    </div>
+                    <span className="inline-flex items-center px-3 py-1.5 rounded-full text-sm font-bold bg-blue-100 text-blue-700 shadow-sm">
+                      {activeGroups.length} Groups
+                    </span>
+                  </div>
+                </div>
+                <div className="p-6 max-h-[500px] overflow-y-auto space-y-4 bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+                  {activeGroups.length === 0 ? (
+                    <div className="text-center py-12">
+                      <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">No active groups</h3>
+                      <p className="text-gray-600">Create your first group to get started.</p>
+                    </div>
+                  ) : (
+                    activeGroups.map((group) => (
+                      <div key={group.id} className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-lg transition-all duration-300 hover:border-blue-300 transform hover:-translate-y-1">
+                        <div className="flex items-start gap-4 mb-4">
+                          <div className="flex-shrink-0">
+                            <img
+                              src={group.product?.image || group.image || '/api/placeholder/150/100'}
+                              alt={group.product?.name || group.name}
+                              className="w-32 h-24 object-cover rounded-xl border-2 border-gray-200 shadow-md"
+                            />
+                          </div>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-2">
+                              <h4 className="text-lg font-bold text-gray-900">{group.name}</h4>
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold bg-blue-100 text-blue-700 rounded-full shadow-sm">
+                                <Users className="w-3 h-3" /> {group.members}/{group.targetMembers}
+                              </span>
+                            </div>
+                            <p className="text-sm text-gray-600 mb-3 line-clamp-2">{group.description}</p>
+                            <div className="flex flex-wrap gap-3 text-xs text-gray-600 mb-4">
+                              <span className="px-2 py-1 bg-gray-100 rounded-full">Category: <span className="font-semibold text-gray-800">{group.category}</span></span>
+                              <span className="px-2 py-1 bg-gray-100 rounded-full">Due: <span className="font-semibold text-gray-800">{group.dueDate}</span></span>
+                              <span className="px-2 py-1 bg-blue-100 rounded-full">Amount: <span className="font-semibold text-blue-700">{group.totalAmount}</span></span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleViewGroupDetails(group.id)}
+                            className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-medium rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-md hover:shadow-lg"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                            Manage
+                          </button>
+                          <button 
+                            onClick={() => handleViewGroupDetails(group.id)}
+                            className="px-4 py-2.5 border-2 border-gray-300 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50 hover:border-gray-400 transition-all duration-200"
+                          >
+                            View Details
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Ready for Payment */}
+              <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+                <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-green-50 via-emerald-50 to-green-50">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2.5 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl shadow-md">
+                        <DollarSign className="w-6 h-6 text-white" />
+                      </div>
+                      <div>
+                        <h3 className="text-xl font-bold text-gray-900">Ready for Payment</h3>
+                        <p className="text-sm text-gray-500 mt-0.5">Groups that have reached their target</p>
+                      </div>
+                    </div>
+                    <span className="inline-flex items-center px-3 py-1.5 rounded-full text-sm font-bold bg-green-100 text-green-700 shadow-sm">
+                      {readyForPaymentGroups.length} Groups
+                    </span>
+                  </div>
+                </div>
+                <div className="p-6 max-h-[500px] overflow-y-auto space-y-4 bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50">
+                  {readyForPaymentGroups.length === 0 ? (
+                    <div className="text-center py-12">
+                      <CheckCircle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">No groups ready</h3>
+                      <p className="text-gray-600">Groups will appear here when they reach their targets.</p>
+                    </div>
+                  ) : (
+                    readyForPaymentGroups.map((group: any) => (
+                      <div key={group.id} className="bg-gradient-to-br from-green-50 to-emerald-50 border-2 border-green-200 rounded-xl p-5 hover:shadow-lg transition-all duration-300 hover:border-green-300 transform hover:-translate-y-1">
+                        <div className="flex items-start justify-between mb-4">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-3">
+                              <h4 className="text-lg font-bold text-gray-900">{group.name}</h4>
+                              <span className="inline-flex items-center gap-1 px-3 py-1 text-xs font-bold bg-green-500 text-white rounded-full shadow-md">
+                                <CheckCircle className="w-3 h-3" /> Ready
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3 mt-4">
+                              <div className="bg-white p-3 rounded-xl shadow-sm">
+                                <p className="text-xs text-gray-500 mb-1 font-medium">Members</p>
+                                <p className="text-lg font-bold text-gray-900">{group.members}/{group.targetMembers}</p>
+                              </div>
+                              <div className="bg-white p-3 rounded-xl shadow-sm">
+                                <p className="text-xs text-gray-500 mb-1 font-medium">Total Amount</p>
+                                <p className="text-lg font-bold text-green-600">{group.totalAmount}</p>
+                              </div>
+                              <div className="bg-white p-3 rounded-xl shadow-sm">
+                                <p className="text-xs text-gray-500 mb-1 font-medium">Category</p>
+                                <p className="text-sm font-bold text-gray-900">{group.category}</p>
+                              </div>
+                              <div className="bg-white p-3 rounded-xl shadow-sm">
+                                <p className="text-xs text-gray-500 mb-1 font-medium">Due Date</p>
+                                <p className="text-sm font-bold text-gray-900">{group.dueDate}</p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleProcessPayment(group.id)}
+                            disabled={processingPayment}
+                            className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-green-600 to-emerald-600 text-white text-sm font-medium rounded-xl hover:from-green-700 hover:to-emerald-700 transition-all duration-200 shadow-md hover:shadow-lg disabled:opacity-50"
+                          >
+                            {processingPayment ? (
+                              <Clock className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <DollarSign className="w-4 h-4" />
+                            )}
+                            Process Payment
+                          </button>
+                          <button
+                            onClick={() => handleViewGroupDetails(group.id)}
+                            className="px-4 py-2.5 border-2 border-gray-300 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50 hover:border-gray-400 transition-all duration-200"
+                          >
+                            View
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -1433,6 +1563,500 @@ const SupplierDashboard: React.FC = () => {
         </div>
       )}
 
+      {/* Group Details/Edit Modal */}
+      {showGroupDetails && selectedGroup && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center z-50"
+          onClick={() => {
+            setShowGroupDetails(false);
+            setIsEditMode(false);
+          }}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full m-4 flex flex-col max-h-[90vh] overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="p-6 border-b bg-gradient-to-r from-blue-50 to-indigo-50">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl shadow-md">
+                    <Package className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-bold text-gray-900">
+                      {isEditMode ? 'Edit Group Details' : 'Group Details'}
+                    </h2>
+                    <p className="text-sm text-gray-600 mt-1">
+                      {isEditMode ? 'Update group buying information' : 'View complete group information'}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {!isEditMode ? (
+                    <button
+                      onClick={() => setIsEditMode(true)}
+                      className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all duration-200 shadow-md"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                      Edit
+                    </button>
+                  ) : (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          setEditedGroup({ ...selectedGroup });
+                          setEditedImage(null);
+                          setEditedImagePreview(null);
+                          setIsEditMode(false);
+                        }}
+                        className="px-4 py-2 border-2 border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-all duration-200"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={async () => {
+                          try {
+                            // Handle image upload first if a new image was selected
+                            let imageUrl = editedGroup.image;
+                            if (editedImage) {
+                              const uploadResult = await apiService.uploadSupplierImage(editedImage);
+                              imageUrl = uploadResult.image_url;
+                            }
+
+                            // Prepare update data
+                            const updateData: any = {
+                              name: editedGroup.name,
+                              description: editedGroup.description,
+                              long_description: editedGroup.long_description || editedGroup.description,
+                              category: editedGroup.category,
+                              price: parseFloat(editedGroup.price),
+                              original_price: parseFloat(editedGroup.original_price),
+                              max_participants: parseInt(editedGroup.max_participants || editedGroup.targetMembers),
+                              shipping_info: editedGroup.shipping_info,
+                              estimated_delivery: editedGroup.estimated_delivery
+                            };
+
+                            // Add image if it was changed
+                            if (editedImage) {
+                              updateData.image = imageUrl;
+                            }
+
+                            // Add end_date if it exists
+                            if (editedGroup.end_date) {
+                              updateData.end_date = typeof editedGroup.end_date === 'string' 
+                                ? editedGroup.end_date 
+                                : new Date(editedGroup.end_date).toISOString();
+                            }
+
+                            // Update the group via API
+                            const response = await fetch(`http://localhost:8000/api/supplier/groups/${editedGroup.id}`, {
+                              method: 'PUT',
+                              headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${localStorage.getItem('token')}`
+                              },
+                              body: JSON.stringify(updateData)
+                            });
+
+                            if (!response.ok) {
+                              const error = await response.json();
+                              throw new Error(error.detail || 'Failed to update group');
+                            }
+
+                            // Refresh data
+                            fetchGroupModerationData();
+
+                            // Update the selected group with new data
+                            const updatedResponse = await fetch(`http://localhost:8000/api/supplier/groups/${editedGroup.id}`, {
+                              headers: {
+                                'Authorization': `Bearer ${localStorage.getItem('token')}`
+                              }
+                            });
+                            const updatedGroup = await updatedResponse.json();
+                            setSelectedGroup(updatedGroup);
+                            setEditedGroup(updatedGroup);
+
+                            // Reset image state
+                            setEditedImage(null);
+                            setEditedImagePreview(null);
+                            setIsEditMode(false);
+                            alert('Group updated successfully!');
+                          } catch (error: any) {
+                            console.error('Failed to update group:', error);
+                            alert(error.message || 'Failed to update group. Please try again.');
+                          }
+                        }}
+                        className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-all duration-200 shadow-md"
+                      >
+                        <Save className="w-4 h-4" />
+                        Save Changes
+                      </button>
+                    </div>
+                  )}
+                  <button
+                    onClick={() => {
+                      setShowGroupDetails(false);
+                      setIsEditMode(false);
+                    }}
+                    className="text-gray-400 hover:text-gray-600 p-2"
+                  >
+                    <X className="w-6 h-6" />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-gray-50">
+              {/* Group Image */}
+              <div className="bg-white rounded-xl p-6 shadow-sm">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Group Image</h3>
+                {isEditMode ? (
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Update Group Image</label>
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              // Create image preview
+                              const reader = new FileReader();
+                              reader.onload = (e) => {
+                                setEditedImage(file);
+                                setEditedImagePreview(e.target?.result as string);
+                              };
+                              reader.readAsDataURL(file);
+                            } else {
+                              // Clear preview if no file selected
+                              setEditedImage(null);
+                              setEditedImagePreview(null);
+                            }
+                          }}
+                          className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                        />
+                        {editedImage && (
+                          <span className="text-sm text-green-600">✓ New image selected</span>
+                        )}
+                      </div>
+                      <p className="mt-1 text-sm text-gray-500">Upload a new image (PNG, JPG up to 5MB) or leave empty to keep current image</p>
+                    </div>
+
+                    {/* Image Preview */}
+                    <div className="relative">
+                      <img
+                        src={editedImagePreview || editedGroup.image || '/api/placeholder/400/300'}
+                        alt={editedGroup.name}
+                        className="w-full h-64 object-cover rounded-xl shadow-md border-2 border-gray-200"
+                      />
+                      {(editedImage || editedImagePreview) && (
+                        <div className="absolute top-2 right-2 bg-green-500 text-white px-2 py-1 rounded-full text-xs font-medium">
+                          New Image
+                        </div>
+                      )}
+                      {editedImage && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditedImage(null);
+                            setEditedImagePreview(null);
+                            // Clear the file input
+                            const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+                            if (fileInput) fileInput.value = '';
+                          }}
+                          className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors"
+                          title="Remove new image"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <img
+                    src={selectedGroup.image || '/api/placeholder/400/300'}
+                    alt={selectedGroup.name}
+                    className="w-full h-64 object-cover rounded-xl shadow-md"
+                  />
+                )}
+              </div>
+
+              {/* Basic Information */}
+              <div className="bg-white rounded-xl p-6 shadow-sm">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Basic Information</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Group Name</label>
+                    {isEditMode ? (
+                      <input
+                        type="text"
+                        value={editedGroup.name || ''}
+                        onChange={(e) => setEditedGroup({ ...editedGroup, name: e.target.value })}
+                        className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                    ) : (
+                      <p className="text-base text-gray-900 font-medium">{selectedGroup.name}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
+                    {isEditMode ? (
+                      <input
+                        type="text"
+                        value={editedGroup.category || ''}
+                        onChange={(e) => setEditedGroup({ ...editedGroup, category: e.target.value })}
+                        className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                    ) : (
+                      <p className="text-base text-gray-900 font-medium">{selectedGroup.category}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Created by</label>
+                    <p className="text-base text-purple-600 font-medium">{selectedGroup.creator || selectedGroup.admin_name || 'Supplier'}</p>
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
+                    {isEditMode ? (
+                      <textarea
+                        value={editedGroup.description || ''}
+                        onChange={(e) => setEditedGroup({ ...editedGroup, description: e.target.value })}
+                        className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 h-24"
+                      />
+                    ) : (
+                      <p className="text-base text-gray-700">{selectedGroup.description}</p>
+                    )}
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Long Description</label>
+                    {isEditMode ? (
+                      <textarea
+                        value={editedGroup.long_description || editedGroup.description || ''}
+                        onChange={(e) => setEditedGroup({ ...editedGroup, long_description: e.target.value })}
+                        className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 h-32"
+                      />
+                    ) : (
+                      <p className="text-base text-gray-700">{selectedGroup.long_description || selectedGroup.description}</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Pricing Information */}
+              <div className="bg-white rounded-xl p-6 shadow-sm">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Pricing Information</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Bulk Price</label>
+                    {isEditMode ? (
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={editedGroup.price || ''}
+                        onChange={(e) => setEditedGroup({ ...editedGroup, price: e.target.value })}
+                        className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                    ) : (
+                      <p className="text-xl text-green-600 font-bold">${selectedGroup.price}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Original Price</label>
+                    {isEditMode ? (
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={editedGroup.original_price || ''}
+                        onChange={(e) => setEditedGroup({ ...editedGroup, original_price: e.target.value })}
+                        className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                    ) : (
+                      <p className="text-xl text-gray-500 font-bold line-through">${selectedGroup.original_price}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Savings</label>
+                    <p className="text-xl text-blue-600 font-bold">
+                      ${((selectedGroup.original_price || 0) - (selectedGroup.price || 0)).toFixed(2)}
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Discount</label>
+                    <p className="text-xl text-purple-600 font-bold">
+                      {(((selectedGroup.original_price - selectedGroup.price) / selectedGroup.original_price) * 100).toFixed(0)}%
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Participants Information */}
+              <div className="bg-white rounded-xl p-6 shadow-sm">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Participants Information</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Current Participants</label>
+                    <p className="text-2xl text-blue-600 font-bold">{selectedGroup.participants || selectedGroup.members || 0}</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Target Participants</label>
+                    {isEditMode ? (
+                      <input
+                        type="number"
+                        value={editedGroup.max_participants || editedGroup.targetMembers || ''}
+                        onChange={(e) => setEditedGroup({ ...editedGroup, max_participants: e.target.value })}
+                        className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                    ) : (
+                      <p className="text-2xl text-gray-900 font-bold">{selectedGroup.max_participants || selectedGroup.targetMembers}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Progress</label>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 bg-gray-200 rounded-full h-3">
+                        <div 
+                          className="bg-gradient-to-r from-blue-500 to-indigo-600 h-3 rounded-full transition-all duration-300"
+                          style={{ 
+                            width: `${Math.min(
+                              ((selectedGroup.participants || selectedGroup.members || 0) / 
+                              (selectedGroup.max_participants || selectedGroup.targetMembers || 1)) * 100, 
+                              100
+                            )}%` 
+                          }}
+                        ></div>
+                      </div>
+                      <span className="text-sm font-semibold text-gray-700">
+                        {Math.round(
+                          ((selectedGroup.participants || selectedGroup.members || 0) / 
+                          (selectedGroup.max_participants || selectedGroup.targetMembers || 1)) * 100
+                        )}%
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Delivery Information */}
+              <div className="bg-white rounded-xl p-6 shadow-sm">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Delivery Information</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Shipping Info</label>
+                    {isEditMode ? (
+                      <textarea
+                        value={editedGroup.shipping_info || ''}
+                        onChange={(e) => setEditedGroup({ ...editedGroup, shipping_info: e.target.value })}
+                        className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 h-20"
+                      />
+                    ) : (
+                      <p className="text-base text-gray-700">{selectedGroup.shipping_info || 'No shipping info available'}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Estimated Delivery</label>
+                    {isEditMode ? (
+                      <input
+                        type="text"
+                        value={editedGroup.estimated_delivery || ''}
+                        onChange={(e) => setEditedGroup({ ...editedGroup, estimated_delivery: e.target.value })}
+                        className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                    ) : (
+                      <p className="text-base text-gray-700">{selectedGroup.estimated_delivery || 'To be determined'}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">End Date</label>
+                    {isEditMode ? (
+                      <input
+                        type="datetime-local"
+                        value={editedGroup.end_date ? new Date(editedGroup.end_date).toISOString().slice(0, 16) : ''}
+                        onChange={(e) => setEditedGroup({ ...editedGroup, end_date: e.target.value })}
+                        className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                    ) : (
+                      <p className="text-base text-gray-700">
+                        {selectedGroup.end_date ? new Date(selectedGroup.end_date).toLocaleString() : 'No end date set'}
+                      </p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
+                    <span className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-sm font-semibold ${
+                      selectedGroup.is_active 
+                        ? 'bg-green-100 text-green-700' 
+                        : 'bg-gray-100 text-gray-700'
+                    }`}>
+                      {selectedGroup.is_active ? (
+                        <>
+                          <CheckCircle className="w-4 h-4" />
+                          Active
+                        </>
+                      ) : (
+                        <>
+                          <XCircle className="w-4 h-4" />
+                          Inactive
+                        </>
+                      )}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Product Details */}
+              {selectedGroup.product && (
+                <div className="bg-white rounded-xl p-6 shadow-sm">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Product Details</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Product Name</label>
+                      <p className="text-base text-gray-900 font-medium">{selectedGroup.product.name}</p>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Manufacturer</label>
+                      <p className="text-base text-gray-900">{selectedGroup.product.manufacturer || 'N/A'}</p>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Total Stock</label>
+                      <p className="text-base text-gray-900">{selectedGroup.product.totalStock || 'N/A'} units</p>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Regular Price</label>
+                      <p className="text-base text-gray-500">{selectedGroup.product.regularPrice}</p>
+                    </div>
+
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Product Description</label>
+                      <p className="text-base text-gray-700">{selectedGroup.product.description}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+        </main>
+      </div>
     </SupplierLayout>
   );
 };

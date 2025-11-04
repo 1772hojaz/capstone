@@ -2,6 +2,8 @@ import { Search, MapPin, User, Users, ArrowLeft, Zap, Calendar, Tag, Clock, Cred
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import apiService from '../services/api';
+import PaymentModal from '../components/PaymentModal';
+import PaymentStatusChecker from '../components/PaymentStatusChecker';
 
 export default function GroupDetail() {
   const navigate = useNavigate();
@@ -22,6 +24,12 @@ export default function GroupDetail() {
     agreeToTerms: false
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+
+  // Payment state
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentTransactionId, setPaymentTransactionId] = useState<string | null>(null);
+  const [paymentStatus, setPaymentStatus] = useState<string>('unknown');
+  const [userEmail, setUserEmail] = useState<string>('');
 
   // Location options
   const locationOptions = ['Harare', 'Mbare', 'Glen View', 'Highfield', 'Bulawayo', 'Downtown', 'Uptown', 'Suburbs'];
@@ -148,14 +156,46 @@ export default function GroupDetail() {
     if (groupData.joined || isGoalReached) {
       return;
     }
-    
+
     if (showJoinForm) {
       // Validate form
       if (!validateForm()) {
         return;
       }
 
-      // Submit form data
+      // If card payment is selected, show payment modal
+      if (formData.paymentMethod === 'card') {
+        const totalAmount = (groupData.bulk_price || groupData.price) * formData.quantity;
+        const deliveryFee = formData.deliveryMethod === 'delivery' ? 5.00 : 0;
+        const finalAmount = totalAmount + deliveryFee;
+
+        // Get current user email
+        try {
+          const userData = await apiService.getCurrentUser();
+          const userEmail = userData.email;
+          const txRef = `group_${groupData.group_buy_id || groupData.id}_${Date.now()}`;
+
+          // Store join data for payment success callback (use snake_case keys expected by backend)
+          const joinData = {
+            quantity: formData.quantity,
+            delivery_method: formData.deliveryMethod,
+            payment_method: formData.paymentMethod,
+            special_instructions: formData.specialInstructions || null,
+            group_id: groupData.group_buy_id || groupData.id,
+            tx_ref: txRef
+          };
+          localStorage.setItem('pendingGroupJoin', JSON.stringify(joinData));
+
+          setUserEmail(userEmail);
+          setShowPaymentModal(true);
+        } catch (error) {
+          console.error('Failed to get user data:', error);
+          alert('Failed to get user information. Please try again.');
+        }
+        return;
+      }
+
+      // Submit form data for cash payment
       setJoiningGroup(true);
       try {
         const joinData = {
@@ -181,6 +221,41 @@ export default function GroupDetail() {
       // Show form
       setShowJoinForm(true);
     }
+  };
+
+  // Handle payment success
+  const handlePaymentSuccess = async (paymentData: any) => {
+    setShowPaymentModal(false);
+
+    // Now submit the join request with payment info
+    setJoiningGroup(true);
+    try {
+      const joinData = {
+        quantity: formData.quantity,
+        delivery_method: formData.deliveryMethod,
+        payment_method: formData.paymentMethod,
+        special_instructions: formData.specialInstructions || null,
+        payment_transaction_id: paymentData.data?.id,
+        payment_reference: paymentData.data?.tx_ref
+      };
+
+      await apiService.joinGroup(groupData.group_buy_id || groupData.id, joinData);
+
+      setJoinSuccess(`Successfully joined "${groupData.product_name || groupData.name}" with card payment! Check My Groups to track progress.`);
+      setTimeout(() => setJoinSuccess(null), 5000);
+      setShowJoinForm(false);
+    } catch (error) {
+      console.error('Failed to join group after payment:', error);
+      alert('Payment successful but failed to join group. Please contact support.');
+    } finally {
+      setJoiningGroup(false);
+    }
+  };
+
+  // Handle payment error
+  const handlePaymentError = (error: string) => {
+    console.error('Payment failed:', error);
+    alert(`Payment failed: ${error}`);
   };
 
   return (
@@ -326,7 +401,7 @@ export default function GroupDetail() {
                     </span>
                   )}
                   <span className="text-xs font-medium text-purple-600 bg-purple-50 px-2 py-1 rounded-full">
-                    Admin Created
+                    {groupData.adminName === "Admin" ? "Admin Created" : `Created by ${groupData.adminName}`}
                   </span>
                 </div>
 
@@ -624,12 +699,12 @@ export default function GroupDetail() {
                       <p className="text-sm text-gray-600">{groupData.deadline ? new Date(groupData.deadline).toLocaleDateString() : 'No deadline set'}</p>
                     </div>
                   </div>
-                  {groupData.admin_name && (
+                  {groupData.adminName && (
                     <div className="flex items-center gap-3">
                       <User className="w-5 h-5 text-gray-400" />
                       <div>
                         <p className="text-sm font-medium text-gray-900">Created by</p>
-                        <p className="text-sm text-gray-600">{groupData.admin_name}</p>
+                        <p className="text-sm text-gray-600">{groupData.adminName}</p>
                       </div>
                     </div>
                   )}
@@ -720,6 +795,19 @@ export default function GroupDetail() {
           </div>
         </div>
       </footer>
+
+      {/* Payment Modal */}
+      <PaymentModal
+        isOpen={showPaymentModal}
+        onClose={() => setShowPaymentModal(false)}
+        amount={(groupData.bulk_price || groupData.price) * formData.quantity + (formData.deliveryMethod === 'delivery' ? 5.00 : 0)}
+        currency="USD"
+        txRef={`group_${groupData.group_buy_id || groupData.id}_${Date.now()}`}
+        email={userEmail}
+        description={`Payment for ${formData.quantity}x ${groupData.product_name || groupData.name}`}
+        onSuccess={handlePaymentSuccess}
+        onError={handlePaymentError}
+      />
     </div>
   );
 }

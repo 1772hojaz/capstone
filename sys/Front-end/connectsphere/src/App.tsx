@@ -13,6 +13,8 @@ import ProfilePage from './pages/ProfilePage';
 import GroupModeration from './pages/GroupModeration';
 import Users from './pages/Users';
 import SystemSettings from './pages/SystemSettings';
+import PaymentSuccess from './pages/PaymentSuccess';
+import PaymentFailure from './pages/PaymentFailure';
 
 function App() {
   return (
@@ -25,6 +27,7 @@ function App() {
         <Route path="/admin" element={<AdminDashboard />} />
         <Route path="/trader" element={<TraderDashboard />} />
         <Route path="/supplier/dashboard" element={<SupplierDashboard />} />
+        <Route path="/supplier/profile" element={<ProfilePage />} />
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/groups" element={<GroupList />} />
         <Route path="/all-groups" element={<AllGroups />} />
@@ -32,6 +35,8 @@ function App() {
         <Route path="/moderation" element={<GroupModeration />} />
         <Route path="/users" element={<Users />} />
         <Route path="/settings" element={<SystemSettings />} />
+        <Route path="/payment/success" element={<PaymentSuccess />} />
+        <Route path="/payment/failure" element={<PaymentFailure />} />
       </Routes>
     </Router>
   );

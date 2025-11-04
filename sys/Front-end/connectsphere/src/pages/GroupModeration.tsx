@@ -31,6 +31,8 @@ const GroupModeration = () => {
   const [selectedGroup, setSelectedGroup] = useState<any>(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editedGroup, setEditedGroup] = useState<any>(null);
+  const [editedImage, setEditedImage] = useState<File | null>(null);
+  const [editedImagePreview, setEditedImagePreview] = useState<string | null>(null);
   interface NewGroup {
     name: string;
     description: string;
@@ -180,6 +182,8 @@ const GroupModeration = () => {
       const groupDetails = await response.json();
       setSelectedGroup(groupDetails);
       setEditedGroup({ ...groupDetails });
+      setEditedImage(null);
+      setEditedImagePreview(null);
       setIsEditMode(false);
       setShowDetailsModal(true);
     } catch (error) {
@@ -187,6 +191,8 @@ const GroupModeration = () => {
       // Fallback to using the group data we already have
       setSelectedGroup(group);
       setEditedGroup({ ...group });
+      setEditedImage(null);
+      setEditedImagePreview(null);
       setIsEditMode(false);
       setShowDetailsModal(true);
     }
@@ -198,11 +204,20 @@ const GroupModeration = () => {
 
   const handleCancelEdit = () => {
     setEditedGroup({ ...selectedGroup });
+    setEditedImage(null);
+    setEditedImagePreview(null);
     setIsEditMode(false);
   };
 
   const handleSaveEdit = async () => {
     try {
+      // Handle image upload first if a new image was selected
+      let imageUrl = editedGroup.image;
+      if (editedImage) {
+        const uploadResult = await apiService.uploadImage(editedImage);
+        imageUrl = uploadResult.image_url;
+      }
+
       // Prepare update data
       const updateData: any = {
         name: editedGroup.name,
@@ -215,6 +230,11 @@ const GroupModeration = () => {
         shipping_info: editedGroup.shipping_info,
         estimated_delivery: editedGroup.estimated_delivery
       };
+
+      // Add image if it was changed
+      if (editedImage) {
+        updateData.image = imageUrl;
+      }
 
       // Add end_date if it exists
       if (editedGroup.end_date) {
@@ -256,6 +276,9 @@ const GroupModeration = () => {
       setSelectedGroup(updatedGroup);
       setEditedGroup(updatedGroup);
 
+      // Reset image state
+      setEditedImage(null);
+      setEditedImagePreview(null);
       setIsEditMode(false);
       alert('Group updated successfully!');
     } catch (error: any) {
@@ -1052,11 +1075,76 @@ const GroupModeration = () => {
               {/* Group Image */}
               <div className="bg-white rounded-xl p-6 shadow-sm">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Group Image</h3>
-                <img
-                  src={editedGroup.image || '/api/placeholder/400/300'}
-                  alt={editedGroup.name}
-                  className="w-full h-64 object-cover rounded-xl shadow-md"
-                />
+                {isEditMode ? (
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Update Group Image</label>
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              // Create image preview
+                              const reader = new FileReader();
+                              reader.onload = (e) => {
+                                setEditedImage(file);
+                                setEditedImagePreview(e.target?.result as string);
+                              };
+                              reader.readAsDataURL(file);
+                            } else {
+                              // Clear preview if no file selected
+                              setEditedImage(null);
+                              setEditedImagePreview(null);
+                            }
+                          }}
+                          className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                        />
+                        {editedImage && (
+                          <span className="text-sm text-green-600">✓ New image selected</span>
+                        )}
+                      </div>
+                      <p className="mt-1 text-sm text-gray-500">Upload a new image (PNG, JPG up to 5MB) or leave empty to keep current image</p>
+                    </div>
+
+                    {/* Image Preview */}
+                    <div className="relative">
+                      <img
+                        src={editedImagePreview || editedGroup.image || '/api/placeholder/400/300'}
+                        alt={editedGroup.name}
+                        className="w-full h-64 object-cover rounded-xl shadow-md border-2 border-gray-200"
+                      />
+                      {(editedImage || editedImagePreview) && (
+                        <div className="absolute top-2 right-2 bg-green-500 text-white px-2 py-1 rounded-full text-xs font-medium">
+                          New Image
+                        </div>
+                      )}
+                      {editedImage && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditedImage(null);
+                            setEditedImagePreview(null);
+                            // Clear the file input
+                            const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+                            if (fileInput) fileInput.value = '';
+                          }}
+                          className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors"
+                          title="Remove new image"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <img
+                    src={selectedGroup.image || '/api/placeholder/400/300'}
+                    alt={selectedGroup.name}
+                    className="w-full h-64 object-cover rounded-xl shadow-md"
+                  />
+                )}
               </div>
 
               {/* Basic Information */}

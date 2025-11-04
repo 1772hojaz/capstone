@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, MapPin, User, X, Eye, ChevronDown } from 'lucide-react';
+import { Search, MapPin, User, X, Eye, ChevronDown, ChevronUp, EyeOff } from 'lucide-react';
 import apiService from '../services/api';
 
 export default function GroupList() {
@@ -12,13 +12,22 @@ export default function GroupList() {
   const [updatingQuantity, setUpdatingQuantity] = useState(false);
   const [newQuantity, setNewQuantity] = useState<number>(1);
   const [activeGroups, setActiveGroups] = useState<any[]>([]);
-  const [pastGroupsSummary, setPastGroupsSummary] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [readyForCollectionSearch, setReadyForCollectionSearch] = useState('');
   const [activeGroupsSearch, setActiveGroupsSearch] = useState('');
   const [userLocation, setUserLocation] = useState<string>('Harare');
   const [isLocationDropdownOpen, setIsLocationDropdownOpen] = useState(false);
+  
+  // New state for expandable sections with localStorage persistence
+  const [isActiveGroupsExpanded, setIsActiveGroupsExpanded] = useState(() => {
+    const saved = localStorage.getItem('activeGroupsExpanded');
+    return saved ? JSON.parse(saved) : true;
+  });
+  const [isReadyForCollectionVisible, setIsReadyForCollectionVisible] = useState(() => {
+    const saved = localStorage.getItem('readyForCollectionVisible');
+    return saved ? JSON.parse(saved) : true;
+  });
 
   const locationOptions = [
     'Harare',
@@ -41,7 +50,7 @@ export default function GroupList() {
     }
   };
 
-  // Fetch user's groups and past groups summary on component mount
+  // Fetch user's groups on component mount
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -52,14 +61,12 @@ export default function GroupList() {
         const userData = await apiService.getCurrentUser();
         setUserLocation(userData.location_zone || 'Harare');
 
-        // Fetch user's groups and past groups summary in parallel
-        const [groupsResponse, summaryResponse] = await Promise.all([
-          apiService.getMyGroups(),
-          apiService.getPastGroupsSummary()
+        // Fetch user's groups
+        const [groupsResponse] = await Promise.all([
+          apiService.getMyGroups()
         ]);
 
         setActiveGroups(groupsResponse);
-        setPastGroupsSummary(summaryResponse);
       } catch (err) {
         console.error('Failed to fetch data:', err);
         setError(err instanceof Error ? err.message : String(err));
@@ -82,6 +89,15 @@ export default function GroupList() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isLocationDropdownOpen]);
+
+  // Save preferences to localStorage
+  useEffect(() => {
+    localStorage.setItem('activeGroupsExpanded', JSON.stringify(isActiveGroupsExpanded));
+  }, [isActiveGroupsExpanded]);
+
+  useEffect(() => {
+    localStorage.setItem('readyForCollectionVisible', JSON.stringify(isReadyForCollectionVisible));
+  }, [isReadyForCollectionVisible]);
 
   const handleShowQRCode = async (group: any) => {
     try {
@@ -290,14 +306,25 @@ export default function GroupList() {
       <main className="flex-1 px-3 sm:px-6 py-4 sm:py-8">
         <div className="max-w-7xl mx-auto space-y-6">
           {/* Two Column Layout for Ready for Collection and My Active Groups */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className={`grid gap-6 ${isReadyForCollectionVisible ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1'}`}>
             {/* Ready for Collection Section */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+            {isReadyForCollectionVisible && (
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200">
               <div className="p-4 sm:p-6 border-b border-gray-200 sticky top-0 bg-white z-10">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                  <div>
-                    <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Ready for Collection</h2>
-                    <p className="text-sm text-gray-600 mt-1">Groups that are ready for pickup at your selected location</p>
+                  <div className="flex items-center gap-3">
+                    <div>
+                      <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Ready for Collection</h2>
+                      <p className="text-sm text-gray-600 mt-1">Groups that are ready for pickup at your selected location</p>
+                    </div>
+                    <button
+                      onClick={() => setIsReadyForCollectionVisible(false)}
+                      className="p-2 text-gray-500 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+                      title="Hide Ready for Collection section"
+                      aria-label="Hide Ready for Collection section"
+                    >
+                      <EyeOff className="w-5 h-5" />
+                    </button>
                   </div>
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -396,31 +423,70 @@ export default function GroupList() {
                   </div>
                 )}
               </div>
-            </div>
+              </div>
+            )}
 
             {/* My Active Groups Section */}
             <div className="bg-white rounded-lg shadow-sm border border-gray-200">
               <div className="p-4 sm:p-6 border-b border-gray-200 sticky top-0 bg-white z-10">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                  <div>
-                    <h2 className="text-xl sm:text-2xl font-bold text-gray-900">My Active Groups</h2>
-                    <p className="text-sm text-gray-600 mt-1">Groups you've joined that are currently active</p>
+                <div className="flex flex-col gap-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <button
+                      onClick={() => setIsActiveGroupsExpanded(!isActiveGroupsExpanded)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          setIsActiveGroupsExpanded(!isActiveGroupsExpanded);
+                        }
+                      }}
+                      className="flex items-center gap-3 text-left hover:bg-gray-50 p-2 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                      aria-expanded={isActiveGroupsExpanded}
+                      aria-label={`${isActiveGroupsExpanded ? 'Collapse' : 'Expand'} Active Groups section`}
+                    >
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <h2 className="text-xl sm:text-2xl font-bold text-gray-900">My Active Groups</h2>
+                          {!isActiveGroupsExpanded && filteredActiveGroups.filter(g => g.status === 'ready_for_pickup' || g.status === 'payment_pending').length > 0 && (
+                            <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" title="Action required"></span>
+                          )}
+                          {isActiveGroupsExpanded ? (
+                            <ChevronUp className="w-5 h-5 text-gray-500" />
+                          ) : (
+                            <ChevronDown className="w-5 h-5 text-gray-500" />
+                          )}
+                        </div>
+                        <p className="text-sm text-gray-600 mt-1">Groups you've joined that are currently active</p>
+                      </div>
+                    </button>
+                    {!isReadyForCollectionVisible && (
+                      <button
+                        onClick={() => setIsReadyForCollectionVisible(true)}
+                        className="flex items-center gap-2 px-4 py-2 text-sm bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
+                        aria-label="Show Ready for Collection section"
+                      >
+                        <Eye className="w-4 h-4" />
+                        Show Ready for Collection
+                      </button>
+                    )}
                   </div>
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <input
-                      type="text"
-                      placeholder="Search groups..."
-                      value={activeGroupsSearch}
-                      onChange={(e) => setActiveGroupsSearch(e.target.value)}
-                      className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent w-48"
-                    />
-                  </div>
+                  {isActiveGroupsExpanded && (
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input
+                        type="text"
+                        placeholder="Search groups..."
+                        value={activeGroupsSearch}
+                        onChange={(e) => setActiveGroupsSearch(e.target.value)}
+                        className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent w-48"
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
               
               {/* My Active Groups - Responsive Table */}
-              <div className="max-h-[600px] overflow-y-auto overflow-x-hidden">
+              {isActiveGroupsExpanded && (
+                <div className="max-h-[600px] overflow-y-auto overflow-x-auto transition-all duration-300 ease-in-out">
                 {loading ? (
                   <div className="text-center py-8">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
@@ -452,23 +518,27 @@ export default function GroupList() {
                     </p>
                   </div>
                 ) : (
-                  <div className="p-4 sm:p-6">
-                    <table className="w-full">
+                  <div className="p-2 sm:p-4">
+                    <table className="w-full table-fixed">
                       <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
                         <tr>
-                          <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50">Group Name</th>
-                          <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50">Status</th>
-                          <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50">Progress</th>
-                          <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50">Due Date</th>
-                          <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50">Actions</th>
+                          <th className="px-2 sm:px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50 w-2/6">Group Name</th>
+                          <th className="px-2 sm:px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50 w-1/6">Created by</th>
+                          <th className="px-2 sm:px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50 w-1/6">Status</th>
+                          <th className="px-2 sm:px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50 w-1/6">Progress</th>
+                          <th className="px-2 sm:px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50 w-1/6">Due Date</th>
+                          <th className="px-2 sm:px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50 w-1/6">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-200">
                         {filteredActiveGroups.map((group) => (
                           <tr key={group.id} className="hover:bg-gray-50">
-                            <td className="px-3 sm:px-6 py-3 sm:py-4 text-sm text-gray-900">{group.name}</td>
-                            <td className="px-3 sm:px-6 py-3 sm:py-4">
-                              <span className={`inline-flex px-2 sm:px-2.5 py-0.5 sm:py-1 text-xs font-medium rounded-full ${
+                            <td className="px-2 sm:px-3 py-2 text-sm text-gray-900 truncate">{group.name}</td>
+                            <td className="px-2 sm:px-3 py-2 text-sm text-gray-600 truncate">
+                              {group.adminName === "Admin" ? "Admin" : group.adminName}
+                            </td>
+                            <td className="px-2 sm:px-3 py-2">
+                              <span className={`inline-flex px-1.5 py-0.5 text-xs font-medium rounded-full ${
                                 group.status === 'forming' ? 'bg-blue-100 text-blue-700' :
                                 group.status === 'active' ? 'bg-green-100 text-green-700' :
                                 group.status === 'payment_pending' ? 'bg-yellow-100 text-yellow-700' :
@@ -477,25 +547,25 @@ export default function GroupList() {
                                 group.status === 'completed' ? 'bg-blue-100 text-blue-700' :
                                 'bg-red-100 text-red-700'
                               }`}>
-                                {group.status === 'forming' ? 'Forming Group' :
+                                {group.status === 'forming' ? 'Forming' :
                                  group.status === 'active' ? 'Active' :
                                  group.status === 'payment_pending' ? 'Payment Due' :
                                  group.status === 'processing' ? 'Processing' :
-                                 group.status === 'ready_for_pickup' ? 'Ready for Pickup' :
+                                 group.status === 'ready_for_pickup' ? 'Ready' :
                                  group.status === 'completed' ? 'Completed' :
                                  'Cancelled'}
                               </span>
                             </td>
-                            <td className="px-3 sm:px-6 py-3 sm:py-4 text-sm text-gray-700">{group.progress}</td>
-                            <td className="px-3 sm:px-6 py-3 sm:py-4 text-sm text-gray-700">{group.dueDate}</td>
-                            <td className="px-3 sm:px-6 py-3 sm:py-4">
-                              <div className="flex gap-2">
+                            <td className="px-2 sm:px-3 py-2 text-sm text-gray-700 truncate">{group.progress}</td>
+                            <td className="px-2 sm:px-3 py-2 text-sm text-gray-700 truncate">{group.dueDate}</td>
+                            <td className="px-2 sm:px-3 py-2">
+                              <div className="flex gap-1">
                                 <button
                                   onClick={() => handleViewGroupDetails(group)}
                                   className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 bg-blue-50 rounded-md hover:bg-blue-100 transition"
                                 >
                                   <Eye className="w-3 h-3" />
-                                  View Group
+                                  View
                                 </button>
                               </div>
                             </td>
@@ -505,60 +575,30 @@ export default function GroupList() {
                     </table>
                   </div>
                 )}
-              </div>
-            </div>
-          </div>
-
-          {/* Past Groups - Full Width Below */}
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-            <div className="p-4 sm:p-6 border-b border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-900">Past Groups</h3>
-              <p className="text-sm text-gray-600 mt-1">Summary of your completed admin-created group buys.</p>
-            </div>
-            <div className="p-4 sm:p-6 space-y-3">
-              {loading ? (
-                <div className="text-center py-4">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-                  <p className="text-sm text-gray-600 mt-2">Loading past groups summary...</p>
                 </div>
-              ) : error ? (
-                <div className="text-center py-4">
-                  <p className="text-sm text-red-600">Failed to load past groups summary</p>
+              )}
+              
+              {/* Collapsed Summary */}
+              {!isActiveGroupsExpanded && (
+                <div className="p-4 sm:p-6">
+                  <div className="flex items-center justify-between text-sm text-gray-600">
+                    <span>
+                      {loading ? 'Loading...' : `${filteredActiveGroups.length} active groups`}
+                    </span>
+                    <div className="flex items-center gap-4">
+                      {filteredActiveGroups.filter(g => g.status === 'ready_for_pickup').length > 0 && (
+                        <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-medium">
+                          {filteredActiveGroups.filter(g => g.status === 'ready_for_pickup').length} ready for pickup
+                        </span>
+                      )}
+                      {filteredActiveGroups.filter(g => g.status === 'payment_pending').length > 0 && (
+                        <span className="bg-yellow-100 text-yellow-700 px-3 py-1 rounded-full text-xs font-medium">
+                          {filteredActiveGroups.filter(g => g.status === 'payment_pending').length} payment due
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 </div>
-              ) : pastGroupsSummary ? (
-                <>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Completed Groups:</span>
-                    <span className="font-semibold text-gray-900">{pastGroupsSummary.completed_groups || 0}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Total Savings:</span>
-                    <span className="font-semibold text-gray-900">${pastGroupsSummary.all_time_savings?.toFixed(2) || '0.00'}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Success Rate:</span>
-                    <span className="font-semibold text-gray-900">{pastGroupsSummary.success_rate ? `${(pastGroupsSummary.success_rate * 100).toFixed(1)}%` : '0%'}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Avg Savings per Group:</span>
-                    <span className="font-semibold text-gray-900">${pastGroupsSummary.avg_savings_per_group?.toFixed(2) || '0.00'}</span>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Completed Groups:</span>
-                    <span className="font-semibold text-gray-900">0</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Total Savings:</span>
-                    <span className="font-semibold text-gray-900">$0.00</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Success Rate:</span>
-                    <span className="font-semibold text-gray-900">0%</span>
-                  </div>
-                </>
               )}
             </div>
           </div>
@@ -598,96 +638,198 @@ export default function GroupList() {
         </div>
       </footer>
 
-      {/* QR Code Modal */}
+      {/* QR Code Modal - Enhanced Design */}
       {showQRCode && selectedQRGroup && (
         <div 
-          className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          className="fixed inset-0 bg-black bg-opacity-60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
           onClick={closeQRCodeModal}
         >
           <div 
-            className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] flex flex-col"
+            className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] flex flex-col overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Modal Header - Fixed at top */}
-            <div className="bg-gradient-to-r from-green-600 to-green-700 p-6 text-white relative flex-shrink-0">
+            {/* Modal Header - Enhanced with better styling */}
+            <div className="bg-gradient-to-br from-emerald-600 via-green-600 to-green-700 p-8 text-white relative flex-shrink-0">
               <button
                 onClick={closeQRCodeModal}
-                className="absolute top-4 right-4 text-white hover:bg-white hover:bg-opacity-20 rounded-lg p-1 transition"
+                className="absolute top-4 right-4 text-white hover:bg-white hover:bg-opacity-20 rounded-full p-2 transition-all duration-200 hover:scale-110"
               >
-                <X className="w-5 h-5" />
+                <X className="w-6 h-6" />
               </button>
-              <div className="text-center">
-                <h2 className="text-xl font-bold">Pickup QR Code</h2>
-                <p className="text-green-100 mt-1">Show this at {selectedQRGroup.pickupLocation}</p>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-4">
+                  <div className="bg-white bg-opacity-20 rounded-full p-3">
+                    <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M12 12l3-3m-3 3l-3-3m-3 6h2.01M12 12l-3 3m3-3l3 3M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-bold">Pickup QR Code</h2>
+                    <p className="text-green-100 text-sm mt-1">Order #{selectedQRGroup.id.toString().padStart(6, '0')}</p>
+                  </div>
+                </div>
+                <div className="bg-white bg-opacity-20 rounded-xl px-4 py-2">
+                  <span className="text-sm font-semibold">Ready for Pickup</span>
+                </div>
               </div>
             </div>
 
             {/* Scrollable Content */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-4">
-              <div className="bg-gray-50 border-2 border-dashed border-gray-300 rounded-lg p-8 flex items-center justify-center">
+            <div className="flex-1 overflow-y-auto p-8 space-y-6">
+              {/* Location Header */}
+              <div className="text-center pb-4 border-b border-gray-100">
+                <h3 className="text-xl font-bold text-gray-900 mb-1">Show at Pickup Location</h3>
+                <p className="text-gray-600 flex items-center justify-center gap-2">
+                  <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  {selectedQRGroup.pickupLocation}
+                </p>
+              </div>
+
+              {/* QR Code Display with Enhanced Design */}
+              <div className="bg-gradient-to-br from-gray-50 to-gray-100 border-2 border-dashed border-green-300 rounded-2xl p-8 shadow-inner">
                 <div className="text-center">
                   {selectedQRGroup?.qrCode ? (
                     // Display actual QR code from API
-                    <img
-                      src={`data:image/png;base64,${selectedQRGroup.qrCode}`}
-                      alt="QR Code for pickup"
-                      className="w-48 h-48 mx-auto mb-4 border-2 border-gray-200 rounded-lg"
-                    />
+                    <div className="bg-white rounded-2xl p-6 shadow-lg mx-auto inline-block">
+                      <img
+                        src={`data:image/png;base64,${selectedQRGroup.qrCode}`}
+                        alt="QR Code for pickup"
+                        className="w-56 h-56 mx-auto rounded-xl border-4 border-green-200"
+                      />
+                    </div>
                   ) : (
-                    // Fallback placeholder
-                    <div className="w-48 h-48 bg-white border-2 border-gray-200 rounded-lg flex items-center justify-center mx-auto mb-4">
-                      <div className="text-center text-gray-400">
-                        <div className="text-6xl mb-2"></div>
-                        <div className="text-sm">Loading QR Code...</div>
-                        <div className="text-xs mt-1">Order #{selectedQRGroup?.id?.toString().padStart(6, '0')}</div>
+                    // Fallback placeholder with enhanced design
+                    <div className="bg-white rounded-2xl p-6 shadow-lg mx-auto inline-block">
+                      <div className="w-56 h-56 bg-gradient-to-br from-gray-100 to-gray-200 border-4 border-green-200 rounded-xl flex items-center justify-center mx-auto">
+                        <div className="text-center text-gray-500">
+                          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mx-auto mb-4"></div>
+                          <div className="text-lg font-semibold mb-2">Loading QR Code...</div>
+                          <div className="text-sm font-mono bg-gray-100 px-3 py-1 rounded">
+                            #{selectedQRGroup?.id?.toString().padStart(6, '0')}
+                          </div>
+                        </div>
                       </div>
                     </div>
                   )}
-                  <p className="text-sm text-gray-600">Scan this QR code at the pickup location</p>
-                </div>
-              </div>
-
-              {/* Order Details */}
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <h3 className="font-semibold text-blue-900 mb-2">Order Details</h3>
-                <div className="space-y-1 text-sm text-blue-800">
-                  <div className="flex justify-between">
-                    <span>Order #:</span>
-                    <span className="font-mono">{selectedQRGroup.id.toString().padStart(6, '0')}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Product:</span>
-                    <span>{selectedQRGroup.name}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Pickup Location:</span>
-                    <span>{selectedQRGroup.pickupLocation}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Status:</span>
-                    <span className="text-green-600 font-medium">Ready for Pickup</span>
+                  <div className="mt-6 bg-green-50 rounded-xl p-4">
+                    <p className="text-green-800 font-medium flex items-center justify-center gap-2">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                      </svg>
+                      Scan this QR code at the pickup location
+                    </p>
                   </div>
                 </div>
               </div>
 
-              {/* Instructions */}
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                <h4 className="font-semibold text-yellow-900 mb-2">Pickup Instructions</h4>
-                <ul className="text-sm text-yellow-800 space-y-1">
-                  <li>• Bring this QR code to {selectedQRGroup.pickupLocation}</li>
-                  <li>• Show valid ID if requested</li>
-                  <li>• Collect your order and verify contents</li>
-                  <li>• Sign receipt upon pickup</li>
-                </ul>
+              {/* Order Details Card */}
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-l-4 border-blue-500 rounded-xl p-6 shadow-sm">
+                <div className="flex items-start space-x-4">
+                  <div className="bg-blue-500 rounded-full p-3">
+                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-bold text-blue-900 mb-4 text-lg">Order Details</h3>
+                    <div className="grid grid-cols-1 gap-3">
+                      <div className="bg-white rounded-lg p-4 flex justify-between items-center">
+                        <span className="text-gray-600 font-medium">Order #:</span>
+                        <span className="font-mono text-blue-900 bg-blue-100 px-3 py-1 rounded-lg">{selectedQRGroup.id.toString().padStart(6, '0')}</span>
+                      </div>
+                      <div className="bg-white rounded-lg p-4 flex justify-between items-center">
+                        <span className="text-gray-600 font-medium">Product:</span>
+                        <span className="font-semibold text-gray-900 text-right">{selectedQRGroup.name}</span>
+                      </div>
+                      <div className="bg-white rounded-lg p-4 flex justify-between items-center">
+                        <span className="text-gray-600 font-medium">Created by:</span>
+                        <span className="font-semibold text-gray-900">{selectedQRGroup.adminName === "Admin" ? "Admin" : selectedQRGroup.adminName}</span>
+                      </div>
+                      <div className="bg-white rounded-lg p-4 flex justify-between items-center">
+                        <span className="text-gray-600 font-medium">Pickup Location:</span>
+                        <span className="font-semibold text-gray-900 text-right flex items-center gap-2">
+                          <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                          </svg>
+                          {selectedQRGroup.pickupLocation}
+                        </span>
+                      </div>
+                      <div className="bg-white rounded-lg p-4 flex justify-between items-center">
+                        <span className="text-gray-600 font-medium">Status:</span>
+                        <span className="bg-green-100 text-green-700 px-4 py-2 rounded-full font-semibold text-sm flex items-center gap-2">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          Ready for Pickup
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Pickup Instructions Card */}
+              <div className="bg-gradient-to-r from-amber-50 to-yellow-50 border-l-4 border-amber-500 rounded-xl p-6 shadow-sm">
+                <div className="flex items-start space-x-4">
+                  <div className="bg-amber-500 rounded-full p-3">
+                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="font-bold text-amber-900 mb-4 text-lg">Pickup Instructions</h4>
+                    <div className="space-y-3">
+                      <div className="bg-white rounded-lg p-4 flex items-center space-x-3">
+                        <div className="bg-amber-100 rounded-full p-2 flex-shrink-0">
+                          <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                          </svg>
+                        </div>
+                        <span className="text-amber-800 font-medium">Bring this QR code to {selectedQRGroup.pickupLocation}</span>
+                      </div>
+                      <div className="bg-white rounded-lg p-4 flex items-center space-x-3">
+                        <div className="bg-amber-100 rounded-full p-2 flex-shrink-0">
+                          <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4zm0 0c1.306 0 2.417.835 2.83 2M9 14a3.001 3.001 0 00-2.83 2M15 11h3m-3 4h2" />
+                          </svg>
+                        </div>
+                        <span className="text-amber-800 font-medium">Show valid ID if requested</span>
+                      </div>
+                      <div className="bg-white rounded-lg p-4 flex items-center space-x-3">
+                        <div className="bg-amber-100 rounded-full p-2 flex-shrink-0">
+                          <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                          </svg>
+                        </div>
+                        <span className="text-amber-800 font-medium">Collect your order and verify contents</span>
+                      </div>
+                      <div className="bg-white rounded-lg p-4 flex items-center space-x-3">
+                        <div className="bg-amber-100 rounded-full p-2 flex-shrink-0">
+                          <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                        </div>
+                        <span className="text-amber-800 font-medium">Sign receipt upon pickup</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 
-            {/* Action Buttons - Fixed at bottom */}
-            <div className="flex-shrink-0 border-t border-gray-200 p-6">
+            {/* Action Buttons - Enhanced styling */}
+            <div className="flex-shrink-0 bg-gradient-to-r from-gray-50 to-gray-100 border-t border-gray-200 p-6">
               <button
                 onClick={closeQRCodeModal}
-                className="w-full bg-green-600 text-white py-3 px-6 rounded-lg hover:bg-green-700 transition font-medium"
+                className="w-full bg-gradient-to-r from-emerald-600 to-green-600 text-white py-4 px-8 rounded-xl hover:from-emerald-700 hover:to-green-700 transition-all duration-200 font-semibold shadow-lg hover:shadow-xl transform hover:scale-105 flex items-center justify-center gap-3"
               >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
                 Got it - Ready to Pickup
               </button>
             </div>
@@ -702,134 +844,240 @@ export default function GroupList() {
           onClick={closeGroupDetailsModal}
         >
           <div 
-            className="bg-white rounded-lg shadow-xl max-w-lg w-full max-h-[90vh] flex flex-col"
+            className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Modal Header - Fixed at top */}
-            <div className="bg-gradient-to-r from-blue-600 to-blue-700 p-6 text-white relative flex-shrink-0">
+            {/* Modal Header - Enhanced with better styling */}
+            <div className="bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-700 p-8 text-white relative flex-shrink-0">
               <button
                 onClick={closeGroupDetailsModal}
-                className="absolute top-4 right-4 text-white hover:bg-white hover:bg-opacity-20 rounded-lg p-1 transition"
+                className="absolute top-4 right-4 text-white hover:bg-white hover:bg-opacity-20 rounded-full p-2 transition-all duration-200 hover:scale-110"
               >
-                <X className="w-5 h-5" />
+                <X className="w-6 h-6" />
               </button>
-              <div className="text-center">
-                <h2 className="text-xl font-bold">Group Details</h2>
-                <p className="text-blue-100 mt-1">Group #{selectedGroupDetails.id.toString().padStart(6, '0')}</p>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-4">
+                  <div className="bg-white bg-opacity-20 rounded-full p-3">
+                    <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-bold">Group Details</h2>
+                    <p className="text-blue-100 text-sm mt-1">Group #{selectedGroupDetails.id.toString().padStart(6, '0')}</p>
+                  </div>
+                </div>
+                <span className={`inline-flex px-4 py-2 text-sm font-semibold rounded-full border-2 ${
+                  selectedGroupDetails.status === 'forming' ? 'bg-blue-100 text-blue-700 border-blue-300' :
+                  selectedGroupDetails.status === 'active' ? 'bg-green-100 text-green-700 border-green-300' :
+                  selectedGroupDetails.status === 'payment_pending' ? 'bg-yellow-100 text-yellow-700 border-yellow-300' :
+                  selectedGroupDetails.status === 'processing' ? 'bg-purple-100 text-purple-700 border-purple-300' :
+                  selectedGroupDetails.status === 'ready_for_pickup' ? 'bg-orange-100 text-orange-700 border-orange-300' :
+                  selectedGroupDetails.status === 'completed' ? 'bg-blue-100 text-blue-700 border-blue-300' :
+                  'bg-red-100 text-red-700 border-red-300'
+                }`}>
+                  {selectedGroupDetails.status === 'forming' ? 'Forming Group' :
+                   selectedGroupDetails.status === 'active' ? 'Active' :
+                   selectedGroupDetails.status === 'payment_pending' ? 'Payment Due' :
+                   selectedGroupDetails.status === 'processing' ? 'Processing' :
+                   selectedGroupDetails.status === 'ready_for_pickup' ? 'Ready for Pickup' :
+                   selectedGroupDetails.status === 'completed' ? 'Completed' :
+                   'Cancelled'}
+                </span>
               </div>
             </div>
 
             {/* Scrollable Content */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-4">
-              {/* Group Name and Status */}
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-2">{selectedGroupDetails.name}</h3>
-                  <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
-                    selectedGroupDetails.status === 'forming' ? 'bg-blue-100 text-blue-700' :
-                    selectedGroupDetails.status === 'active' ? 'bg-green-100 text-green-700' :
-                    selectedGroupDetails.status === 'payment_pending' ? 'bg-yellow-100 text-yellow-700' :
-                    selectedGroupDetails.status === 'processing' ? 'bg-purple-100 text-purple-700' :
-                    selectedGroupDetails.status === 'ready_for_pickup' ? 'bg-orange-100 text-orange-700' :
-                    selectedGroupDetails.status === 'completed' ? 'bg-blue-100 text-blue-700' :
-                    'bg-red-100 text-red-700'
-                  }`}>
-                    {selectedGroupDetails.status === 'forming' ? 'Forming Group' :
-                     selectedGroupDetails.status === 'active' ? 'Active' :
-                     selectedGroupDetails.status === 'payment_pending' ? 'Payment Due' :
-                     selectedGroupDetails.status === 'processing' ? 'Processing' :
-                     selectedGroupDetails.status === 'ready_for_pickup' ? 'Ready for Pickup' :
-                     selectedGroupDetails.status === 'completed' ? 'Completed' :
-                     'Cancelled'}
-                  </span>
+            <div className="flex-1 overflow-y-auto p-8 space-y-6">
+              {/* Group Title Section */}
+              <div className="text-center pb-4 border-b border-gray-100">
+                <h3 className="text-2xl font-bold text-gray-900 mb-2">{selectedGroupDetails.name}</h3>
+                <p className="text-gray-600">Collaborative bulk purchasing group</p>
+              </div>
+
+              {/* Description Card */}
+              <div className="bg-gradient-to-r from-gray-50 to-gray-100 border-l-4 border-blue-500 rounded-xl p-6 shadow-sm">
+                <div className="flex items-start space-x-3">
+                  <div className="bg-blue-100 rounded-full p-2">
+                    <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="font-semibold text-gray-900 mb-2 flex items-center">
+                      Description
+                    </h4>
+                    <p className="text-gray-700 leading-relaxed">{selectedGroupDetails.description}</p>
+                  </div>
                 </div>
               </div>
 
-              {/* Description */}
-              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                <h4 className="font-semibold text-gray-900 mb-2">Description</h4>
-                <p className="text-sm text-gray-700">{selectedGroupDetails.description}</p>
+              {/* Group Information Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200 rounded-xl p-5 hover:shadow-md transition-shadow">
+                  <div className="flex items-center space-x-3 mb-3">
+                    <div className="bg-blue-500 rounded-full p-2">
+                      <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                      </svg>
+                    </div>
+                    <h4 className="font-semibold text-blue-900">Progress</h4>
+                  </div>
+                  <p className="text-lg font-bold text-blue-800">{selectedGroupDetails.progress}</p>
+                </div>
+                
+                <div className="bg-gradient-to-br from-green-50 to-green-100 border border-green-200 rounded-xl p-5 hover:shadow-md transition-shadow">
+                  <div className="flex items-center space-x-3 mb-3">
+                    <div className="bg-green-500 rounded-full p-2">
+                      <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
+                      </svg>
+                    </div>
+                    <h4 className="font-semibold text-green-900">Price</h4>
+                  </div>
+                  <p className="text-lg font-bold text-green-800">{selectedGroupDetails.price}</p>
+                </div>
+
+                <div className="bg-gradient-to-br from-purple-50 to-purple-100 border border-purple-200 rounded-xl p-5 hover:shadow-md transition-shadow">
+                  <div className="flex items-center space-x-3 mb-3">
+                    <div className="bg-purple-500 rounded-full p-2">
+                      <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3a2 2 0 012-2h4a2 2 0 012 2v4m-6 0h6a2 2 0 012 2v10a2 2 0 01-2 2H8a2 2 0 01-2-2V9a2 2 0 012-2z" />
+                      </svg>
+                    </div>
+                    <h4 className="font-semibold text-purple-900">Due Date</h4>
+                  </div>
+                  <p className="text-lg font-bold text-purple-800">{selectedGroupDetails.dueDate}</p>
+                </div>
+
+                <div className="bg-gradient-to-br from-orange-50 to-orange-100 border border-orange-200 rounded-xl p-5 hover:shadow-md transition-shadow">
+                  <div className="flex items-center space-x-3 mb-3">
+                    <div className="bg-orange-500 rounded-full p-2">
+                      <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                      </svg>
+                    </div>
+                    <h4 className="font-semibold text-orange-900">Savings</h4>
+                  </div>
+                  <p className="text-lg font-bold text-orange-800">{selectedGroupDetails.savings}</p>
+                </div>
+
+                <div className="bg-gradient-to-br from-teal-50 to-teal-100 border border-teal-200 rounded-xl p-5 hover:shadow-md transition-shadow md:col-span-2">
+                  <div className="flex items-center space-x-3 mb-3">
+                    <div className="bg-teal-500 rounded-full p-2">
+                      <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                      </svg>
+                    </div>
+                    <h4 className="font-semibold text-teal-900">Created by</h4>
+                  </div>
+                  <p className="text-lg font-bold text-teal-800">{selectedGroupDetails.adminName === "Admin" ? "Admin" : selectedGroupDetails.adminName}</p>
+                </div>
               </div>
 
-              {/* Group Information */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <h4 className="font-semibold text-blue-900 mb-1">Progress</h4>
-                  <p className="text-sm text-blue-800">{selectedGroupDetails.progress}</p>
+              {/* Location and Status Section */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-gradient-to-r from-yellow-50 to-amber-50 border-l-4 border-yellow-500 rounded-xl p-6 shadow-sm">
+                  <div className="flex items-start space-x-4">
+                    <div className="bg-yellow-500 rounded-full p-3">
+                      <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-yellow-900 mb-2">Pickup Location</h4>
+                      <p className="text-yellow-800 font-medium">{selectedGroupDetails.pickupLocation}</p>
+                    </div>
+                  </div>
                 </div>
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                  <h4 className="font-semibold text-green-900 mb-1">Price</h4>
-                  <p className="text-sm text-green-800">{selectedGroupDetails.price}</p>
-                </div>
-                <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                  <h4 className="font-semibold text-purple-900 mb-1">Due Date</h4>
-                  <p className="text-sm text-purple-800">{selectedGroupDetails.dueDate}</p>
-                </div>
-                <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
-                  <h4 className="font-semibold text-orange-900 mb-1">Savings</h4>
-                  <p className="text-sm text-orange-800">{selectedGroupDetails.savings}</p>
-                </div>
-              </div>
 
-              {/* Pickup Location */}
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                <h4 className="font-semibold text-yellow-900 mb-2">Pickup Location</h4>
-                <div className="flex items-center gap-2 text-sm text-yellow-800">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
-                  {selectedGroupDetails.pickupLocation}
+                <div className="bg-gradient-to-r from-indigo-50 to-blue-50 border-l-4 border-indigo-500 rounded-xl p-6 shadow-sm">
+                  <div className="flex items-start space-x-4">
+                    <div className="bg-indigo-500 rounded-full p-3">
+                      <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-indigo-900 mb-2">Order Status</h4>
+                      <p className="text-indigo-800 font-medium">{selectedGroupDetails.orderStatus}</p>
+                    </div>
+                  </div>
                 </div>
-              </div>
-
-              {/* Order Status */}
-              <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
-                <h4 className="font-semibold text-indigo-900 mb-2">Order Status</h4>
-                <p className="text-sm text-indigo-800">{selectedGroupDetails.orderStatus}</p>
               </div>
 
               {/* Add More Products - Only for active groups */}
               {selectedGroupDetails.status === 'active' && (
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                  <h4 className="font-semibold text-green-900 mb-2">Add More Products</h4>
-                  <p className="text-sm text-green-800 mb-3">Increase your quantity commitment to this group</p>
-                  
-                  <div className="flex items-center gap-3">
-                    <label className="text-sm font-medium text-green-900">New Quantity:</label>
-                    <input
-                      type="number"
-                      min="1"
-                      value={newQuantity}
-                      onChange={(e) => setNewQuantity(parseInt(e.target.value) || 1)}
-                      className="flex-1 px-3 py-2 border border-green-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm"
-                      placeholder="Enter quantity"
-                    />
-                    <button
-                      onClick={handleUpdateQuantity}
-                      disabled={updatingQuantity || newQuantity <= 0}
-                      className="px-4 py-2 bg-green-600 text-white text-sm rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition font-medium"
-                    >
-                      {updatingQuantity ? 'Updating...' : 'Update'}
-                    </button>
+                <div className="bg-gradient-to-r from-emerald-50 to-green-50 border-l-4 border-emerald-500 rounded-xl p-6 shadow-sm">
+                  <div className="flex items-start space-x-4 mb-4">
+                    <div className="bg-emerald-500 rounded-full p-3">
+                      <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                      </svg>
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-emerald-900 mb-2">Add More Products</h4>
+                      <p className="text-emerald-800 mb-4">Increase your quantity commitment to this group</p>
+                      
+                      <div className="bg-white rounded-lg p-4 border border-emerald-200">
+                        <div className="flex items-center gap-4 mb-3">
+                          <label className="text-sm font-medium text-emerald-900 min-w-fit">New Quantity:</label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={newQuantity}
+                            onChange={(e) => setNewQuantity(parseInt(e.target.value) || 1)}
+                            className="flex-1 px-4 py-2 border border-emerald-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm"
+                            placeholder="Enter quantity"
+                          />
+                          <button
+                            onClick={handleUpdateQuantity}
+                            disabled={updatingQuantity || newQuantity <= 0}
+                            className="px-6 py-2 bg-emerald-600 text-white text-sm rounded-lg hover:bg-emerald-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-all font-medium flex items-center gap-2"
+                          >
+                            {updatingQuantity ? (
+                              <>
+                                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                  <path className="opacity-75" fill="currentColor" d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Updating...
+                              </>
+                            ) : (
+                              'Update'
+                            )}
+                          </button>
+                        </div>
+                        
+                        <div className="grid grid-cols-3 gap-4 text-xs text-emerald-700 bg-emerald-50 rounded-lg p-3">
+                          <div>
+                            <span className="font-medium">Current:</span> {selectedGroupDetails.quantity || 'N/A'}
+                          </div>
+                          <div>
+                            <span className="font-medium">Unit Price:</span> {selectedGroupDetails.originalPrice}
+                          </div>
+                          <div>
+                            <span className="font-medium">Bulk Price:</span> {selectedGroupDetails.price}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  
-                  <p className="text-xs text-green-700 mt-2">
-                    Current quantity: {selectedGroupDetails.quantity || 'N/A'} | 
-                    Unit price: {selectedGroupDetails.originalPrice} | 
-                    Bulk price: {selectedGroupDetails.price}
-                  </p>
                 </div>
               )}
             </div>
 
-            {/* Action Buttons - Fixed at bottom */}
-            <div className="flex-shrink-0 border-t border-gray-200 p-6">
-              <div className="flex gap-3">
+            {/* Action Buttons - Enhanced styling */}
+            <div className="flex-shrink-0 bg-gradient-to-r from-gray-50 to-gray-100 border-t border-gray-200 p-6">
+              <div className="flex gap-4">
                 <button
                   onClick={closeGroupDetailsModal}
-                  className="flex-1 bg-blue-600 text-white py-3 px-6 rounded-lg hover:bg-blue-700 transition font-medium"
+                  className="flex-1 bg-gradient-to-r from-gray-600 to-gray-700 text-white py-4 px-6 rounded-xl hover:from-gray-700 hover:to-gray-800 transition-all duration-200 font-semibold shadow-lg hover:shadow-xl transform hover:scale-105 flex items-center justify-center gap-2"
                 >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
                   Close
                 </button>
                 {selectedGroupDetails.status === 'ready_for_pickup' && (
@@ -838,8 +1086,11 @@ export default function GroupList() {
                       closeGroupDetailsModal();
                       handleShowQRCode(selectedGroupDetails);
                     }}
-                    className="flex-1 bg-green-600 text-white py-3 px-6 rounded-lg hover:bg-green-700 transition font-medium"
+                    className="flex-1 bg-gradient-to-r from-green-600 to-emerald-600 text-white py-4 px-6 rounded-xl hover:from-green-700 hover:to-emerald-700 transition-all duration-200 font-semibold shadow-lg hover:shadow-xl transform hover:scale-105 flex items-center justify-center gap-2"
                   >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M12 12l3-3m-3 3l-3-3m-3 6h2.01M12 12l-3 3m3-3l3 3M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
                     Show QR Code
                   </button>
                 )}
