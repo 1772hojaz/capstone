@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell, AreaChart, Area, ComposedChart } from 'recharts';
 import { ShoppingCart, Users, DollarSign, TrendingUp, Clock, CheckCircle, AlertCircle, Search, Download, Plus, X, Package, Edit2, Save, XCircle } from 'lucide-react';
 import SupplierLayout from '../components/SupplierLayout';
 import apiService from '../services/api';
@@ -47,7 +47,13 @@ const SupplierDashboard: React.FC = () => {
   const [paidGroupBuys, setPaidGroupBuys] = useState<any[]>([]);
   const [productSearch, setProductSearch] = useState('');
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('orders');
+  const [activeTab, setActiveTab] = useState('products');
+
+  // Earnings state
+  const [earningsData, setEarningsData] = useState<any>(null);
+  const [earningsHistory, setEarningsHistory] = useState<any[]>([]);
+  const [revenueTrends, setRevenueTrends] = useState<any[]>([]);
+  const [topEarningProducts, setTopEarningProducts] = useState<any[]>([]);
 
   // Group Moderation State
   const [activeGroups, setActiveGroups] = useState<any[]>([]);
@@ -87,11 +93,11 @@ const SupplierDashboard: React.FC = () => {
     fetchProducts();
     fetchGroupBuys();
     fetchGroupModerationData();
+    fetchEarningsData();
   }, []);
 
   const fetchDashboardData = async () => {
     try {
-      const token = localStorage.getItem('token');
       const [
         metricsResponse,
         ordersResponse,
@@ -100,43 +106,20 @@ const SupplierDashboard: React.FC = () => {
         paymentDashboardResponse,
         notificationsResponse
       ] = await Promise.all([
-        fetch('/api/supplier/dashboard/metrics', { headers: { Authorization: `Bearer ${token}` } }),
-        fetch('/api/supplier/orders?status=pending', { headers: { Authorization: `Bearer ${token}` } }),
-        fetch('/api/supplier/invoices', { headers: { Authorization: `Bearer ${token}` } }),
-        fetch('/api/supplier/payments', { headers: { Authorization: `Bearer ${token}` } }),
-        fetch('/api/supplier/payments/dashboard', { headers: { Authorization: `Bearer ${token}` } }),
-        fetch('/api/supplier/notifications', { headers: { Authorization: `Bearer ${token}` } })
+        apiService.getSupplierDashboardMetrics(),
+        apiService.getSupplierOrders(),
+        apiService.getSupplierInvoices(),
+        apiService.getSupplierPayments(),
+        apiService.getPaymentDashboard(),
+        apiService.getSupplierNotifications()
       ]);
 
-      if (metricsResponse.ok) {
-        const metricsData = await metricsResponse.json();
-        setMetrics(metricsData);
-      }
-
-      if (ordersResponse.ok) {
-        const ordersData = await ordersResponse.json();
-        setOrders(ordersData);
-      }
-
-      if (invoicesResponse.ok) {
-        const invoicesData = await invoicesResponse.json();
-        setInvoices(invoicesData);
-      }
-
-      if (paymentsResponse.ok) {
-        const paymentsData = await paymentsResponse.json();
-        setPayments(paymentsData);
-      }
-
-      if (paymentDashboardResponse.ok) {
-        const paymentDashboardData = await paymentDashboardResponse.json();
-        setPaymentDashboard(paymentDashboardData);
-      }
-
-      if (notificationsResponse.ok) {
-        const notificationsData = await notificationsResponse.json();
-        setNotifications(notificationsData);
-      }
+      setMetrics(metricsResponse);
+      setOrders(Array.isArray(ordersResponse) ? ordersResponse : []);
+      setInvoices(Array.isArray(invoicesResponse) ? invoicesResponse : []);
+      setPayments(Array.isArray(paymentsResponse) ? paymentsResponse : []);
+      setPaymentDashboard(paymentDashboardResponse);
+      setNotifications(Array.isArray(notificationsResponse) ? notificationsResponse : []);
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
     } finally {
@@ -146,20 +129,9 @@ const SupplierDashboard: React.FC = () => {
 
   const handleOrderAction = async (orderId: number, action: 'confirm' | 'reject', reason?: string) => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`/api/supplier/orders/${orderId}/action`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({ action, reason })
-      });
-
-      if (response.ok) {
-        // Refresh orders
-        fetchDashboardData();
-      }
+      await apiService.processOrderAction(orderId, action, reason);
+      // Refresh orders
+      fetchDashboardData();
     } catch (error) {
       console.error('Error processing order:', error);
     }
@@ -198,6 +170,66 @@ const SupplierDashboard: React.FC = () => {
       setModerationStats(statsData);
     } catch (error) {
       console.error('Error fetching group moderation data:', error);
+    }
+  };
+
+  const fetchEarningsData = async () => {
+    try {
+      // For now, we'll aggregate data from existing sources
+      // In a real implementation, this would call dedicated earnings API endpoints
+      const payments = await apiService.getSupplierPayments();
+      const paymentDashboard = await apiService.getPaymentDashboard();
+
+      // Calculate earnings summary from payments data
+      const totalEarnings = Array.isArray(payments) ? payments
+        .filter(p => p.status === 'completed')
+        .reduce((sum, p) => sum + (p.amount || 0), 0) : 0;
+
+      const pendingPayout = paymentDashboard?.pending_payments || 0;
+      const availableBalance = paymentDashboard?.available_balance || 0;
+
+      setEarningsData({
+        totalEarnings,
+        pendingPayout,
+        availableBalance,
+        monthlyRevenue: paymentDashboard?.monthly_revenue || 0,
+        avgOrderValue: paymentDashboard?.avg_order_value || 0
+      });
+
+      setEarningsHistory(Array.isArray(payments) ? payments.slice(0, 10) : []);
+
+      // Mock revenue trends data (in real app, this would come from API)
+      setRevenueTrends([
+        { month: 'Jul', revenue: 8500, orders: 85 },
+        { month: 'Aug', revenue: 9200, orders: 92 },
+        { month: 'Sep', revenue: 10100, orders: 101 },
+        { month: 'Oct', revenue: 11800, orders: 118 },
+        { month: 'Nov', revenue: 12450, orders: 124 },
+        { month: 'Dec', revenue: 13200, orders: 132 }
+      ]);
+
+      // Mock top earning products (in real app, this would come from API)
+      setTopEarningProducts([
+        { name: 'Wireless Headphones', earnings: 2850, orders: 45 },
+        { name: 'Smart Watch', earnings: 2340, orders: 32 },
+        { name: 'Laptop Stand', earnings: 1890, orders: 28 },
+        { name: 'Phone Case', earnings: 1560, orders: 52 },
+        { name: 'USB Cable', earnings: 1240, orders: 38 }
+      ]);
+
+    } catch (error) {
+      console.error('Error fetching earnings data:', error);
+      // Set fallback data
+      setEarningsData({
+        totalEarnings: 0,
+        pendingPayout: 0,
+        availableBalance: 0,
+        monthlyRevenue: 0,
+        avgOrderValue: 0
+      });
+      setEarningsHistory([]);
+      setRevenueTrends([]);
+      setTopEarningProducts([]);
     }
   };
 
@@ -364,8 +396,8 @@ const SupplierDashboard: React.FC = () => {
         <div className="px-6">
           <nav className="flex gap-8" role="tablist" aria-label="Supplier sections">
             {[
-              { id: 'orders', label: 'Orders & Fulfillment', icon: ShoppingCart },
               { id: 'analytics', label: 'Analytics & Insights', icon: TrendingUp },
+              { id: 'earnings', label: 'Earnings', icon: DollarSign },
               { id: 'products', label: 'Product Management', icon: Package },
               { id: 'groups', label: 'Group Management', icon: Users }
             ].map(({ id, label, icon: Icon }) => (
@@ -395,144 +427,484 @@ const SupplierDashboard: React.FC = () => {
           {/* Tab Content */}
       <main className="flex-1 px-6 py-8">
         {/* Tab Content */}
-        {activeTab === 'orders' && (
-          <div className="space-y-8">
-            {/* Order Management */}
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">Order Management</h2>
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                {orders.length === 0 ? (
-                  <div className="text-center py-12">
-                    <ShoppingCart className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">No pending orders</h3>
-                    <p className="text-gray-600">All orders have been processed.</p>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {orders.map((order) => (
-                      <div key={order.id} className="border border-gray-200 rounded-lg p-6 bg-white">
-                        <div className="flex justify-between items-start mb-4">
-                          <div>
-                            <h3 className="font-semibold text-gray-900">{order.order_number}</h3>
-                            <p className="text-sm text-gray-600">{order.group_name}</p>
-                            <p className="text-sm text-gray-600">{order.trader_count} traders • {order.delivery_location}</p>
-                          </div>
-                          <Badge variant="outline" className="flex items-center gap-1">
-                            <Clock className="h-3 w-3" />
-                            Pending
-                          </Badge>
-                        </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                          <div>
-                            <h4 className="font-medium text-gray-900 mb-2">Products</h4>
-                            {order.products.map((product, index) => (
-                              <div key={index} className="text-sm text-gray-600">
-                                {product.name}: {product.quantity} × ${product.unit_price} = ${product.total_amount}
-                              </div>
-                            ))}
-                          </div>
-                          <div className="text-right">
-                            <p className="text-lg font-semibold text-gray-900">Total: ${order.total_value}</p>
-                            <p className="text-sm text-green-600">Savings: ${order.total_savings}</p>
-                          </div>
-                        </div>
-
-                        <div className="flex gap-2">
-                          <Button
-                            onClick={() => handleOrderAction(order.id, 'confirm')}
-                            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white"
-                          >
-                            <CheckCircle className="h-4 w-4" />
-                            Confirm Order
-                          </Button>
-                          <Button
-                            variant="outline"
-                            onClick={() => handleOrderAction(order.id, 'reject', 'Capacity constraints')}
-                            className="flex items-center gap-2 text-red-600 border-red-300 hover:bg-red-50"
-                          >
-                            <AlertCircle className="h-4 w-4" />
-                            Reject Order
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
 
         {activeTab === 'analytics' && (
           <div className="space-y-8">
-            {/* Analytics Summary */}
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">Analytics Summary</h2>
+            {/* Analytics Header */}
+            <div className="flex justify-between items-center">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900">Analytics & Insights</h2>
+                <p className="text-gray-600 mt-1">Comprehensive analytics for your group buying business</p>
+              </div>
+              <div className="flex gap-2">
+                <select className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                  <option>Last 7 days</option>
+                  <option>Last 30 days</option>
+                  <option>Last 90 days</option>
+                  <option>Last year</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Key Metrics Overview */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-shadow duration-200 border border-blue-200">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-3 bg-blue-500 rounded-xl shadow-md">
+                    <ShoppingCart className="w-6 h-6 text-white" />
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-medium text-blue-600">Total Orders</p>
+                    <p className="text-xs text-blue-500">+12% vs last month</p>
+                  </div>
+                </div>
+                <p className="text-3xl font-bold text-gray-900 mb-1">{orders.length + pendingGroupBuys.length + paidGroupBuys.length}</p>
+                <p className="text-sm text-gray-600 font-medium">All time orders</p>
+              </div>
+
+              <div className="bg-gradient-to-br from-green-50 to-emerald-100 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-shadow duration-200 border border-green-200">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-3 bg-green-500 rounded-xl shadow-md">
+                    <DollarSign className="w-6 h-6 text-white" />
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-medium text-green-600">Total Revenue</p>
+                    <p className="text-xs text-green-500">+8% vs last month</p>
+                  </div>
+                </div>
+                <p className="text-3xl font-bold text-gray-900 mb-1">
+                  ${[...orders, ...pendingGroupBuys, ...paidGroupBuys].reduce((sum, item) => sum + (item.total_value || 0), 0).toFixed(2)}
+                </p>
+                <p className="text-sm text-gray-600 font-medium">Lifetime earnings</p>
+              </div>
+
+              <div className="bg-gradient-to-br from-purple-50 to-violet-100 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-shadow duration-200 border border-purple-200">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-3 bg-purple-500 rounded-xl shadow-md">
+                    <Users className="w-6 h-6 text-white" />
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-medium text-purple-600">Avg Group Size</p>
+                    <p className="text-xs text-purple-500">Target: 15 members</p>
+                  </div>
+                </div>
+                <p className="text-3xl font-bold text-gray-900 mb-1">
+                  {activeGroups.length > 0 ? Math.round(activeGroups.reduce((sum, group) => sum + (group.members || 0), 0) / activeGroups.length) : 0}
+                </p>
+                <p className="text-sm text-gray-600 font-medium">Members per group</p>
+              </div>
+
+              <div className="bg-gradient-to-br from-orange-50 to-amber-100 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-shadow duration-200 border border-orange-200">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-3 bg-orange-500 rounded-xl shadow-md">
+                    <TrendingUp className="w-6 h-6 text-white" />
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-medium text-orange-600">Success Rate</p>
+                    <p className="text-xs text-orange-500">Groups completed</p>
+                  </div>
+                </div>
+                <p className="text-3xl font-bold text-gray-900 mb-1">
+                  {activeGroups.length > 0 ? Math.round((readyForPaymentGroups.length / (activeGroups.length + readyForPaymentGroups.length)) * 100) : 0}%
+                </p>
+                <p className="text-sm text-gray-600 font-medium">Completion rate</p>
+              </div>
+            </div>
+
+            {/* Analytics Content */}
+            <div className="space-y-6">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Revenue vs Orders Chart */}
                 <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                   <div className="flex items-center gap-3 mb-4">
                     <div className="p-2 bg-blue-100 rounded-lg">
-                      <TrendingUp className="w-6 h-6 text-blue-600" />
+                      <BarChart className="w-6 h-6 text-blue-600" />
                     </div>
                     <div>
-                      <h3 className="text-lg font-semibold text-gray-900">Top Products by Revenue</h3>
-                      <p className="text-sm text-gray-600">Performance of your products in group buys</p>
+                      <h3 className="text-lg font-semibold text-gray-900">Revenue vs Orders</h3>
+                      <p className="text-sm text-gray-600">Monthly performance comparison</p>
                     </div>
                   </div>
                   <div className="h-[300px]">
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={revenueData}>
+                      <ComposedChart data={[
+                        { month: 'Jan', revenue: 4500, orders: 45 },
+                        { month: 'Feb', revenue: 5200, orders: 52 },
+                        { month: 'Mar', revenue: 4800, orders: 48 },
+                        { month: 'Apr', revenue: 6100, orders: 61 },
+                        { month: 'May', revenue: 5500, orders: 55 },
+                        { month: 'Jun', revenue: 6700, orders: 67 }
+                      ]}>
                         <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="name" />
-                        <YAxis />
-                        <Tooltip formatter={(value) => [`$${value}`, 'Revenue']} />
-                        <Bar dataKey="revenue" fill="#3B82F6" />
-                      </BarChart>
+                        <XAxis dataKey="month" />
+                        <YAxis yAxisId="left" />
+                        <YAxis yAxisId="right" orientation="right" />
+                        <Tooltip />
+                        <Bar yAxisId="left" dataKey="revenue" fill="#3B82F6" name="Revenue ($)" />
+                        <Line yAxisId="right" type="monotone" dataKey="orders" stroke="#10B981" strokeWidth={3} name="Orders" />
+                      </ComposedChart>
                     </ResponsiveContainer>
                   </div>
                 </div>
 
+                {/* Group Performance */}
                 <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                   <div className="flex items-center gap-3 mb-4">
                     <div className="p-2 bg-green-100 rounded-lg">
                       <Users className="w-6 h-6 text-green-600" />
                     </div>
                     <div>
-                      <h3 className="text-lg font-semibold text-gray-900">Dashboard Metrics</h3>
-                      <p className="text-sm text-gray-600">Key performance indicators</p>
+                      <h3 className="text-lg font-semibold text-gray-900">Group Performance</h3>
+                      <p className="text-sm text-gray-600">Success rates by category</p>
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-gray-50 rounded-lg p-4">
-                      <div className="flex items-center gap-2 mb-2">
-                        <ShoppingCart className="w-4 h-4 text-blue-600" />
-                        <span className="text-sm font-medium text-gray-600">Total Orders</span>
-                      </div>
-                      <p className="text-2xl font-bold text-gray-900">{orders.length + pendingGroupBuys.length + paidGroupBuys.length}</p>
+                  <div className="h-[300px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={[
+                        { category: 'Electronics', success: 85, total: 100 },
+                        { category: 'Fashion', success: 78, total: 95 },
+                        { category: 'Home', success: 92, total: 98 },
+                        { category: 'Beauty', success: 88, total: 92 },
+                        { category: 'Food', success: 76, total: 85 }
+                      ]}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="category" />
+                        <YAxis />
+                        <Tooltip formatter={(value, name) => [name === 'success' ? `${value}%` : value, name === 'success' ? 'Success Rate' : 'Total Groups']} />
+                        <Bar dataKey="success" fill="#10B981" name="Success Rate (%)" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Top Products */}
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="p-2 bg-purple-100 rounded-lg">
+                      <Package className="w-6 h-6 text-purple-600" />
                     </div>
-                    <div className="bg-gray-50 rounded-lg p-4">
-                      <div className="flex items-center gap-2 mb-2">
-                        <DollarSign className="w-4 h-4 text-green-600" />
-                        <span className="text-sm font-medium text-gray-600">Total Revenue</span>
-                      </div>
-                      <p className="text-2xl font-bold text-gray-900">
-                        ${[...orders, ...pendingGroupBuys, ...paidGroupBuys].reduce((sum, item) => sum + (item.total_value || 0), 0).toFixed(2)}
-                      </p>
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900">Top Products</h3>
+                      <p className="text-sm text-gray-600">By revenue</p>
                     </div>
-                    <div className="bg-gray-50 rounded-lg p-4">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Clock className="w-4 h-4 text-yellow-600" />
-                        <span className="text-sm font-medium text-gray-600">Pending Orders</span>
+                  </div>
+                  <div className="space-y-3">
+                    {revenueData.slice(0, 5).map((product, index) => (
+                      <div key={index} className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <span className="w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-bold">
+                            {index + 1}
+                          </span>
+                          <span className="text-sm font-medium text-gray-900 truncate">{product.name}</span>
+                        </div>
+                        <span className="text-sm font-bold text-gray-900">${product.revenue}</span>
                       </div>
-                      <p className="text-2xl font-bold text-gray-900">{orders.length + pendingGroupBuys.length}</p>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Customer Insights */}
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="p-2 bg-orange-100 rounded-lg">
+                      <Users className="w-6 h-6 text-orange-600" />
                     </div>
-                    <div className="bg-gray-50 rounded-lg p-4">
-                      <div className="flex items-center gap-2 mb-2">
-                        <CheckCircle className="w-4 h-4 text-green-600" />
-                        <span className="text-sm font-medium text-gray-600">Completed Orders</span>
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900">Customer Insights</h3>
+                      <p className="text-sm text-gray-600">Behavior analysis</p>
+                    </div>
+                  </div>
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600">New Customers</span>
+                      <span className="text-lg font-bold text-gray-900">68%</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600">Repeat Customers</span>
+                      <span className="text-lg font-bold text-gray-900">32%</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600">Avg Order Value</span>
+                      <span className="text-lg font-bold text-gray-900">$127.50</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600">Customer Lifetime Value</span>
+                      <span className="text-lg font-bold text-gray-900">$892.30</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Geographic Distribution */}
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="p-2 bg-red-100 rounded-lg">
+                      <TrendingUp className="w-6 h-6 text-red-600" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900">Top Locations</h3>
+                      <p className="text-sm text-gray-600">By order volume</p>
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    {[
+                      { location: 'Downtown', orders: 145, percentage: 32 },
+                      { location: 'Midtown', orders: 98, percentage: 22 },
+                      { location: 'Uptown', orders: 87, percentage: 19 },
+                      { location: 'Suburbs', orders: 76, percentage: 17 },
+                      { location: 'Other', orders: 42, percentage: 10 }
+                    ].map((item, index) => (
+                      <div key={index} className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm font-medium text-gray-900">{item.location}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="w-16 bg-gray-200 rounded-full h-2">
+                            <div
+                              className="bg-blue-600 h-2 rounded-full"
+                              style={{ width: `${item.percentage}%` }}
+                            ></div>
+                          </div>
+                          <span className="text-sm font-bold text-gray-900">{item.orders}</span>
+                        </div>
                       </div>
-                      <p className="text-2xl font-bold text-gray-900">{paidGroupBuys.length}</p>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'earnings' && (
+          <div className="space-y-8">
+            {/* Earnings Header */}
+            <div className="flex justify-between items-center">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900">Earnings Dashboard</h2>
+                <p className="text-gray-600 mt-1">Track your revenue, payments, and financial performance</p>
+              </div>
+              <div className="flex gap-2">
+                <select className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                  <option>Last 7 days</option>
+                  <option>Last 30 days</option>
+                  <option>Last 90 days</option>
+                  <option>Last year</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Earnings Overview Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="bg-gradient-to-br from-green-50 to-emerald-100 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-shadow duration-200 border border-green-200">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-3 bg-green-500 rounded-xl shadow-md">
+                    <DollarSign className="w-6 h-6 text-white" />
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-medium text-green-600">Total Earnings</p>
+                    <p className="text-xs text-green-500">+15% vs last month</p>
+                  </div>
+                </div>
+                <p className="text-3xl font-bold text-gray-900 mb-1">
+                  ${earningsData?.totalEarnings?.toFixed(2) || '0.00'}
+                </p>
+                <p className="text-sm text-gray-600 font-medium">Lifetime earnings</p>
+              </div>
+
+              <div className="bg-gradient-to-br from-blue-50 to-indigo-100 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-shadow duration-200 border border-blue-200">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-3 bg-blue-500 rounded-xl shadow-md">
+                    <TrendingUp className="w-6 h-6 text-white" />
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-medium text-blue-600">Monthly Revenue</p>
+                    <p className="text-xs text-blue-500">Current month</p>
+                  </div>
+                </div>
+                <p className="text-3xl font-bold text-gray-900 mb-1">${earningsData?.monthlyRevenue?.toFixed(2) || '0.00'}</p>
+                <p className="text-sm text-gray-600 font-medium">This month</p>
+              </div>
+
+              <div className="bg-gradient-to-br from-purple-50 to-violet-100 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-shadow duration-200 border border-purple-200">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-3 bg-purple-500 rounded-xl shadow-md">
+                    <Clock className="w-6 h-6 text-white" />
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-medium text-purple-600">Pending Payout</p>
+                    <p className="text-xs text-purple-500">Next payout: Dec 15</p>
+                  </div>
+                </div>
+                <p className="text-3xl font-bold text-gray-900 mb-1">${earningsData?.pendingPayout?.toFixed(2) || '0.00'}</p>
+                <p className="text-sm text-gray-600 font-medium">Available for payout</p>
+              </div>
+
+              <div className="bg-gradient-to-br from-orange-50 to-amber-100 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-shadow duration-200 border border-orange-200">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-3 bg-orange-500 rounded-xl shadow-md">
+                    <CheckCircle className="w-6 h-6 text-white" />
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-medium text-orange-600">Avg Order Value</p>
+                    <p className="text-xs text-orange-500">Per completed group</p>
+                  </div>
+                </div>
+                <p className="text-3xl font-bold text-gray-900 mb-1">${earningsData?.avgOrderValue?.toFixed(2) || '0.00'}</p>
+                <p className="text-sm text-gray-600 font-medium">Average per order</p>
+              </div>
+            </div>
+
+            {/* Earnings Analytics */}
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Revenue Trends */}
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="p-2 bg-green-100 rounded-lg">
+                      <TrendingUp className="w-6 h-6 text-green-600" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900">Revenue Trends</h3>
+                      <p className="text-sm text-gray-600">Monthly earnings over time</p>
+                    </div>
+                  </div>
+                  <div className="h-[300px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={revenueTrends}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="month" />
+                        <YAxis />
+                        <Tooltip formatter={(value, name) => [name === 'revenue' ? `$${value}` : value, name === 'revenue' ? 'Revenue' : 'Orders']} />
+                        <Area type="monotone" dataKey="revenue" stroke="#10B981" fill="#10B981" fillOpacity={0.3} name="Revenue ($)" />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* Earnings by Category */}
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="p-2 bg-blue-100 rounded-lg">
+                      <BarChart className="w-6 h-6 text-blue-600" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900">Earnings by Category</h3>
+                      <p className="text-sm text-gray-600">Revenue breakdown by product category</p>
+                    </div>
+                  </div>
+                  <div className="h-[300px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={[
+                        { category: 'Electronics', earnings: 4500, percentage: 34 },
+                        { category: 'Fashion', earnings: 3200, percentage: 24 },
+                        { category: 'Home', earnings: 2800, percentage: 21 },
+                        { category: 'Beauty', earnings: 1800, percentage: 14 },
+                        { category: 'Food', earnings: 1100, percentage: 8 }
+                      ]}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="category" />
+                        <YAxis />
+                        <Tooltip formatter={(value, name) => [name === 'earnings' ? `$${value}` : `${value}%`, name === 'earnings' ? 'Earnings' : 'Percentage']} />
+                        <Bar dataKey="earnings" fill="#3B82F6" name="Earnings ($)" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Top Earning Products */}
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="p-2 bg-purple-100 rounded-lg">
+                      <Package className="w-6 h-6 text-purple-600" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900">Top Earning Products</h3>
+                      <p className="text-sm text-gray-600">By revenue generated</p>
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    {topEarningProducts.map((product, index) => (
+                      <div key={index} className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <span className="w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-bold">
+                            {index + 1}
+                          </span>
+                          <div>
+                            <span className="text-sm font-medium text-gray-900 block">{product.name}</span>
+                            <span className="text-xs text-gray-500">{product.orders} orders</span>
+                          </div>
+                        </div>
+                        <span className="text-sm font-bold text-gray-900">${product.earnings}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Payment History */}
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="p-2 bg-green-100 rounded-lg">
+                      <CheckCircle className="w-6 h-6 text-green-600" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900">Recent Payments</h3>
+                      <p className="text-sm text-gray-600">Payment history and status</p>
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    {earningsHistory.slice(0, 5).map((payment, index) => (
+                      <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">${payment.amount}</p>
+                          <p className="text-xs text-gray-600">{new Date(payment.date).toLocaleDateString()}</p>
+                          <p className="text-xs text-gray-500">{payment.method || 'Bank Transfer'}</p>
+                        </div>
+                        <Badge variant={payment.status === 'completed' ? 'default' : 'secondary'}>
+                          {payment.status || 'completed'}
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Earnings Summary */}
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="p-2 bg-orange-100 rounded-lg">
+                      <DollarSign className="w-6 h-6 text-orange-600" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900">Earnings Summary</h3>
+                      <p className="text-sm text-gray-600">Financial overview</p>
+                    </div>
+                  </div>
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600">Total Revenue</span>
+                      <span className="text-lg font-bold text-gray-900">${earningsData?.totalEarnings?.toFixed(2) || '0.00'}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600">Platform Fees (5%)</span>
+                      <span className="text-lg font-bold text-red-600">-${((earningsData?.totalEarnings || 0) * 0.05).toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600">Net Earnings</span>
+                      <span className="text-lg font-bold text-green-600">${((earningsData?.totalEarnings || 0) * 0.95).toFixed(2)}</span>
+                    </div>
+                    <div className="border-t pt-4">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-gray-600">Paid Out</span>
+                        <span className="text-lg font-bold text-blue-600">${((earningsData?.totalEarnings || 0) * 0.95 - (earningsData?.pendingPayout || 0)).toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between items-center mt-2">
+                        <span className="text-sm text-gray-600">Available Balance</span>
+                        <span className="text-lg font-bold text-purple-600">${earningsData?.pendingPayout?.toFixed(2) || '0.00'}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -602,7 +974,7 @@ const SupplierDashboard: React.FC = () => {
 
 
               {/* Orders Related to Products */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 gap-6">
                 {/* Pending Group Orders */}
                 <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                 <div className="flex items-center gap-3 mb-6">
@@ -688,77 +1060,6 @@ const SupplierDashboard: React.FC = () => {
                   </div>
                 )}
               </div>
-
-                {/* Completed Groups Table */}
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="p-2 bg-green-100 rounded-lg">
-                    <CheckCircle className="w-5 h-5 text-green-600" />
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-900">Completed Group Orders</h3>
-                    <p className="text-sm text-gray-600">Successfully delivered orders</p>
-                  </div>
-                </div>
-                {paidGroupBuys.length === 0 ? (
-                  <div className="text-center py-12">
-                    <CheckCircle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">No completed orders</h3>
-                    <p className="text-gray-600">Completed group orders will appear here.</p>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="border-b border-gray-200">
-                          <th className="text-left py-3 px-4 font-medium text-gray-900">Order Details</th>
-                          <th className="text-left py-3 px-4 font-medium text-gray-900">Group Info</th>
-                          <th className="text-left py-3 px-4 font-medium text-gray-900">Products</th>
-                          <th className="text-right py-3 px-4 font-medium text-gray-900">Total Value</th>
-                          <th className="text-center py-3 px-4 font-medium text-gray-900">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {paidGroupBuys.map((group) => (
-                          <tr key={group.id} className="border-b border-gray-100 hover:bg-gray-50">
-                            <td className="py-4 px-4">
-                              <div className="font-medium text-gray-900">{group.order_number}</div>
-                              <div className="text-sm text-gray-600">{new Date(group.created_at).toLocaleDateString()}</div>
-                            </td>
-                            <td className="py-4 px-4">
-                              <div className="font-medium text-gray-900">{group.group_name}</div>
-                              <div className="text-sm text-gray-600">{group.trader_count} traders</div>
-                              <div className="text-sm text-gray-600">{group.delivery_location}</div>
-                            </td>
-                            <td className="py-4 px-4">
-                              <div className="text-sm">
-                                {group.products.slice(0, 2).map((product: any, index: number) => (
-                                  <div key={index} className="truncate max-w-xs">
-                                    {product.name} × {product.quantity}
-                                  </div>
-                                ))}
-                                {group.products.length > 2 && (
-                                  <div className="text-gray-500">+{group.products.length - 2} more</div>
-                                )}
-                              </div>
-                            </td>
-                            <td className="py-4 px-4 text-right">
-                              <div className="font-semibold text-gray-900">${group.total_value}</div>
-                              <div className="text-sm text-green-600">Savings: ${group.total_savings}</div>
-                            </td>
-                            <td className="py-4 px-4 text-center">
-                              <Badge variant="default" className="bg-green-100 text-green-800">
-                                <CheckCircle className="h-3 w-3 mr-1" />
-                                Completed
-                              </Badge>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
               </div>
             </div>
           </div>
@@ -783,57 +1084,49 @@ const SupplierDashboard: React.FC = () => {
 
             {/* Group Management Stats */}
             {moderationStats && (
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                <div className="bg-gradient-to-br from-blue-50 via-blue-50 to-indigo-100 rounded-2xl shadow-md hover:shadow-xl transition-all duration-300 p-6 border border-blue-100">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="p-2.5 bg-blue-500 rounded-xl shadow-lg">
-                      <Users className="w-5 h-5 text-white" />
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="p-1.5 bg-blue-100 rounded-md">
+                      <Users className="w-4 h-4 text-blue-600" />
                     </div>
-                    <div className="px-3 py-1 bg-blue-100 rounded-full">
-                      <p className="text-xs font-semibold text-blue-700">Active</p>
-                    </div>
+                    <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded">Active</span>
                   </div>
-                  <p className="text-sm font-medium text-gray-600 mb-1">Active Groups</p>
-                  <p className="text-3xl font-bold text-blue-600">{moderationStats.active_groups || 0}</p>
+                  <p className="text-xs text-gray-600 mb-1">Active Groups</p>
+                  <p className="text-xl font-bold text-blue-600">{moderationStats.active_groups || 0}</p>
                 </div>
 
-                <div className="bg-gradient-to-br from-green-50 via-green-50 to-emerald-100 rounded-2xl shadow-md hover:shadow-xl transition-all duration-300 p-6 border border-green-100">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="p-2.5 bg-green-500 rounded-xl shadow-lg">
-                      <Package className="w-5 h-5 text-white" />
+                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="p-1.5 bg-green-100 rounded-md">
+                      <CheckCircle className="w-4 h-4 text-green-600" />
                     </div>
-                    <div className="px-3 py-1 bg-green-100 rounded-full">
-                      <p className="text-xs font-semibold text-green-700">Ready</p>
-                    </div>
+                    <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-1 rounded">Completed</span>
                   </div>
-                  <p className="text-sm font-medium text-gray-600 mb-1">Ready for Payment</p>
-                  <p className="text-3xl font-bold text-green-600">{moderationStats.ready_for_payment || 0}</p>
+                  <p className="text-xs text-gray-600 mb-1">Completed Group Orders</p>
+                  <p className="text-xl font-bold text-green-600">{moderationStats.ready_for_payment || 0}</p>
                 </div>
 
-                <div className="bg-gradient-to-br from-purple-50 via-purple-50 to-violet-100 rounded-2xl shadow-md hover:shadow-xl transition-all duration-300 p-6 border border-purple-100">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="p-2.5 bg-purple-500 rounded-xl shadow-lg">
-                      <Users className="w-5 h-5 text-white" />
+                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="p-1.5 bg-purple-100 rounded-md">
+                      <Users className="w-4 h-4 text-purple-600" />
                     </div>
-                    <div className="px-3 py-1 bg-purple-100 rounded-full">
-                      <p className="text-xs font-semibold text-purple-700">Total</p>
-                    </div>
+                    <span className="text-xs font-medium text-purple-600 bg-purple-50 px-2 py-1 rounded">Total</span>
                   </div>
-                  <p className="text-sm font-medium text-gray-600 mb-1">Total Members</p>
-                  <p className="text-3xl font-bold text-purple-600">{moderationStats.total_members || 0}</p>
+                  <p className="text-xs text-gray-600 mb-1">Total Members</p>
+                  <p className="text-xl font-bold text-purple-600">{moderationStats.total_members || 0}</p>
                 </div>
 
-                <div className="bg-gradient-to-br from-orange-50 via-orange-50 to-amber-100 rounded-2xl shadow-md hover:shadow-xl transition-all duration-300 p-6 border border-orange-100">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="p-2.5 bg-orange-500 rounded-xl shadow-lg">
-                      <Clock className="w-5 h-5 text-white" />
+                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="p-1.5 bg-orange-100 rounded-md">
+                      <Clock className="w-4 h-4 text-orange-600" />
                     </div>
-                    <div className="px-3 py-1 bg-orange-100 rounded-full">
-                      <p className="text-xs font-semibold text-orange-700">Pending</p>
-                    </div>
+                    <span className="text-xs font-medium text-orange-600 bg-orange-50 px-2 py-1 rounded">Pending</span>
                   </div>
-                  <p className="text-sm font-medium text-gray-600 mb-1">Pending Orders</p>
-                  <p className="text-3xl font-bold text-orange-600">{moderationStats.pending_orders || 0}</p>
+                  <p className="text-xs text-gray-600 mb-1">Pending Orders</p>
+                  <p className="text-xl font-bold text-orange-600">{moderationStats.pending_orders || 0}</p>
                 </div>
               </div>
             )}
@@ -912,17 +1205,17 @@ const SupplierDashboard: React.FC = () => {
                 </div>
               </div>
 
-              {/* Ready for Payment */}
+              {/* Completed Group Orders */}
               <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
                 <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-green-50 via-emerald-50 to-green-50">
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-3">
                       <div className="p-2.5 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl shadow-md">
-                        <DollarSign className="w-6 h-6 text-white" />
+                        <CheckCircle className="w-6 h-6 text-white" />
                       </div>
                       <div>
-                        <h3 className="text-xl font-bold text-gray-900">Ready for Payment</h3>
-                        <p className="text-sm text-gray-500 mt-0.5">Groups that have reached their target</p>
+                        <h3 className="text-xl font-bold text-gray-900">Completed Group Orders</h3>
+                        <p className="text-sm text-gray-500 mt-0.5">Groups that have been completed</p>
                       </div>
                     </div>
                     <span className="inline-flex items-center px-3 py-1.5 rounded-full text-sm font-bold bg-green-100 text-green-700 shadow-sm">
@@ -934,8 +1227,8 @@ const SupplierDashboard: React.FC = () => {
                   {readyForPaymentGroups.length === 0 ? (
                     <div className="text-center py-12">
                       <CheckCircle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                      <h3 className="text-lg font-medium text-gray-900 mb-2">No groups ready</h3>
-                      <p className="text-gray-600">Groups will appear here when they reach their targets.</p>
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">No completed groups</h3>
+                      <p className="text-gray-600">Completed groups will appear here.</p>
                     </div>
                   ) : (
                     readyForPaymentGroups.map((group: any) => (
@@ -945,7 +1238,7 @@ const SupplierDashboard: React.FC = () => {
                             <div className="flex items-center gap-2 mb-3">
                               <h4 className="text-lg font-bold text-gray-900">{group.name}</h4>
                               <span className="inline-flex items-center gap-1 px-3 py-1 text-xs font-bold bg-green-500 text-white rounded-full shadow-md">
-                                <CheckCircle className="w-3 h-3" /> Ready
+                                <CheckCircle className="w-3 h-3" /> Completed
                               </span>
                             </div>
                             <div className="grid grid-cols-2 gap-3 mt-4">
@@ -970,16 +1263,11 @@ const SupplierDashboard: React.FC = () => {
                         </div>
                         <div className="flex gap-2">
                           <button
-                            onClick={() => handleProcessPayment(group.id)}
-                            disabled={processingPayment}
-                            className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-green-600 to-emerald-600 text-white text-sm font-medium rounded-xl hover:from-green-700 hover:to-emerald-700 transition-all duration-200 shadow-md hover:shadow-lg disabled:opacity-50"
+                            onClick={() => handleViewGroupDetails(group.id)}
+                            className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-green-600 to-emerald-600 text-white text-sm font-medium rounded-xl hover:from-green-700 hover:to-emerald-700 transition-all duration-200 shadow-md hover:shadow-lg"
                           >
-                            {processingPayment ? (
-                              <Clock className="w-4 h-4 animate-spin" />
-                            ) : (
-                              <DollarSign className="w-4 h-4" />
-                            )}
-                            Process Payment
+                            <CheckCircle className="w-4 h-4" />
+                            View Details
                           </button>
                           <button
                             onClick={() => handleViewGroupDetails(group.id)}
