@@ -83,43 +83,32 @@ const StatCard = ({
       onClick={onClick}
       className={`
         relative overflow-hidden 
-        bg-white/90 dark:bg-neutral-900/90 
-        backdrop-blur-xl 
-        rounded-2xl 
-        border border-neutral-200/30 dark:border-neutral-800/50
-        shadow-elevation-1 hover:shadow-elevation-3
-        transition-all duration-500 
-        p-6 
+        bg-white dark:bg-neutral-900
+        rounded-lg 
+        border border-neutral-200 dark:border-neutral-800
+        shadow-sm hover:shadow-md
+        transition-all duration-300 
+        p-5 
         group 
         ${onClick ? 'cursor-pointer' : ''}
-        hover:scale-[1.02] active:scale-[0.98]
-        hover:translate-y-[-2px]
+        hover:translate-y-[-1px]
       `}
     >
-      {/* Premium Background Gradient */}
-      <div className={`absolute inset-0 bg-gradient-to-br ${colors.bg} opacity-60 group-hover:opacity-80 transition-opacity duration-500`}></div>
-      
-      {/* Animated Glow Effect */}
-      <div className="absolute -inset-px bg-gradient-to-r from-accent-500/0 via-accent-500/20 to-accent-500/0 opacity-0 group-hover:opacity-100 blur-xl transition-opacity duration-500"></div>
-      
       {/* Content */}
       <div className="relative flex items-start justify-between">
         <div className="flex-1 space-y-2">
-          {/* Title with Icon */}
+          {/* Title */}
           <div className="flex items-center gap-2">
             <p className="text-sm font-medium text-neutral-600 dark:text-neutral-400">
               {title}
             </p>
-            {onClick && (
-              <ArrowUpRight className="w-3.5 h-3.5 text-neutral-400 opacity-0 group-hover:opacity-100 transition-all duration-300 group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-            )}
           </div>
           
           {/* Value */}
           {loading ? (
-            <div className="h-9 w-24 bg-gradient-to-r from-neutral-200 to-neutral-300 dark:from-neutral-700 dark:to-neutral-600 rounded-lg animate-pulse"></div>
+            <div className="h-9 w-24 bg-neutral-200 dark:bg-neutral-800 rounded animate-pulse"></div>
           ) : (
-            <p className="text-3xl font-bold font-display bg-gradient-to-br from-neutral-900 to-neutral-700 dark:from-neutral-100 dark:to-neutral-200 bg-clip-text text-transparent">
+            <p className="text-2xl font-bold font-display text-neutral-900 dark:text-neutral-100">
               {value}
             </p>
           )}
@@ -127,7 +116,7 @@ const StatCard = ({
           {/* Trend */}
           {trend !== undefined && (
             <div className="flex items-center gap-2">
-              <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium ${trend >= 0 ? colorClasses.green.trend : colorClasses.red.trend}`}>
+              <div className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${trend >= 0 ? colorClasses.green.trend : colorClasses.red.trend}`}>
                 {trend >= 0 ? (
                   <TrendingUp className="w-3 h-3" />
                 ) : (
@@ -135,7 +124,6 @@ const StatCard = ({
                 )}
                 <span>{trend >= 0 ? '+' : ''}{trend}%</span>
               </div>
-              <span className="text-xs text-neutral-500 dark:text-neutral-400">vs last period</span>
             </div>
           )}
           
@@ -143,31 +131,11 @@ const StatCard = ({
           {subtitle && !trend && (
             <p className="text-sm text-neutral-500 dark:text-neutral-400">{subtitle}</p>
           )}
-          
-          {/* Sparkline */}
-          {sparkline && (
-            <div className="flex items-end gap-0.5 h-8 mt-3">
-              {sparkline.map((value, i) => (
-                <div
-                  key={i}
-                  className={`flex-1 bg-gradient-to-t ${colors.icon} rounded-t opacity-60 group-hover:opacity-100 transition-all duration-300`}
-                  style={{ 
-                    height: `${(value / Math.max(...sparkline)) * 100}%`,
-                    animationDelay: `${i * 50}ms`
-                  }}
-                />
-              ))}
-            </div>
-          )}
         </div>
         
         {/* Icon */}
-        <div className="relative">
-          <div className={`absolute inset-0 bg-gradient-to-br ${colors.icon} rounded-2xl blur-xl opacity-50 group-hover:opacity-75 transition-opacity duration-500`}></div>
-          <div className={`relative p-3 bg-gradient-to-br ${colors.icon} text-white rounded-2xl shadow-lg ${colors.glow} group-hover:scale-110 group-hover:rotate-3 transition-all duration-300`}>
-            {icon}
-          </div>
-          <Sparkles className="absolute -top-1 -right-1 w-4 h-4 text-amber-400 opacity-0 group-hover:opacity-100 animate-pulse transition-opacity duration-300" />
+        <div className="relative p-2 bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 rounded">
+          {icon}
         </div>
       </div>
     </div>

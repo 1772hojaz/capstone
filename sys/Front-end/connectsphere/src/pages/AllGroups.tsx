@@ -163,16 +163,16 @@ export default function AllGroups() {
               Recommended
             </button>
             <button 
-              onClick={() => navigate('/groups')}
-              className="text-sm text-gray-700 hover:text-gray-900"
-            >
-              My Groups
-            </button>
-            <button 
               onClick={() => navigate('/all-groups')}
               className="text-sm font-medium text-blue-600"
             >
               All Groups
+            </button>
+            <button 
+              onClick={() => navigate('/groups')}
+              className="text-sm text-gray-700 hover:text-gray-900"
+            >
+              My Groups
             </button>
           </nav>
 
@@ -232,16 +232,16 @@ export default function AllGroups() {
               Recommended
             </button>
             <button
-              onClick={() => navigate('/groups')}
-              className="py-4 text-sm font-medium border-b-2 border-transparent text-gray-600 hover:text-gray-900 transition"
-            >
-              My Groups
-            </button>
-            <button
               onClick={() => navigate('/all-groups')}
               className="py-4 text-sm font-medium border-b-2 border-blue-600 text-blue-600 transition"
             >
               All Groups
+            </button>
+            <button
+              onClick={() => navigate('/groups')}
+              className="py-4 text-sm font-medium border-b-2 border-transparent text-gray-600 hover:text-gray-900 transition"
+            >
+              My Groups
             </button>
           </nav>
         </div>

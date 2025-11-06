@@ -1,7 +1,3 @@
-// import forms from '@tailwindcss/forms';
-// import typography from '@tailwindcss/typography';
-// import aspectRatio from '@tailwindcss/aspect-ratio';
-
 /** @type {import('tailwindcss').Config} */
 export default {
   content: [
@@ -12,45 +8,43 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Premium Color Palette - Inspired by luxury brands
         primary: {
-          DEFAULT: '#0a0a14',
-          50: '#f0f0f5',
-          100: '#d6d6e3',
-          200: '#b3b3cb',
-          300: '#8888ad',
-          400: '#666693',
-          500: '#4a4a77',
-          600: '#3a3a5f',
-          700: '#2d2d4a',
-          800: '#1f1f35',
-          900: '#0a0a14',
+          50: '#f0f4f8',
+          100: '#d9e3f0',
+          200: '#b5c8e0',
+          300: '#8aa7d0',
+          400: '#6d8bc3',
+          500: '#4a6bb5',
+          600: '#3a5aa5',
+          700: '#2e4a8f',
+          800: '#253d75',
+          900: '#1a2a4a',
         },
         secondary: {
-          DEFAULT: '#c6a87d',
-          50: '#f9f7f2',
-          100: '#f1ece0',
-          200: '#e2d7c0',
-          300: '#d1bc9a',
-          400: '#c6a87d',
-          500: '#b89561',
-          600: '#a78252',
-          700: '#8c6a45',
-          800: '#71563d',
-          900: '#5c4633',
+          50: '#fdf8f0',
+          100: '#fbeed9',
+          200: '#f7d9b3',
+          300: '#f2be82',
+          400: '#eca04d',
+          500: '#e78c2b',
+          600: '#d97b1f',
+          700: '#b8651a',
+          800: '#935119',
+          900: '#5a3210',
         },
+        // Quince-inspired color palette
         accent: {
-          DEFAULT: '#9a7bcf',
-          50: '#f7f5fc',
-          100: '#eeeaf8',
-          200: '#ddd5f0',
-          300: '#c5b7e5',
-          400: '#9a7bcf',
-          500: '#8c68c2',
-          600: '#7a54b0',
-          700: '#684397',
-          800: '#56387c',
-          900: '#482f66',
+          DEFAULT: '#4a6c8b',
+          50: '#f5f7f9',
+          100: '#e8edf2',
+          200: '#d1dce6',
+          300: '#a9bfd3',
+          400: '#7da0bd',
+          500: '#4a6c8b',
+          600: '#3d5a73',
+          700: '#33485d',
+          800: '#2c3a4a',
+          900: '#1f2a36',
         },
         // Semantic Colors
         success: {
@@ -123,8 +117,8 @@ export default {
         ring: 'rgb(var(--color-ring))',
       },
       fontFamily: {
-        sans: ['Inter var', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
-        display: ['Lexend', 'Inter var', 'system-ui', 'sans-serif'],
+        sans: ['"Open Sans"', 'Inter var', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+        display: ['Raleway', 'Lexend', 'Inter var', 'system-ui', 'sans-serif'],
         mono: ['JetBrains Mono', 'Fira Code', 'Consolas', 'monospace'],
       },
       fontSize: {
@@ -199,6 +193,9 @@ export default {
         'elevation-2': '0 4px 8px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04)',
         'elevation-3': '0 8px 16px rgba(0,0,0,0.08), 0 4px 8px rgba(0,0,0,0.04)',
         'elevation-4': '0 16px 32px rgba(0,0,0,0.08), 0 8px 16px rgba(0,0,0,0.04)',
+        'et': '0 15px 30px -10px rgba(58, 74, 107, 0.15)',
+        'et-md': '0 10px 25px -5px rgba(58, 74, 107, 0.1)',
+        'et-sm': '0 5px 15px -3px rgba(58, 74, 107, 0.08)',
       },
       animation: {
         // Existing animations
@@ -298,8 +295,8 @@ export default {
     },
   },
   plugins: [
-    // forms,
-    // typography,
-    // aspectRatio,
+    require('@tailwindcss/forms'),
+    require('@tailwindcss/typography'),
+    require('@tailwindcss/aspect-ratio')
   ],
 }

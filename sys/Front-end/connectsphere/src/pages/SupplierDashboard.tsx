@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Badge } from "../components/ui/badge";
-import { Button } from "../components/ui/button";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell, AreaChart, Area, ComposedChart } from 'recharts';
-import { ShoppingCart, Users, DollarSign, TrendingUp, Clock, CheckCircle, AlertCircle, Search, Download, Plus, X, Package, Edit2, Save, XCircle } from 'lucide-react';
+import Button from "../components/ui/Button";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, ComposedChart, Line } from 'recharts';
+import { ShoppingCart, Users, DollarSign, TrendingUp, Clock, CheckCircle, AlertCircle, Plus, X, Package, Edit2, Save, XCircle } from 'lucide-react';
 import SupplierLayout from '../components/SupplierLayout';
+// @ts-ignore
 import apiService from '../services/api';
 
 interface DashboardMetrics {
@@ -45,7 +46,6 @@ const SupplierDashboard: React.FC = () => {
   const [paymentDashboard, setPaymentDashboard] = useState<any>(null);
   const [pendingGroupBuys, setPendingGroupBuys] = useState<any[]>([]);
   const [paidGroupBuys, setPaidGroupBuys] = useState<any[]>([]);
-  const [productSearch, setProductSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('products');
 
@@ -65,8 +65,6 @@ const SupplierDashboard: React.FC = () => {
   const [editedGroup, setEditedGroup] = useState<any>(null);
   const [editedImage, setEditedImage] = useState<File | null>(null);
   const [editedImagePreview, setEditedImagePreview] = useState<string | null>(null);
-  const [processingPayment, setProcessingPayment] = useState(false);
-  const [generatingQR, setGeneratingQR] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newGroup, setNewGroup] = useState({
     name: '',
@@ -230,38 +228,6 @@ const SupplierDashboard: React.FC = () => {
       setEarningsHistory([]);
       setRevenueTrends([]);
       setTopEarningProducts([]);
-    }
-  };
-
-  const handleProcessPayment = async (groupId: number) => {
-    try {
-      setProcessingPayment(true);
-      const result = await apiService.processSupplierGroupPayment(groupId);
-      // Refresh data after payment processing
-      fetchGroupModerationData();
-      alert('Payment processed successfully!');
-    } catch (error) {
-      console.error('Error processing payment:', error);
-      alert('Failed to process payment. Please try again.');
-    } finally {
-      setProcessingPayment(false);
-    }
-  };
-
-  const handleGenerateQR = async (groupId: number) => {
-    try {
-      setGeneratingQR(true);
-      const result = await apiService.generateSupplierGroupQR(groupId);
-      // Show QR code or download link
-      if (result && result.qr_code_data) {
-        // You could show a modal with the QR code here
-        alert(`QR Code generated successfully! Code: ${result.qr_code_data}`);
-      }
-    } catch (error) {
-      console.error('Error generating QR code:', error);
-      alert('Failed to generate QR code. Please try again.');
-    } finally {
-      setGeneratingQR(false);
     }
   };
 
@@ -1044,7 +1010,7 @@ const SupplierDashboard: React.FC = () => {
                                 </Button>
                                 <Button
                                   onClick={() => handleOrderAction(group.id, 'reject', 'Capacity constraints')}
-                                  variant="outline"
+                                  variant="secondary"
                                   size="sm"
                                   className="text-red-600 border-red-300 hover:bg-red-50"
                                 >
@@ -1324,7 +1290,7 @@ const SupplierDashboard: React.FC = () => {
                             <p className="text-sm text-gray-600">Including ${invoice.tax_amount} tax</p>
                           </div>
                           {invoice.pdf_url && (
-                            <Button variant="outline" size="sm">
+                            <Button variant="secondary" size="sm">
                               Download PDF
                             </Button>
                           )}

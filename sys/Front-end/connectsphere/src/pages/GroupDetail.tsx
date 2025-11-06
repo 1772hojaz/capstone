@@ -290,16 +290,16 @@ export default function GroupDetail() {
               Recommended
             </button>
             <button
-              onClick={() => navigate('/groups')}
-              className="text-sm text-gray-700 hover:text-gray-900"
-            >
-              My Groups
-            </button>
-            <button
               onClick={() => navigate('/all-groups')}
               className="text-sm text-gray-700 hover:text-gray-900"
             >
               All Groups
+            </button>
+            <button
+              onClick={() => navigate('/groups')}
+              className="text-sm text-gray-700 hover:text-gray-900"
+            >
+              My Groups
             </button>
           </nav>
 
@@ -381,11 +381,19 @@ export default function GroupDetail() {
             <div className="md:flex">
               {/* Product Image */}
               <div className="md:w-1/2 h-64 md:h-auto bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-8">
-                {groupData.product_image_url || groupData.image ? (
-                  <img src={groupData.product_image_url || groupData.image} alt={groupData.product_name || groupData.name} className="max-h-full max-w-full object-contain" />
-                ) : (
-                  <span className="text-8xl">📦</span>
-                )}
+                {(() => {
+                  const raw = groupData.product_image_url || groupData.image;
+                  const isValidUrl = typeof raw === 'string' && (raw.startsWith('http') || raw.startsWith('data:'));
+                  if (isValidUrl) {
+                    return (
+                      <img src={raw} alt={groupData.product_name || groupData.name} className="max-h-full max-w-full object-contain" />
+                    );
+                  }
+
+                  // Fallback placeholder with encoded product name
+                  const placeholder = `https://via.placeholder.com/450x300?text=${encodeURIComponent(groupData.product_name || groupData.name || 'Product')}`;
+                  return <img src={placeholder} alt={groupData.product_name || groupData.name} className="max-h-full max-w-full object-contain" />;
+                })()}
               </div>
 
               {/* Product Info */}

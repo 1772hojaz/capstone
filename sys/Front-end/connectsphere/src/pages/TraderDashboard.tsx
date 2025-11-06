@@ -75,7 +75,7 @@ const TraderDashboard = () => {
   }, [isLocationDropdownOpen]);
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
         <div className="px-3 sm:px-6 py-4 flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-8">
@@ -106,16 +106,16 @@ const TraderDashboard = () => {
               Recommended
             </button>
             <button 
-              onClick={() => navigate('/groups')}
-              className="text-sm text-gray-700 hover:text-gray-900"
-            >
-              My Groups
-            </button>
-            <button 
               onClick={() => navigate('/all-groups')}
               className="text-sm text-gray-700 hover:text-gray-900"
             >
               All Groups
+            </button>
+            <button 
+              onClick={() => navigate('/groups')}
+              className="text-sm text-gray-700 hover:text-gray-900"
+            >
+              My Groups
             </button>
           </nav>
 
@@ -187,20 +187,20 @@ const TraderDashboard = () => {
               Recommended
             </button>
             <button
-              onClick={() => navigate('/groups')}
-              role="tab"
-              aria-selected="false"
-              className="py-4 text-sm font-medium border-b-2 border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300 transition focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-            >
-              My Groups
-            </button>
-            <button
               onClick={() => navigate('/all-groups')}
               role="tab"
               aria-selected="false"
               className="py-4 text-sm font-medium border-b-2 border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300 transition focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
             >
               All Groups
+            </button>
+            <button
+              onClick={() => navigate('/groups')}
+              role="tab"
+              aria-selected="false"
+              className="py-4 text-sm font-medium border-b-2 border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300 transition focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+            >
+              My Groups
             </button>
           </nav>
         </div>
@@ -213,7 +213,7 @@ const TraderDashboard = () => {
           <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-2">
             <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900">Recommended For You</h1>
             <div className="flex items-center gap-1 bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-xs sm:text-sm font-medium w-fit">
-              <Zap className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <Zap className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />
               <span>AI Powered</span>
             </div>
           </div>
@@ -420,7 +420,7 @@ const TraderDashboard = () => {
             
             {/* Copyright */}
             <div className="text-sm text-gray-500">
-              © 2025 ConnectSphere. All rights reserved.
+              2025 ConnectSphere. All rights reserved.
             </div>
           </div>
         </div>

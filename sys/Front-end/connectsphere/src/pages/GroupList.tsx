@@ -174,17 +174,19 @@ export default function GroupList() {
     );
   });
 
-  const filteredActiveGroups = activeGroups.filter(group => {
-    if (group.status === 'ready_for_pickup') return false;
-    if (!activeGroupsSearch) return true;
-    
-    const searchTerm = activeGroupsSearch.toLowerCase();
-    return (
-      group.name?.toLowerCase().includes(searchTerm) ||
-      group.description?.toLowerCase().includes(searchTerm) ||
-      group.pickupLocation?.toLowerCase().includes(searchTerm)
-    );
-  });
+  const filteredActiveGroups = activeGroups
+    .filter(group => group.status !== 'ready_for_pickup')
+    .filter((group, index, self) => self.findIndex(g => g.id === group.id) === index) // Remove duplicates
+    .filter(group => {
+      if (!activeGroupsSearch) return true;
+
+      const searchTerm = activeGroupsSearch.toLowerCase();
+      return (
+        group.name?.toLowerCase().includes(searchTerm) ||
+        group.description?.toLowerCase().includes(searchTerm) ||
+        group.pickupLocation?.toLowerCase().includes(searchTerm)
+      );
+    });
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -218,16 +220,16 @@ export default function GroupList() {
               Recommended
             </button>
             <button 
-              onClick={() => navigate('/groups')}
+              onClick={() => navigate('/all-groups')}
               className="text-sm font-medium text-blue-600"
             >
-              My Groups
+              All Groups
             </button>
             <button 
-              onClick={() => navigate('/all-groups')}
+              onClick={() => navigate('/groups')}
               className="text-sm text-gray-700 hover:text-gray-900"
             >
-              All Groups
+              My Groups
             </button>
           </nav>
 
@@ -287,16 +289,16 @@ export default function GroupList() {
               Recommended
             </button>
             <button
-              onClick={() => navigate('/groups')}
+              onClick={() => navigate('/all-groups')}
               className="py-3 sm:py-4 text-sm font-medium border-b-2 border-blue-600 text-blue-600 transition whitespace-nowrap"
             >
-              My Groups
+              All Groups
             </button>
             <button
-              onClick={() => navigate('/all-groups')}
+              onClick={() => navigate('/groups')}
               className="py-3 sm:py-4 text-sm font-medium border-b-2 border-transparent text-gray-600 hover:text-gray-900 transition whitespace-nowrap"
             >
-              All Groups
+              My Groups
             </button>
           </nav>
         </div>
@@ -380,8 +382,8 @@ export default function GroupList() {
                 ) : (
                   <div className="p-4 sm:p-6">
                     <div className="grid grid-cols-1 gap-4">
-                      {filteredReadyForCollection.map((group) => (
-                        <div key={group.id} className="bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded-lg p-4 hover:shadow-md transition">
+                      {filteredReadyForCollection.map((group, idx) => (
+                        <div key={`ready-${group.id ?? group._id ?? idx}`} className="bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded-lg p-4 hover:shadow-md transition">
                           <div className="flex items-start justify-between mb-3">
                             <div className="flex-1">
                               <h3 className="font-semibold text-gray-900 mb-1">{group.name}</h3>
@@ -531,8 +533,8 @@ export default function GroupList() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-200">
-                        {filteredActiveGroups.map((group) => (
-                          <tr key={group.id} className="hover:bg-gray-50">
+                        {filteredActiveGroups.map((group, index) => (
+                          <tr key={`group-${group.id ?? group._id ?? index}`} className="hover:bg-gray-50">
                             <td className="px-2 sm:px-3 py-2 text-sm text-gray-900 truncate">{group.name}</td>
                             <td className="px-2 sm:px-3 py-2 text-sm text-gray-600 truncate">
                               {group.adminName === "Admin" ? "Admin" : group.adminName}
