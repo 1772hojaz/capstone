@@ -210,7 +210,7 @@ const TraderDashboard = () => {
       <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
         {/* Clear, prominent heading - Responsive */}
         <div className="mb-6 sm:mb-8">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-2">
+          <div className="flex flex-col sm:flex-row items-start gap-2 sm:gap-3 mb-2">
             <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900">Recommended For You</h1>
             <div className="flex items-center gap-1 bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-xs sm:text-sm font-medium w-fit">
               <Zap className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />
@@ -237,92 +237,77 @@ const TraderDashboard = () => {
           </div>
         )}
 
-        {/* Product Grid - Simplified for informal traders */}
+        {/* Product Grid - Avanti-style design */}
         {!isLoading && !error && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-12">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-12">
             {recommendations.map((product) => (
               <div 
                 key={product.group_buy_id} 
-                className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-lg transition-all duration-200 group"
+                className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-all duration-300"
                 role="article"
                 aria-label={`${product.product_name} group buy`}
               >
-                {/* Product Image with better visual appeal - Larger */}
-                <div className="h-56 bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center relative overflow-hidden">
+                {/* Product Image */}
+                <div className="relative h-64 bg-gray-100 flex items-center justify-center">
                   {product.product_image_url ? (
                     <img 
                       src={product.product_image_url} 
                       alt={product.product_name} 
-                      className="h-40 object-contain group-hover:scale-105 transition-transform duration-200" 
+                      className="h-full w-full object-cover" 
                     />
                   ) : (
-                    <span className="text-7xl group-hover:scale-105 transition-transform duration-200">📦</span>
+                    <span className="text-5xl text-gray-400">📦</span>
                   )}
-                  {/* Match score badge */}
-                  <div className="absolute top-3 left-3 bg-blue-600 text-white text-xs font-bold px-3 py-1 rounded-full shadow-sm">
-                    {Math.round(product.recommendation_score * 100)}% Match
+                  {/* Recommendation badge */}
+                  <div className="absolute top-3 left-3 bg-white px-2 py-1 rounded-full shadow-md flex items-center gap-1">
+                    <span className="text-green-600 text-xs font-bold">{product.matchScore}%</span>
+                    <span className="text-xs text-gray-600">recommended</span>
                   </div>
                   {/* Save badge */}
-                  <div className="absolute top-3 right-3 bg-green-500 text-white text-xs font-bold px-2 py-1 rounded-full shadow-sm">
+                  <div className="absolute top-3 right-3 bg-green-500 text-white text-xs font-bold px-2 py-1 rounded-full shadow-md">
                     Save {Math.round(product.savings_factor * 100)}%
                   </div>
                 </div>
 
-                {/* Product Info - Streamlined */}
-                <div className="p-5">
-                  {/* Recommendation reason - Simplified */}
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <Zap className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />
-                    <p className="text-xs text-blue-600 font-medium">{product.reason}</p>
-                  </div>
+                {/* Product Info */}
+                <div className="p-4">
+                  <h3 className="text-lg font-bold text-gray-900 mb-1 line-clamp-2">{product.product_name}</h3>
                   
-                  <h3 className="text-lg font-bold text-gray-900 mb-2 line-clamp-2 leading-tight">{product.product_name}</h3>
-                  
-                  {/* Price with visual emphasis - Simplified */}
+                  {/* Price */}
                   <div className="mb-3">
                     <div className="flex items-baseline gap-2">
-                      <span className="text-2xl font-bold text-blue-600">${product.bulk_price}</span>
-                      <span className="text-sm text-gray-400 line-through">${product.unit_price}</span>
+                      <span className="text-xl font-bold text-gray-900">${product.bulk_price}</span>
+                      <span className="text-sm text-gray-500 line-through">${product.unit_price}</span>
                     </div>
-                    <p className="text-xs text-green-600 font-medium">Group Buy Price</p>
                   </div>
                   
-                  {/* Participants - Simplified */}
+                  {/* Progress bar */}
                   <div className="mb-4">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="flex items-center gap-1 text-gray-700">
-                        <Users className="w-4 h-4" />
-                        <span className="font-medium">{product.participants_count} joined</span>
-                      </span>
-                      <span className="text-gray-500">{product.moq} needed</span>
+                    <div className="flex items-center justify-between text-xs mb-1">
+                      <span className="text-gray-600">{product.participants_count} joined</span>
+                      <span className="text-gray-600">{product.moq} needed</span>
                     </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden mt-1">
+                    <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
                       <div 
-                        className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                        className="bg-blue-600 h-2 rounded-full"
                         style={{ width: `${product.moq_progress}%` }}
-                        role="progressbar"
-                        aria-valuenow={product.participants_count}
-                        aria-valuemin={0}
-                        aria-valuemax={product.moq}
-                      ></div>
+                      />
                     </div>
                   </div>
 
-                  {/* Simplified call-to-action */}
+                  {/* Buttons */}
                   <div className="flex gap-2">
                     <button
                       onClick={() => handleViewGroup(product)}
-                      className="flex-1 py-3 text-sm font-semibold text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors flex items-center justify-center gap-1"
+                      className="flex-1 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition"
                     >
-                      <Eye className="w-4 h-4" />
-                      View
+                      View Details
                     </button>
                     <button 
                       onClick={() => handleJoinGroup(product)}
-                      className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 active:bg-blue-800 transition-colors duration-150 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 shadow-sm"
-                      aria-label={`Join ${product.product_name} group buy`}
+                      className="flex-1 bg-blue-600 text-white py-2 rounded-md font-medium hover:bg-blue-700 transition"
                     >
-                      Join
+                      Join Group
                     </button>
                   </div>
                 </div>

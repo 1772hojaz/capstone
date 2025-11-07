@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Search, MapPin, User, X, Eye, ChevronDown, ChevronUp, EyeOff } from 'lucide-react';
 import apiService from '../services/api';
 
 export default function GroupList() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [showQRCode, setShowQRCode] = useState(false);
   const [selectedQRGroup, setSelectedQRGroup] = useState<any>(null);
   const [showGroupDetails, setShowGroupDetails] = useState(false);
@@ -208,26 +209,42 @@ export default function GroupList() {
           <nav className="hidden md:flex items-center gap-6 flex-1">
             <button 
               onClick={() => navigate('/profile')}
-              className="flex items-center gap-2 text-sm text-gray-700 hover:text-gray-900"
+              className={`flex items-center gap-2 text-sm ${
+                location.pathname === '/profile' || location.pathname === '/supplier/profile'
+                  ? 'font-medium text-blue-600'
+                  : 'text-gray-700 hover:text-gray-900'
+              }`}
             >
               <User className="w-4 h-4" />
               Profile
             </button>
             <button 
               onClick={() => navigate('/trader')}
-              className="text-sm text-gray-700 hover:text-gray-900"
+              className={`text-sm ${
+                location.pathname === '/trader'
+                  ? 'font-medium text-blue-600'
+                  : 'text-gray-700 hover:text-gray-900'
+              }`}
             >
               Recommended
             </button>
-            <button 
+            <button
               onClick={() => navigate('/all-groups')}
-              className="text-sm font-medium text-blue-600"
+              className={`text-sm ${
+                location.pathname === '/all-groups'
+                  ? 'font-medium text-blue-600'
+                  : 'text-gray-700 hover:text-gray-900'
+              }`}
             >
               All Groups
             </button>
             <button 
               onClick={() => navigate('/groups')}
-              className="text-sm text-gray-700 hover:text-gray-900"
+              className={`text-sm ${
+                location.pathname === '/groups'
+                  ? 'font-medium text-blue-600'
+                  : 'text-gray-700 hover:text-gray-900'
+              }`}
             >
               My Groups
             </button>
@@ -284,19 +301,31 @@ export default function GroupList() {
           <nav className="flex gap-4 sm:gap-8">
             <button
               onClick={() => navigate('/trader')}
-              className="py-3 sm:py-4 text-sm font-medium border-b-2 border-transparent text-gray-600 hover:text-gray-900 transition whitespace-nowrap"
+              className={`py-3 sm:py-4 text-sm font-medium border-b-2 transition whitespace-nowrap ${
+                location.pathname === '/trader'
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-gray-600 hover:text-gray-900'
+              }`}
             >
               Recommended
             </button>
             <button
               onClick={() => navigate('/all-groups')}
-              className="py-3 sm:py-4 text-sm font-medium border-b-2 border-blue-600 text-blue-600 transition whitespace-nowrap"
+              className={`py-3 sm:py-4 text-sm font-medium border-b-2 transition whitespace-nowrap ${
+                location.pathname === '/all-groups'
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-gray-600 hover:text-gray-900'
+              }`}
             >
               All Groups
             </button>
             <button
               onClick={() => navigate('/groups')}
-              className="py-3 sm:py-4 text-sm font-medium border-b-2 border-transparent text-gray-600 hover:text-gray-900 transition whitespace-nowrap"
+              className={`py-3 sm:py-4 text-sm font-medium border-b-2 transition whitespace-nowrap ${
+                location.pathname === '/groups'
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-gray-600 hover:text-gray-900'
+              }`}
             >
               My Groups
             </button>
@@ -342,7 +371,7 @@ export default function GroupList() {
               </div>
               
               {/* Ready for Collection - Scrollable Content */}
-              <div className="max-h-[400px] overflow-y-auto overflow-x-hidden">
+              <div className="max-h-[600px] overflow-y-auto overflow-x-hidden">
                 {loading ? (
                   <div className="p-4 sm:p-6">
                     <div className="text-center py-8">

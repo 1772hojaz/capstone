@@ -57,6 +57,12 @@ function App() {
           </MainLayout>
         } />
 
+        <Route path="/profile" element={
+          <MainLayout>
+            <ProfilePage />
+          </MainLayout>
+        } />
+
         <Route path="/supplier/profile" element={
           <MainLayout>
             <ProfilePage />
