@@ -16,6 +16,7 @@ Quick links
 - Google Colab (notebook): https://colab.research.google.com/drive/1h3pVNah8ckJJjoeoKlbLJDc2c4gsA9Em#scrollTo=9cad86e2
 - Video Initial demo (Vimeo): https://vimeo.com/1125306747?share=copy
 - Final Product demo (Vimeo): https://vimeo.com/1132954187?share=copy&fl=sv&fe=ci
+- Link to github repo: https://github.com/1772hojaz/capstone
 
 How to set up the environment and the project
 ---------------------------------------------
