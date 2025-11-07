@@ -364,7 +364,8 @@ Video Demo
 
 Watch the demo video on Vimeo:
 
-https://vimeo.com/1125306747?share=copy
+Initial demo: https://vimeo.com/1125306747?share=copy
+ Final Product demo (Vimeo): https://vimeo.com/1132954187?share=copy&fl=sv&fe=ci
 
 Google Colab
 ------------
