@@ -217,13 +217,42 @@ async def shutdown_event():
 # WebSocket endpoint for ML training progress
 @app.websocket("/ws/ml-training")
 async def ml_training_websocket(websocket: WebSocket):
-    await manager.connect(websocket)
+    # For now, connect without user authentication for ML training
+    await manager.connect(websocket, user_id=0)  # Use 0 for anonymous/system connections
     try:
         while True:
             # Keep connection alive, wait for client messages if needed
             data = await websocket.receive_text()
             # Echo back for connection health
             await websocket.send_text(f"Connected: {data}")
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+
+# WebSocket endpoint for real-time QR status updates
+@app.websocket("/ws/qr-updates")
+async def qr_updates_websocket(websocket: WebSocket, token: str = None):
+    """WebSocket endpoint for real-time QR status updates"""
+    from authentication.auth import verify_token_string
+    from db.database import get_db
+
+    # Authenticate user
+    db = next(get_db())
+    try:
+        user = verify_token_string(token, db) if token else None
+        if not user:
+            await websocket.close(code=1008)  # Policy violation
+            return
+    except Exception as e:
+        print(f"WebSocket auth error: {e}")
+        await websocket.close(code=1008)  # Policy violation
+        return
+
+    # Connect with user ID for targeted broadcasts
+    await manager.connect(websocket, user.id)
+    try:
+        while True:
+            # Keep connection alive
+            await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(websocket)
 

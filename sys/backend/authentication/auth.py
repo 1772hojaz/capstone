@@ -197,6 +197,22 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security), 
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
+def verify_token_string(token: str, db: Session):
+    """Verify JWT token string for WebSocket authentication"""
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id: int = payload.get("user_id")
+        if user_id is None:
+            return None
+        
+        user = db.query(User).filter(User.id == user_id).first()
+        if user is None:
+            return None
+        
+        return user
+    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
+        return None
+
 def verify_admin(user: User = Depends(verify_token)):
     if not user.is_admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")

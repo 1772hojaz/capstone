@@ -11,7 +11,7 @@ import io
 import secrets
 from cryptography.fernet import Fernet
 from db.database import get_db
-from models.models import User, AdminGroup, Contribution, GroupBuy, AdminGroupJoin
+from models.models import User, AdminGroup, Contribution, GroupBuy, AdminGroupJoin, QRCodePickup
 from authentication.auth import verify_token
 
 router = APIRouter()
@@ -233,8 +233,36 @@ async def get_group_qr_code(
     - qr_content: encrypted payload used for validation
     - expires_at: ISO timestamp when QR expires
     - pickup_instructions: human readable pickup instructions/location
+    - is_used: whether this QR code has been used for pickup
+    - status: ready/used status
     """
     try:
+        # First, check if user already has a QR code for this group
+        # Get the most recent valid QR code for this group
+        existing_qr = db.query(QRCodePickup).filter(
+            QRCodePickup.user_id == user.id,
+            QRCodePickup.group_buy_id == group_id,
+            QRCodePickup.expires_at > datetime.utcnow()  # Only get non-expired QR codes
+        ).order_by(QRCodePickup.generated_at.desc()).first()
+        
+        if existing_qr:
+            print(f"DEBUG: Found existing valid QR code - ID: {existing_qr.id}, Used: {existing_qr.is_used}")
+            # Return existing QR code with current status
+            qr_image_base64 = generate_qr_code_image(existing_qr.qr_code_data)
+            
+            return {
+                # "qr_code_id": existing_qr.id,  # Removed - traders don't need this
+                "qr_code": qr_image_base64,
+                "qr_id": existing_qr.qr_code_data,
+                "expires_at": existing_qr.expires_at.isoformat() + 'Z',
+                "is_used": existing_qr.is_used,
+                "used_at": existing_qr.used_at.isoformat() if existing_qr.used_at else None,
+                "pickup_location": existing_qr.pickup_location,
+                "status": "used" if existing_qr.is_used else "ready",
+                "status_text": "Yes" if existing_qr.is_used else "No"
+            }
+        
+        # If no existing QR code, create a new one
         # Try to find the group in AdminGroup or GroupBuy tables
         group = db.query(AdminGroup).filter(AdminGroup.id == group_id).first()
         pickup_location = None
@@ -266,7 +294,6 @@ async def get_group_qr_code(
         qr_id = "QR-" + secrets.token_hex(4).upper()
         
         # Store the QR data in database instead of cache
-        from models import QRCodePickup
         qr_record = QRCodePickup(
             qr_code_data=qr_id,  # Store the QR ID as the data
             user_id=user.id,
@@ -288,10 +315,15 @@ async def get_group_qr_code(
         qr_image_base64 = generate_qr_code_image(qr_id)
 
         return {
+            # "qr_code_id": qr_record.id,  # Removed - traders don't need this
             "qr_code": qr_image_base64,
             "qr_id": qr_id,
             "expires_at": expires_at,
-            "pickup_instructions": f"Show this QR code at {pickup_location} and present valid ID when requested"
+            "is_used": qr_record.is_used,
+            "used_at": qr_record.used_at.isoformat() if qr_record.used_at else None,
+            "pickup_location": pickup_location,
+            "status": "used" if qr_record.is_used else "ready",
+            "status_text": "Yes" if qr_record.is_used else "No"
         }
     except HTTPException:
         raise
@@ -354,7 +386,7 @@ async def get_my_groups(
                     "description": group_buy.product.description or f"Group buy for {group_buy.product.name}",
                     "price": f"${group_buy.product.bulk_price:.2f}",
                     "originalPrice": f"${group_buy.product.unit_price:.2f}",
-                    "image": group_buy.product.image_url or "/api/placeholder/300/200",
+                    "image": group_buy.product.image_url or "https://via.placeholder.com/300x200?text=Product",
                     "status": status,
                     "progress": progress,
                     "dueDate": due_date,
@@ -414,7 +446,7 @@ async def get_my_groups(
                     "description": admin_group.description or f"Admin group buy for {admin_group.name}",
                     "price": f"${admin_group.price:.2f}",
                     "originalPrice": f"${admin_group.original_price:.2f}",
-                    "image": admin_group.image or "/api/placeholder/300/200",
+                    "image": admin_group.image or "https://via.placeholder.com/300x200?text=Product",
                     "status": status,
                     "progress": progress,
                     "dueDate": due_date,
@@ -475,7 +507,7 @@ async def get_my_groups(
                     "description": group_buy.product.description or f"Group buy for {group_buy.product.name}",
                     "price": f"${group_buy.product.bulk_price:.2f}",
                     "originalPrice": f"${group_buy.product.unit_price:.2f}",
-                    "image": group_buy.product.image_url or "/api/placeholder/300/200",
+                    "image": group_buy.product.image_url or "https://via.placeholder.com/300x200?text=Product",
                     "status": "ready_for_pickup",  # All completed groups are ready for pickup
                     "progress": progress,
                     "dueDate": due_date,
@@ -550,7 +582,6 @@ async def get_past_groups_summary(
         
         # Calculate average savings per group
         avg_savings_per_group = total_savings / completed_groups if completed_groups > 0 else 0
-        
         return {
             "completed_groups": completed_groups,
             "all_time_savings": round(total_savings, 2),
@@ -641,7 +672,7 @@ async def get_all_groups(
             id=group.id,
             name=group.product.name if group.product else f"Group Buy #{group.id}",
             price=group.product.bulk_price if group.product else 0,
-            image=group.product.image_url if group.product and group.product.image_url else "/api/placeholder/300/200",
+            image=group.product.image_url if group.product and group.product.image_url else "https://via.placeholder.com/300x200?text=Product",
             description=group.product.description if group.product else "User-created group buy",
             participants=participants_count,
             category=group.product.category if group.product else "General",
@@ -766,7 +797,7 @@ async def get_group_detail(
             name=group_buy.product.name if group_buy.product else f"Group Buy #{group_buy.id}",
             price=group_buy.product.bulk_price if group_buy.product else 0,
             originalPrice=group_buy.product.unit_price if group_buy.product else 0,
-            image=group_buy.product.image_url if group_buy.product and group_buy.product.image_url else "/api/placeholder/300/200",
+            image=group_buy.product.image_url if group_buy.product and group_buy.product.image_url else "https://via.placeholder.com/300x200?text=Product",
             description=group_buy.product.description if group_buy.product else "User-created group buy",
             longDescription=group_buy.product.description if group_buy.product else "Join this community group buy for quality products at bulk prices.",
             participants=participants_count,
