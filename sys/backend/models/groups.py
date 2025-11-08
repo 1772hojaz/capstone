@@ -122,6 +122,20 @@ class JoinGroupRequest(BaseModel):
             }
         }
 
+class UpdateQuantityRequest(BaseModel):
+    quantity_increase: int
+    payment_transaction_id: Optional[str] = None
+    payment_reference: Optional[str] = None
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "quantity_increase": 2,
+                "payment_transaction_id": "tx_123456789",
+                "payment_reference": "quantity_increase_123_1234567890"
+            }
+        }
+
 class UpdateContributionRequest(BaseModel):
     quantity: int
 
@@ -1078,6 +1092,162 @@ async def join_group(
         print(f"Error joining group {group_id}: {e}")
         db.rollback()
         raise HTTPException(status_code=500, detail="Failed to join group")
+
+@router.post("/{group_id}/update-quantity")
+async def update_group_quantity(
+    group_id: int,
+    request: UpdateQuantityRequest,
+    user: User = Depends(verify_token),
+    db: Session = Depends(get_db)
+):
+    """Update the user's quantity commitment for a group-buy by increasing it.
+
+    Allows users to increase their quantity commitment to a group they're already part of.
+    Requires payment for the additional quantity.
+    """
+    try:
+        # First, try to find the group as an AdminGroup
+        admin_group = db.query(AdminGroup).filter(
+            AdminGroup.id == group_id,
+            AdminGroup.is_active
+        ).first()
+
+        if admin_group:
+            # Handle AdminGroup quantity update
+            # Check if user has already joined this group
+            existing_join = db.query(AdminGroupJoin).filter(
+                AdminGroupJoin.user_id == user.id,
+                AdminGroupJoin.admin_group_id == group_id
+            ).first()
+
+            if not existing_join:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="You haven't joined this group yet"
+                )
+
+            # Validate quantity increase
+            if request.quantity_increase <= 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Quantity increase must be greater than 0"
+                )
+
+            # Calculate additional amount needed
+            additional_amount = request.quantity_increase * admin_group.price
+
+            # Update the join record
+            old_quantity = existing_join.quantity
+            existing_join.quantity += request.quantity_increase
+
+            # Update payment info if provided
+            if request.payment_transaction_id:
+                existing_join.payment_transaction_id = request.payment_transaction_id
+            if request.payment_reference:
+                existing_join.payment_reference = request.payment_reference
+
+            # Create transaction record for the additional quantity
+            if admin_group.product_id:
+                from models import Transaction
+                transaction = Transaction(
+                    user_id=user.id,
+                    group_buy_id=None,  # Admin groups don't have group_buy_id
+                    product_id=admin_group.product_id,
+                    quantity=request.quantity_increase,
+                    amount=additional_amount,
+                    transaction_type="quantity_increase",
+                    location_zone=user.location_zone or "Unknown"
+                )
+                db.add(transaction)
+
+            db.commit()
+
+            return {
+                "message": "Quantity updated successfully",
+                "old_quantity": old_quantity,
+                "new_quantity": existing_join.quantity,
+                "quantity_increase": request.quantity_increase,
+                "additional_amount": round(additional_amount, 2),
+                "group_progress": f"{admin_group.participants}/{admin_group.max_participants or 'unlimited'}"
+            }
+
+        # If not an AdminGroup, try GroupBuy
+        group_buy = db.query(GroupBuy).filter(
+            GroupBuy.id == group_id,
+            GroupBuy.status == "active",
+            GroupBuy.deadline > datetime.utcnow()
+        ).first()
+
+        if group_buy:
+            # Handle GroupBuy quantity update
+            # Check if user has already joined this group
+            existing_contribution = db.query(Contribution).filter(
+                Contribution.user_id == user.id,
+                Contribution.group_buy_id == group_id
+            ).first()
+
+            if not existing_contribution:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="You haven't joined this group yet"
+                )
+
+            # Validate quantity increase
+            if request.quantity_increase <= 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Quantity increase must be greater than 0"
+                )
+
+            # Calculate additional amount needed
+            unit_price = group_buy.product.bulk_price
+            additional_amount = request.quantity_increase * unit_price
+
+            # Update contribution
+            old_quantity = existing_contribution.quantity
+            existing_contribution.quantity += request.quantity_increase
+            existing_contribution.contribution_amount += additional_amount
+
+            # Update group totals
+            group_buy.total_quantity += request.quantity_increase
+            group_buy.total_contributions += additional_amount
+
+            # Create transaction record for the additional quantity
+            from models import Transaction
+            transaction = Transaction(
+                user_id=user.id,
+                group_buy_id=group_id,
+                product_id=group_buy.product_id,
+                quantity=request.quantity_increase,
+                amount=additional_amount,
+                transaction_type="quantity_increase",
+                location_zone=user.location_zone or "Unknown"
+            )
+            db.add(transaction)
+
+            db.commit()
+
+            return {
+                "message": "Quantity updated successfully",
+                "old_quantity": old_quantity,
+                "new_quantity": existing_contribution.quantity,
+                "quantity_increase": request.quantity_increase,
+                "additional_amount": round(additional_amount, 2),
+                "group_progress": f"{group_buy.total_quantity}/{group_buy.product.moq} ({group_buy.moq_progress:.1f}%)"
+            }
+
+        # If neither AdminGroup nor GroupBuy found
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Group not found or no longer active"
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error updating quantity for group {group_id}: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to update quantity")
 
 @router.post("/", response_model=GroupResponse)
 async def create_admin_group(
