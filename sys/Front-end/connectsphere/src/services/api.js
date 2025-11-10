@@ -152,8 +152,17 @@ class ApiService {
     });
   }
 
+  async updateGroupQuantity(groupId, updateData) {
+    return this.request(`/api/groups/${groupId}/update-quantity`, {
+      method: 'POST',
+      body: JSON.stringify(updateData),
+    });
+  }
+
   async getGroupQRCode(groupId) {
-    return this.request(`/api/groups/${groupId}/qr-code`);
+    // Add timestamp to prevent caching of QR status
+    const timestamp = Date.now();
+    return this.request(`/api/groups/${groupId}/qr-code?t=${timestamp}`);
   }
 
   async getAllGroups(params = {}) {
@@ -256,6 +265,10 @@ class ApiService {
 
   async getReadyForPaymentGroups() {
     return this.request('/api/admin/groups/ready-for-payment');
+  }
+
+  async getCompletedGroups() {
+    return this.request('/api/admin/groups/completed');
   }
 
   async processGroupPayment(groupId) {
@@ -464,6 +477,17 @@ class ApiService {
     });
   }
 
+  // Admin-only function - should not be called by traders
+  async getQRCodeStatusAdmin(qrCodeId) {
+    return this.request(`/api/admin/qr/status/${qrCodeId}`);
+  }
+
+  async markQRCodeAsUsed(qrCodeId) {
+    return this.request(`/api/admin/qr/mark-used/${qrCodeId}`, {
+      method: 'POST',
+    });
+  }
+
   // Supplier Invoices
   async getSupplierInvoices(status = null) {
     const url = status ? `/api/supplier/invoices?status=${status}` : '/api/supplier/invoices';
@@ -587,6 +611,73 @@ class ApiService {
       return response.ok;
     } catch {
       return false;
+    }
+  }
+
+  // WebSocket connection for real-time updates
+  connectWebSocket(token) {
+    if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
+      return; // Already connected
+    }
+
+    // Connect to backend WebSocket endpoint (port 8000)
+    const backendUrl = this.baseURL.replace('http://', 'ws://').replace('https://', 'wss://');
+    const wsUrl = `${backendUrl}/ws/qr-updates?token=${token}`;
+    console.log('🔗 Connecting to WebSocket:', wsUrl);
+    this.websocket = new WebSocket(wsUrl);
+
+    this.websocket.onopen = () => {
+      console.log('🔗 WebSocket connected for real-time QR updates');
+      this.websocketConnected = true;
+    };
+
+    this.websocket.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        console.log('📨 WebSocket message received:', data);
+        console.log('🔍 Message type:', data.type);
+        console.log('🎯 Full message data:', JSON.stringify(data, null, 2));
+
+        // Handle QR status updates
+        if (data.type === 'qr_status_update') {
+          console.log('🎯 QR status update received:', data);
+          console.log('🔄 Dispatching qrStatusUpdate event with data:', data);
+          // Dispatch custom event that components can listen to
+          window.dispatchEvent(new CustomEvent('qrStatusUpdate', {
+            detail: data
+          }));
+          console.log('✅ qrStatusUpdate event dispatched');
+        } else {
+          console.log('⚠️ Unknown message type:', data.type);
+        }
+      } catch (error) {
+        console.error('❌ Error parsing WebSocket message:', error);
+        console.error('❌ Raw message:', event.data);
+      }
+    };
+
+    this.websocket.onclose = () => {
+      console.log('🔌 WebSocket disconnected');
+      this.websocketConnected = false;
+      // Auto-reconnect after 5 seconds
+      setTimeout(() => {
+        if (this.websocketConnected === false) {
+          console.log('🔄 Attempting to reconnect WebSocket...');
+          this.connectWebSocket(token);
+        }
+      }, 5000);
+    };
+
+    this.websocket.onerror = (error) => {
+      console.error('❌ WebSocket error:', error);
+    };
+  }
+
+  disconnectWebSocket() {
+    if (this.websocket) {
+      this.websocket.close();
+      this.websocket = null;
+      this.websocketConnected = false;
     }
   }
 }

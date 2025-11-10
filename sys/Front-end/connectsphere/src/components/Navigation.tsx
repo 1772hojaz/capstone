@@ -1,6 +1,9 @@
 // Temporarily disabled - preserved for potential future use
 /*
 import React from 'react';
+import { Link } from 'react-router-dom';
+import { ListItem, ListItemIcon, ListItemText } from '@mui/material';
+import AnalyticsIcon from '@mui/icons-material/Analytics';
 
 const Navigation = () => {
   return (
@@ -25,6 +28,12 @@ const Navigation = () => {
             <a href="#" className="text-gray-900 hover:text-primary-600 px-3 py-2 text-sm font-medium">
               All Groups
             </a>
+            <ListItem button component={Link} to="/analytics">
+              <ListItemIcon>
+                <AnalyticsIcon />
+              </ListItemIcon>
+              <ListItemText primary="Analytics" />
+            </ListItem>
           </div>
 
           <div className="flex items-center space-x-4">

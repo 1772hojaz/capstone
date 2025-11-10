@@ -1,12 +1,21 @@
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 
 const PaymentFailure = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const location = useLocation();
 
   const txRef = searchParams.get('tx_ref');
   const transactionId = searchParams.get('transaction_id');
   const status = searchParams.get('status');
+
+  // Check if this is a quantity increase payment
+  const paymentData = location.state as {
+    error?: string;
+    action?: string;
+  } | null;
+
+  const isQuantityIncrease = paymentData?.action === 'quantity_increase';
 
   const handleRetry = () => {
     // Redirect back to the group detail page or all groups
@@ -29,7 +38,9 @@ const PaymentFailure = () => {
 
         <h2 className="text-xl font-semibold text-gray-800 mb-2">Payment Failed</h2>
         <p className="text-gray-600 mb-6">
-          Your payment could not be processed. Please try again or contact support if the issue persists.
+          {paymentData?.error ||
+            `Your ${isQuantityIncrease ? 'quantity increase' : 'group join'} payment could not be processed. Please try again or contact support if the issue persists.`
+          }
         </p>
 
         <div className="space-y-3">
@@ -56,6 +67,7 @@ const PaymentFailure = () => {
               {txRef && <p>Reference: {txRef}</p>}
               {transactionId && <p>Transaction ID: {transactionId}</p>}
               {status && <p>Status: {status}</p>}
+              {isQuantityIncrease && <p>Type: Quantity Increase</p>}
             </div>
           </div>
         )}

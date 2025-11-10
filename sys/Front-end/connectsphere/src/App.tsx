@@ -1,8 +1,6 @@
-import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import MainLayout from './layouts/MainLayout';
 import DashboardLayout from './components/DashboardLayout';
-import Hero from './components/Hero';
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import SupplierLandingPage from './pages/SupplierLandingPage';
@@ -19,13 +17,15 @@ import Users from './pages/Users';
 import SystemSettings from './pages/SystemSettings';
 import PaymentSuccess from './pages/PaymentSuccess';
 import PaymentFailure from './pages/PaymentFailure';
+import PaymentPage from './pages/PaymentPage';
 import DashboardPage from './pages/DashboardPage';
 import PricingPage from './pages/PricingPage';
 import ContactPage from './pages/ContactPage';
+import AnalyticsDashboard from './components/analytics/AnalyticsDashboard';
 
 function App() {
   return (
-    <Router>
+    <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <Routes>
         <Route path="/" element={
           <MainLayout>
@@ -105,6 +105,12 @@ function App() {
           </MainLayout>
         } />
 
+        <Route path="/payment" element={
+          <MainLayout>
+            <PaymentPage />
+          </MainLayout>
+        } />
+
         <Route path="/payment/success" element={
           <MainLayout>
             <PaymentSuccess />
@@ -152,6 +158,8 @@ function App() {
             <SystemSettings />
           </MainLayout>
         } />
+
+        <Route path="/analytics" element={<AnalyticsDashboard />} />
       </Routes>
     </Router>
   );

@@ -18,7 +18,8 @@ import {
   X,
   Trash2,
   Edit2,
-  Save
+  Save,
+  Eye
 } from 'lucide-react';
 
 const GroupModeration = () => {
@@ -31,8 +32,6 @@ const GroupModeration = () => {
   const [selectedGroup, setSelectedGroup] = useState<any>(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editedGroup, setEditedGroup] = useState<any>(null);
-  const [editedImage, setEditedImage] = useState<File | null>(null);
-  const [editedImagePreview, setEditedImagePreview] = useState<string | null>(null);
   interface NewGroup {
     name: string;
     description: string;
@@ -76,16 +75,19 @@ const GroupModeration = () => {
   // State for dynamic data
   const [activeGroups, setActiveGroups] = useState<any[]>([]);
   const [readyForPaymentGroupsData, setReadyForPaymentGroupsData] = useState<any[]>([]);
+  const [completedGroups, setCompletedGroups] = useState<any[]>([]);
   const [moderationStats, setModerationStats] = useState({
     active_groups: 0,
     total_members: 0,
     ready_for_payment: 0,
-    required_action: 0
+    required_action: 0,
+    completed_groups: 0
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeGroupsSearch, setActiveGroupsSearch] = useState('');
   const [readyForPaymentSearch, setReadyForPaymentSearch] = useState('');
+  const [completedGroupsSearch, setCompletedGroupsSearch] = useState('');
 
   // Fetch data on component mount
   useEffect(() => {
@@ -105,6 +107,10 @@ const GroupModeration = () => {
         // Fetch ready for payment groups
         const readyData = await apiService.getReadyForPaymentGroups();
         setReadyForPaymentGroupsData(readyData);
+
+        // Fetch completed groups
+        const completedData = await apiService.getCompletedGroups();
+        setCompletedGroups(completedData);
 
       } catch (err) {
         console.error('Error fetching moderation data:', err);
@@ -159,6 +165,8 @@ const GroupModeration = () => {
       setActiveGroups(activeData);
       const readyData = await apiService.getReadyForPaymentGroups();
       setReadyForPaymentGroupsData(readyData);
+      const completedData = await apiService.getCompletedGroups();
+      setCompletedGroups(completedData);
       alert('Group deleted successfully!');
     } catch (error: any) {
       console.error('Failed to delete group:', error);
@@ -182,8 +190,6 @@ const GroupModeration = () => {
       const groupDetails = await response.json();
       setSelectedGroup(groupDetails);
       setEditedGroup({ ...groupDetails });
-      setEditedImage(null);
-      setEditedImagePreview(null);
       setIsEditMode(false);
       setShowDetailsModal(true);
     } catch (error) {
@@ -191,8 +197,6 @@ const GroupModeration = () => {
       // Fallback to using the group data we already have
       setSelectedGroup(group);
       setEditedGroup({ ...group });
-      setEditedImage(null);
-      setEditedImagePreview(null);
       setIsEditMode(false);
       setShowDetailsModal(true);
     }
@@ -204,20 +208,11 @@ const GroupModeration = () => {
 
   const handleCancelEdit = () => {
     setEditedGroup({ ...selectedGroup });
-    setEditedImage(null);
-    setEditedImagePreview(null);
     setIsEditMode(false);
   };
 
   const handleSaveEdit = async () => {
     try {
-      // Handle image upload first if a new image was selected
-      let imageUrl = editedGroup.image;
-      if (editedImage) {
-        const uploadResult = await apiService.uploadImage(editedImage);
-        imageUrl = uploadResult.image_url;
-      }
-
       // Prepare update data
       const updateData: any = {
         name: editedGroup.name,
@@ -230,11 +225,6 @@ const GroupModeration = () => {
         shipping_info: editedGroup.shipping_info,
         estimated_delivery: editedGroup.estimated_delivery
       };
-
-      // Add image if it was changed
-      if (editedImage) {
-        updateData.image = imageUrl;
-      }
 
       // Add end_date if it exists
       if (editedGroup.end_date) {
@@ -265,6 +255,8 @@ const GroupModeration = () => {
       setActiveGroups(activeData);
       const readyData = await apiService.getReadyForPaymentGroups();
       setReadyForPaymentGroupsData(readyData);
+      const completedData = await apiService.getCompletedGroups();
+      setCompletedGroups(completedData);
 
       // Update the selected group with new data
       const updatedResponse = await fetch(`http://localhost:8000/api/admin/groups/${editedGroup.id}`, {
@@ -276,9 +268,6 @@ const GroupModeration = () => {
       setSelectedGroup(updatedGroup);
       setEditedGroup(updatedGroup);
 
-      // Reset image state
-      setEditedImage(null);
-      setEditedImagePreview(null);
       setIsEditMode(false);
       alert('Group updated successfully!');
     } catch (error: any) {
@@ -368,23 +357,23 @@ const GroupModeration = () => {
             <p className="text-sm font-medium text-gray-600 mb-1">Ready for Payment</p>
             <p className="text-3xl font-bold text-purple-600">{moderationStats.ready_for_payment}</p>
           </div>
-          <div className="bg-gradient-to-br from-red-50 via-red-50 to-rose-100 rounded-2xl shadow-md hover:shadow-xl transition-all duration-300 p-6 border border-red-100 transform hover:-translate-y-1">
+          <div className="bg-gradient-to-br from-gray-50 via-gray-50 to-slate-100 rounded-2xl shadow-md hover:shadow-xl transition-all duration-300 p-6 border border-gray-100 transform hover:-translate-y-1">
             <div className="flex items-center justify-between mb-3">
-              <div className="p-2.5 bg-red-500 rounded-xl shadow-lg">
-                <AlertTriangle className="w-5 h-5 text-white" />
+              <div className="p-2.5 bg-gray-500 rounded-xl shadow-lg">
+                <CheckCircle2 className="w-5 h-5 text-white" />
               </div>
-              <div className="px-3 py-1 bg-red-100 rounded-full">
-                <p className="text-xs font-semibold text-red-700">Action</p>
+              <div className="px-3 py-1 bg-gray-100 rounded-full">
+                <p className="text-xs font-semibold text-gray-700">Completed</p>
               </div>
             </div>
-            <p className="text-sm font-medium text-gray-600 mb-1">Required Action</p>
-            <p className="text-3xl font-bold text-red-600">{moderationStats.required_action}</p>
+            <p className="text-sm font-medium text-gray-600 mb-1">Completed Groups</p>
+            <p className="text-3xl font-bold text-gray-600">{moderationStats.completed_groups}</p>
           </div>
         </div>
       )}
 
       {/* Groups List */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
         {/* Active Groups */}
         <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
           <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-blue-50 via-indigo-50 to-blue-50">
@@ -453,7 +442,7 @@ const GroupModeration = () => {
                       <span className="px-2 py-1 bg-gray-100 rounded-full">Category: <span className="font-semibold text-gray-800">{group.category}</span></span>
                       <span className="px-2 py-1 bg-gray-100 rounded-full">Due: <span className="font-semibold text-gray-800">{group.dueDate}</span></span>
                       <span className="px-2 py-1 bg-blue-100 rounded-full">Amount: <span className="font-semibold text-blue-700">{group.totalAmount}</span></span>
-                      <span className="px-2 py-1 bg-purple-100 rounded-full">Created by: <span className="font-semibold text-purple-700">{group.creator}</span></span>
+                      <span className="px-2 py-1 bg-purple-100 rounded-full">Created by: <span className="font-semibold text-purple-700">{group.creator}</span> <span className={`text-xs px-1.5 py-0.5 rounded-full ml-1 ${group.creator_type === 'Supplier' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>{group.creator_type}</span></span>
                     </div>
 
                     {/* Product Details */}
@@ -583,6 +572,7 @@ const GroupModeration = () => {
                       <div className="bg-white p-3 rounded-xl shadow-sm">
                         <p className="text-xs text-gray-500 mb-1 font-medium">Created by</p>
                         <p className="text-sm font-bold text-purple-600">{group.creator}</p>
+                        <span className={`text-xs px-1.5 py-0.5 rounded-full mt-1 inline-block ${group.creator_type === 'Supplier' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>{group.creator_type}</span>
                       </div>
                     </div>
                   </div>
@@ -600,6 +590,110 @@ const GroupModeration = () => {
                     className="px-4 py-2.5 border-2 border-gray-300 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50 hover:border-gray-400 transition-all duration-200"
                   >
                     View
+                  </button>
+                  <button
+                    onClick={() => handleDeleteGroup(group.id)}
+                    className="flex items-center gap-2 px-4 py-2.5 bg-red-600 text-white text-sm font-medium rounded-xl hover:bg-red-700 transition-all duration-200 shadow-md hover:shadow-lg"
+                    title="Delete Group"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Completed Groups */}
+        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+          <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-gray-50 via-slate-50 to-gray-50">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-gradient-to-br from-gray-500 to-slate-600 rounded-xl shadow-md">
+                  <CheckCircle2 className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-gray-900">Completed Groups</h3>
+                  <p className="text-sm text-gray-500 mt-0.5">Groups that have been completed due to stock depletion or other reasons</p>
+                </div>
+              </div>
+              <span className="inline-flex items-center px-3 py-1.5 rounded-full text-sm font-bold bg-gray-100 text-gray-700 shadow-sm">
+                {completedGroups.length} Groups
+              </span>
+            </div>
+            {/* Search Bar */}
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Search className="h-5 w-5 text-gray-400" />
+              </div>
+              <input
+                type="text"
+                placeholder="Search completed groups by name, category..."
+                value={completedGroupsSearch}
+                onChange={(e) => setCompletedGroupsSearch(e.target.value)}
+                className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-gray-500 focus:border-gray-500 text-sm bg-white shadow-sm transition-all duration-200"
+              />
+            </div>
+          </div>
+          <div className="p-6 max-h-[500px] overflow-y-auto space-y-4 bg-gradient-to-br from-gray-50 via-slate-50 to-gray-50">
+            {completedGroups
+              .filter((group: any) => {
+                if (!completedGroupsSearch.trim()) return true;
+                
+                const searchTerm = completedGroupsSearch.toLowerCase();
+                return (
+                  group.name?.toLowerCase().includes(searchTerm) ||
+                  group.description?.toLowerCase().includes(searchTerm) ||
+                  group.category?.toLowerCase().includes(searchTerm) ||
+                  group.product?.name?.toLowerCase().includes(searchTerm) ||
+                  group.product?.description?.toLowerCase().includes(searchTerm) ||
+                  group.product?.manufacturer?.toLowerCase().includes(searchTerm) ||
+                  group.completion_reason?.toLowerCase().includes(searchTerm)
+                );
+              })
+              .map((group: any) => (
+              <div key={group.id} className="bg-gradient-to-br from-gray-50 to-slate-50 border-2 border-gray-200 rounded-xl p-5 hover:shadow-lg transition-all duration-300 hover:border-gray-300 transform hover:-translate-y-1">
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-3">
+                      <h4 className="text-lg font-bold text-gray-900">{group.name}</h4>
+                      <span className="inline-flex items-center gap-1 px-3 py-1 text-xs font-bold bg-gray-500 text-white rounded-full shadow-md">
+                        <CheckCircle2 className="w-3 h-3" /> Completed
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 mt-4">
+                      <div className="bg-white p-3 rounded-xl shadow-sm">
+                        <p className="text-xs text-gray-500 mb-1 font-medium">Members</p>
+                        <p className="text-lg font-bold text-gray-900">{group.members}/{group.targetMembers}</p>
+                      </div>
+                      <div className="bg-white p-3 rounded-xl shadow-sm">
+                        <p className="text-xs text-gray-500 mb-1 font-medium">Total Amount</p>
+                        <p className="text-lg font-bold text-gray-600">{group.totalAmount}</p>
+                      </div>
+                      <div className="bg-white p-3 rounded-xl shadow-sm">
+                        <p className="text-xs text-gray-500 mb-1 font-medium">Category</p>
+                        <p className="text-sm font-bold text-gray-900">{group.category}</p>
+                      </div>
+                      <div className="bg-white p-3 rounded-xl shadow-sm">
+                        <p className="text-xs text-gray-500 mb-1 font-medium">Created by</p>
+                        <p className="text-sm font-bold text-purple-600">{group.creator}</p>
+                        <span className={`text-xs px-1.5 py-0.5 rounded-full mt-1 inline-block ${group.creator_type === 'Supplier' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>{group.creator_type}</span>
+                      </div>
+                    </div>
+                    {/* Completion Reason */}
+                    <div className="mt-4 p-3 bg-gray-100 rounded-xl border border-gray-200">
+                      <p className="text-xs text-gray-500 mb-1 font-medium">Completion Reason</p>
+                      <p className="text-sm font-semibold text-gray-700">{group.completion_reason || 'Stock depleted'}</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleViewDetails(group)}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-gray-600 to-slate-600 text-white text-sm font-medium rounded-xl hover:from-gray-700 hover:to-slate-700 transition-all duration-200 shadow-md hover:shadow-lg"
+                  >
+                    <Eye className="w-4 h-4" />
+                    View Details
                   </button>
                   <button
                     onClick={() => handleDeleteGroup(group.id)}
@@ -976,6 +1070,9 @@ const GroupModeration = () => {
                           const readyData = await apiService.getReadyForPaymentGroups();
                           setReadyForPaymentGroupsData(readyData);
 
+                          const completedData = await apiService.getCompletedGroups();
+                          setCompletedGroups(completedData);
+
                         } catch (err) {
                           console.error('Error fetching moderation data:', err);
                           setError('Failed to load group moderation data');
@@ -1075,76 +1172,11 @@ const GroupModeration = () => {
               {/* Group Image */}
               <div className="bg-white rounded-xl p-6 shadow-sm">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Group Image</h3>
-                {isEditMode ? (
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Update Group Image</label>
-                      <div className="flex items-center space-x-2">
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) {
-                              // Create image preview
-                              const reader = new FileReader();
-                              reader.onload = (e) => {
-                                setEditedImage(file);
-                                setEditedImagePreview(e.target?.result as string);
-                              };
-                              reader.readAsDataURL(file);
-                            } else {
-                              // Clear preview if no file selected
-                              setEditedImage(null);
-                              setEditedImagePreview(null);
-                            }
-                          }}
-                          className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                        />
-                        {editedImage && (
-                          <span className="text-sm text-green-600">✓ New image selected</span>
-                        )}
-                      </div>
-                      <p className="mt-1 text-sm text-gray-500">Upload a new image (PNG, JPG up to 5MB) or leave empty to keep current image</p>
-                    </div>
-
-                    {/* Image Preview */}
-                    <div className="relative">
-                      <img
-                        src={editedImagePreview || editedGroup.image || '/api/placeholder/400/300'}
-                        alt={editedGroup.name}
-                        className="w-full h-64 object-cover rounded-xl shadow-md border-2 border-gray-200"
-                      />
-                      {(editedImage || editedImagePreview) && (
-                        <div className="absolute top-2 right-2 bg-green-500 text-white px-2 py-1 rounded-full text-xs font-medium">
-                          New Image
-                        </div>
-                      )}
-                      {editedImage && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditedImage(null);
-                            setEditedImagePreview(null);
-                            // Clear the file input
-                            const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
-                            if (fileInput) fileInput.value = '';
-                          }}
-                          className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors"
-                          title="Remove new image"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <img
-                    src={selectedGroup.image || '/api/placeholder/400/300'}
-                    alt={selectedGroup.name}
-                    className="w-full h-64 object-cover rounded-xl shadow-md"
-                  />
-                )}
+                <img
+                  src={editedGroup.image || '/api/placeholder/400/300'}
+                  alt={editedGroup.name}
+                  className="w-full h-64 object-cover rounded-xl shadow-md"
+                />
               </div>
 
               {/* Basic Information */}
@@ -1457,7 +1489,7 @@ const GroupModeration = () => {
                       </div>
                       <div>
                         <p className="text-blue-600">Created by</p>
-                        <p className="font-medium text-purple-600">{selectedPaymentGroup.creator}</p>
+                        <p className="font-medium text-purple-600">{selectedPaymentGroup.creator} <span className={`text-xs px-1.5 py-0.5 rounded-full ml-1 ${selectedPaymentGroup.creator_type === 'Supplier' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>{selectedPaymentGroup.creator_type}</span></p>
                       </div>
                     </div>
                     

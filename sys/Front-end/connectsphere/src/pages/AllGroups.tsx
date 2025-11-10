@@ -1,4 +1,4 @@
-import { Search, MapPin, User, Users, Filter, SortAsc, Grid, List, X, Eye, ChevronDown } from 'lucide-react';
+import { Search, MapPin, User, Users, Filter, SortAsc, Grid, List, X, Eye, ChevronDown, Zap } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useState, useMemo, useEffect } from 'react';
 import apiService from '../services/api';
@@ -55,6 +55,11 @@ export default function AllGroups() {
         setUserLocation(userData.location_zone || 'Harare');
 
         const groupsData = await apiService.getAllGroups();
+        console.log('AllGroups API response:', groupsData);
+        if (groupsData.length > 0) {
+          console.log('First group:', groupsData[0]);
+          console.log('First group moq:', groupsData[0].moq);
+        }
         setGroups(groupsData);
       } catch (err) {
         console.error('Failed to fetch groups:', err);
@@ -222,24 +227,31 @@ export default function AllGroups() {
       </header>
 
       {/* Tabs */}
-      <div className="bg-white border-b border-gray-200 sticky top-[73px] z-40">
+      <div className="bg-white border-b border-gray-200 shadow-sm sticky top-[73px] z-40">
         <div className="px-3 sm:px-6">
-          <nav className="flex gap-4 sm:gap-8">
+          <nav className="flex gap-4 sm:gap-8" role="tablist" aria-label="Content sections">
             <button
               onClick={() => navigate('/trader')}
-              className="py-4 text-sm font-medium border-b-2 border-transparent text-gray-600 hover:text-gray-900 transition"
+              role="tab"
+              aria-selected="false"
+              aria-controls="recommended-panel"
+              className="py-4 text-sm font-medium border-b-2 border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300 transition focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
             >
               Recommended
             </button>
             <button
               onClick={() => navigate('/all-groups')}
-              className="py-4 text-sm font-medium border-b-2 border-blue-600 text-blue-600 transition"
+              role="tab"
+              aria-selected="true"
+              className="py-4 text-sm font-semibold border-b-2 border-blue-600 text-blue-600 transition focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
             >
               All Groups
             </button>
             <button
               onClick={() => navigate('/groups')}
-              className="py-4 text-sm font-medium border-b-2 border-transparent text-gray-600 hover:text-gray-900 transition"
+              role="tab"
+              aria-selected="false"
+              className="py-4 text-sm font-medium border-b-2 border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300 transition focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
             >
               My Groups
             </button>
@@ -268,8 +280,16 @@ export default function AllGroups() {
             </div>
           )}
 
-          <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-4 sm:mb-6">All Available Groups</h2>
-          <p className="text-sm text-gray-600 mb-6">Browse all admin-created group buy opportunities</p>
+          <div className="mb-4 sm:mb-6">
+            <div className="flex flex-col sm:flex-row items-start gap-2 sm:gap-3 mb-2">
+              <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900">All Available Groups</h1>
+              <div className="flex items-center gap-1 bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-xs sm:text-sm font-medium w-fit">
+                <Zap className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />
+                <span>Admin Created</span>
+              </div>
+            </div>
+            <p className="text-sm sm:text-base text-gray-600">Browse all admin-created group buy opportunities</p>
+          </div>
 
           {/* Search and Filters */}
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-6">
@@ -425,54 +445,78 @@ export default function AllGroups() {
               <p className="text-gray-600">Try adjusting your search or filter criteria</p>
             </div>
           ) : viewMode === 'grid' ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-12">
               {filteredAndSortedGroups.map((group) => (
-                <div key={group.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-lg transition-all duration-200">
-                  {/* Product Image - Larger and more prominent */}
-                  <div className="h-56 bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center relative">
-                    {group.image && group.image.startsWith('http') ? (
-                      <img src={group.image} alt={group.name} className="h-40 object-contain" />
+                <div 
+                  key={group.id} 
+                  className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-all duration-300"
+                  role="article"
+                  aria-label={`${group.name} group buy`}
+                >
+                  {/* Image / Hero */}
+                  <div className="relative h-64 bg-gray-100 flex items-center justify-center">
+                    {group.image && typeof group.image === 'string' && group.image.startsWith('http') ? (
+                      <img src={group.image} alt={group.name} className="h-full w-full object-cover" />
                     ) : (
-                      <span className="text-7xl">📦</span>
+                      <span className="text-5xl text-gray-400">📦</span>
                     )}
-                    {/* Category badge on image */}
-                    <div className="absolute top-3 left-3 bg-blue-600 text-white text-xs font-semibold px-3 py-1 rounded-full shadow-sm">
-                      {group.category}
+
+                    {/* Category badge */}
+                    {group.category && (
+                      <div className="absolute top-3 left-3 bg-white px-2 py-1 rounded-full shadow-md flex items-center gap-2">
+                        <span className="text-xs text-gray-600 font-semibold">{group.category}</span>
+                      </div>
+                    )}
+
+                    {/* Price badge */}
+                    <div className="absolute top-3 right-3 bg-blue-600 text-white text-xs font-bold px-2 py-1 rounded-full shadow-md">
+                      ${group.price}
                     </div>
                   </div>
 
-                  {/* Product Info - Simplified */}
-                  <div className="p-5">
-                    <h3 className="text-lg font-bold text-gray-900 mb-2 line-clamp-2 leading-tight">{group.name}</h3>
-                    
-                    {/* Price and participants in one line */}
-                    <div className="flex items-center justify-between mb-4">
-                      <span className="text-2xl font-bold text-blue-600">${group.price}</span>
-                      <div className="flex items-center gap-1 text-sm text-gray-600 bg-gray-50 px-2 py-1 rounded-full">
-                        <Users className="w-4 h-4" />
-                        <span className="font-medium">{group.participants}</span>
+                  {/* Info */}
+                  <div className="p-4">
+                    <h3 className="text-lg font-bold text-gray-900 mb-1 line-clamp-2">{group.name}</h3>
+                    <p className="text-sm text-gray-600 mb-3 line-clamp-2">{group.description}</p>
+
+                    <div className="mb-3">
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-xl font-bold text-gray-900">${group.price}</span>
                       </div>
                     </div>
 
-                    {/* Simplified buttons */}
+                    <div className="mb-4">
+                      <div className="flex items-center justify-between text-xs mb-1">
+                        <span className="text-gray-600">{group.participants ?? 0} joined</span>
+                        <span className="text-gray-600">{group.moq ? `${group.moq} needed` : ''}</span>
+                      </div>
+                      {group.moq_progress ? (
+                        <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                          <div 
+                            className="bg-blue-600 h-2 rounded-full"
+                            style={{ width: `${group.moq_progress}%` }}
+                          />
+                        </div>
+                      ) : null}
+                    </div>
+
                     <div className="flex gap-2">
                       <button
                         onClick={() => handleViewGroup(group)}
-                        className="flex-1 py-3 text-sm font-semibold text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors flex items-center justify-center gap-1"
+                        className="flex-1 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition"
                       >
-                        <Eye className="w-4 h-4" />
-                        View
+                        View Details
                       </button>
-                      <button
+                      <button 
                         onClick={() => handleJoinGroup(group)}
                         disabled={group.joined}
-                        className={`flex-1 py-3 text-sm font-semibold rounded-lg transition-colors ${
+                        className={`flex-1 py-2 rounded-md font-medium transition ${
                           group.joined 
                             ? 'bg-green-600 text-white cursor-not-allowed opacity-75' 
                             : 'bg-blue-600 text-white hover:bg-blue-700'
                         }`}
                       >
-                        {group.joined ? 'Joined' : 'Join'}
+                        {group.joined ? 'Joined' : 'Join Group'}
                       </button>
                     </div>
                   </div>

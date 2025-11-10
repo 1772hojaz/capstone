@@ -455,6 +455,21 @@ class QRScanHistory(Base):
     group_buy = relationship("GroupBuy", backref="scan_history")
     product = relationship("Product", backref="scan_history")
 
+class UserBehaviorFeatures(Base):
+    __tablename__ = "user_behavior_features"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
+    engagement_score = Column(Float, default=0.5)
+    price_sensitivity_score = Column(Float, default=0.5)
+    top_category_1 = Column(String)
+    top_category_2 = Column(String)
+    days_since_last_activity = Column(Integer, default=0)
+    last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    user = relationship("User", backref="behavior_features")
+
 
 # Pydantic models for API responses
 class QRCodeGenerateRequest(BaseModel):

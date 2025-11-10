@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Search, MapPin, User, X, Eye, ChevronDown, ChevronUp, EyeOff } from 'lucide-react';
+import { Search, MapPin, User, X, Eye, ChevronDown, ChevronUp, EyeOff, RefreshCw } from 'lucide-react';
 import apiService from '../services/api';
 
 export default function GroupList() {
@@ -67,7 +67,12 @@ export default function GroupList() {
           apiService.getMyGroups()
         ]);
 
-        setActiveGroups(groupsResponse);
+        // Remove duplicates based on group ID
+        const uniqueGroups = groupsResponse.filter((group, index, self) => 
+          index === self.findIndex(g => g.id === group.id)
+        );
+
+        setActiveGroups(uniqueGroups);
       } catch (err) {
         console.error('Failed to fetch data:', err);
         setError(err instanceof Error ? err.message : String(err));
@@ -100,10 +105,70 @@ export default function GroupList() {
     localStorage.setItem('readyForCollectionVisible', JSON.stringify(isReadyForCollectionVisible));
   }, [isReadyForCollectionVisible]);
 
+  // WebSocket connection for real-time QR updates
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      console.log('🔗 Setting up WebSocket connection for real-time QR updates...');
+      console.log('🔑 Token available:', !!token);
+      apiService.connectWebSocket(token);
+    } else {
+      console.log('⚠️ No token available for WebSocket connection');
+    }
+
+    return () => {
+      // Cleanup WebSocket connection on unmount
+      console.log('🧹 Cleaning up WebSocket connection');
+      apiService.disconnectWebSocket();
+    };
+  }, []);
+
+  // Listen for navigation state changes (e.g., returning from payment success)
+  useEffect(() => {
+    // Check if we have state indicating a successful payment/quantity update
+    if (location.state?.refreshGroups) {
+      console.log('🔄 Refreshing groups data after payment success');
+      const fetchData = async () => {
+        try {
+          setLoading(true);
+          setError(null);
+
+          // Fetch user data to get location
+          const userData = await apiService.getCurrentUser();
+          setUserLocation(userData.location_zone || 'Harare');
+
+          // Fetch user's groups
+          const [groupsResponse] = await Promise.all([
+            apiService.getMyGroups()
+          ]);
+
+          // Remove duplicates based on group ID
+          const uniqueGroups = groupsResponse.filter((group, index, self) => 
+            index === self.findIndex(g => g.id === group.id)
+          );
+
+          setActiveGroups(uniqueGroups);
+        } catch (err) {
+          console.error('Failed to refresh data:', err);
+          setError(err instanceof Error ? err.message : String(err));
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      fetchData();
+    }
+  }, [location.state]);
+
   const handleShowQRCode = async (group: any) => {
     try {
+      console.log('🔍 Fetching QR code for group:', group.id);
       // Fetch QR code data from API
       const qrData = await apiService.getGroupQRCode(group.id);
+      console.log('📥 QR data received from API:', qrData);
+      console.log('🔄 is_used value:', qrData.is_used, 'type:', typeof qrData.is_used);
+      console.log('📊 status_text value:', qrData.status_text);
+
       setSelectedQRGroup({
         ...group,
         qrCode: qrData.qr_code, // Base64 encoded QR code image
@@ -129,6 +194,45 @@ export default function GroupList() {
     setSelectedQRGroup(null);
   };
 
+  const refreshQRStatus = async () => {
+    if (!selectedQRGroup) return;
+    
+    try {
+      console.log('🔄 Refreshing QR status for group:', selectedQRGroup.id);
+      console.log('📊 Current QR data before refresh:', selectedQRGroup.qrData);
+      // IMPORTANT: Only use the group endpoint, never admin endpoints
+      const qrData = await apiService.getGroupQRCode(selectedQRGroup.id);
+      console.log('📥 Fresh QR data from API:', qrData);
+      console.log('🔄 Fresh is_used value:', qrData.is_used, 'type:', typeof qrData.is_used);
+      console.log('📊 Fresh status_text value:', qrData.status_text);
+      
+      // Update the selected QR group with fresh data
+      setSelectedQRGroup((prev: any) => {
+        console.log('🔄 Updating selectedQRGroup state:');
+        console.log('   Previous qrData:', prev.qrData);
+        console.log('   New qrData:', qrData);
+        const updated = {
+          ...prev,
+          qrCode: qrData.qr_code,
+          qrData: {
+            ...qrData,
+            // Ensure we have the status data
+            is_used: qrData.is_used,
+            status_text: qrData.status_text
+          }
+        };
+        console.log('   Updated selectedQRGroup:', updated);
+        return updated;
+      });
+      console.log('✅ QR status updated successfully');
+      
+    } catch (err) {
+      console.error('❌ Failed to refresh QR status:', err);
+      // Show user-friendly error
+      alert('Failed to refresh QR status. Please try again.');
+    }
+  };
+
   const closeGroupDetailsModal = () => {
     setShowGroupDetails(false);
     setSelectedGroupDetails(null);
@@ -137,6 +241,34 @@ export default function GroupList() {
   const handleUpdateQuantity = async () => {
     if (!selectedGroupDetails || newQuantity <= 0) return;
 
+    // Check if quantity is being increased
+    const currentQuantity = selectedGroupDetails.quantity || 1;
+    const isIncreasingQuantity = newQuantity > currentQuantity;
+
+    if (isIncreasingQuantity) {
+      // Redirect to payment wall for quantity increase
+      console.log('🔄 Quantity increase detected, redirecting to payment wall');
+      console.log('📊 Current quantity:', currentQuantity, 'New quantity:', newQuantity);
+      
+      // Close the modal first
+      closeGroupDetailsModal();
+      
+      // Navigate to payment wall with group details
+      navigate('/payment', {
+        state: {
+          groupId: selectedGroupDetails.id,
+          groupName: selectedGroupDetails.name,
+          currentQuantity: currentQuantity,
+          newQuantity: newQuantity,
+          price: selectedGroupDetails.price,
+          originalPrice: selectedGroupDetails.originalPrice,
+          action: 'increase_quantity'
+        }
+      });
+      return;
+    }
+
+    // Normal quantity update (decrease or same)
     try {
       setUpdatingQuantity(true);
       await apiService.updateContribution(selectedGroupDetails.id, newQuantity);
@@ -145,7 +277,13 @@ export default function GroupList() {
       const [groupsResponse] = await Promise.all([
         apiService.getMyGroups()
       ]);
-      setActiveGroups(groupsResponse);
+      
+      // Remove duplicates based on group ID
+      const uniqueGroups = groupsResponse.filter((group, index, self) => 
+        index === self.findIndex(g => g.id === group.id)
+      );
+      
+      setActiveGroups(uniqueGroups);
       
       // Update the selected group details with new quantity
       setSelectedGroupDetails({
@@ -175,19 +313,17 @@ export default function GroupList() {
     );
   });
 
-  const filteredActiveGroups = activeGroups
-    .filter(group => group.status !== 'ready_for_pickup')
-    .filter((group, index, self) => self.findIndex(g => g.id === group.id) === index) // Remove duplicates
-    .filter(group => {
-      if (!activeGroupsSearch) return true;
-
-      const searchTerm = activeGroupsSearch.toLowerCase();
-      return (
-        group.name?.toLowerCase().includes(searchTerm) ||
-        group.description?.toLowerCase().includes(searchTerm) ||
-        group.pickupLocation?.toLowerCase().includes(searchTerm)
-      );
-    });
+  const filteredActiveGroups = activeGroups.filter(group => {
+    if (group.status === 'ready_for_pickup') return false;
+    if (!activeGroupsSearch) return true;
+    
+    const searchTerm = activeGroupsSearch.toLowerCase();
+    return (
+      group.name?.toLowerCase().includes(searchTerm) ||
+      group.description?.toLowerCase().includes(searchTerm) ||
+      group.pickupLocation?.toLowerCase().includes(searchTerm)
+    );
+  });
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -209,44 +345,28 @@ export default function GroupList() {
           <nav className="hidden md:flex items-center gap-6 flex-1">
             <button 
               onClick={() => navigate('/profile')}
-              className={`flex items-center gap-2 text-sm ${
-                location.pathname === '/profile' || location.pathname === '/supplier/profile'
-                  ? 'font-medium text-blue-600'
-                  : 'text-gray-700 hover:text-gray-900'
-              }`}
+              className="flex items-center gap-2 text-sm text-gray-700 hover:text-gray-900"
             >
               <User className="w-4 h-4" />
               Profile
             </button>
             <button 
               onClick={() => navigate('/trader')}
-              className={`text-sm ${
-                location.pathname === '/trader'
-                  ? 'font-medium text-blue-600'
-                  : 'text-gray-700 hover:text-gray-900'
-              }`}
+              className="text-sm text-gray-700 hover:text-gray-900"
             >
               Recommended
             </button>
-            <button
-              onClick={() => navigate('/all-groups')}
-              className={`text-sm ${
-                location.pathname === '/all-groups'
-                  ? 'font-medium text-blue-600'
-                  : 'text-gray-700 hover:text-gray-900'
-              }`}
-            >
-              All Groups
-            </button>
             <button 
               onClick={() => navigate('/groups')}
-              className={`text-sm ${
-                location.pathname === '/groups'
-                  ? 'font-medium text-blue-600'
-                  : 'text-gray-700 hover:text-gray-900'
-              }`}
+              className="text-sm font-medium text-blue-600"
             >
               My Groups
+            </button>
+            <button 
+              onClick={() => navigate('/all-groups')}
+              className="text-sm text-gray-700 hover:text-gray-900"
+            >
+              All Groups
             </button>
           </nav>
 
@@ -301,33 +421,21 @@ export default function GroupList() {
           <nav className="flex gap-4 sm:gap-8">
             <button
               onClick={() => navigate('/trader')}
-              className={`py-3 sm:py-4 text-sm font-medium border-b-2 transition whitespace-nowrap ${
-                location.pathname === '/trader'
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-gray-600 hover:text-gray-900'
-              }`}
+              className="py-3 sm:py-4 text-sm font-medium border-b-2 border-transparent text-gray-600 hover:text-gray-900 transition whitespace-nowrap"
             >
               Recommended
             </button>
             <button
-              onClick={() => navigate('/all-groups')}
-              className={`py-3 sm:py-4 text-sm font-medium border-b-2 transition whitespace-nowrap ${
-                location.pathname === '/all-groups'
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              All Groups
-            </button>
-            <button
               onClick={() => navigate('/groups')}
-              className={`py-3 sm:py-4 text-sm font-medium border-b-2 transition whitespace-nowrap ${
-                location.pathname === '/groups'
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-gray-600 hover:text-gray-900'
-              }`}
+              className="py-3 sm:py-4 text-sm font-medium border-b-2 border-blue-600 text-blue-600 transition whitespace-nowrap"
             >
               My Groups
+            </button>
+            <button
+              onClick={() => navigate('/all-groups')}
+              className="py-3 sm:py-4 text-sm font-medium border-b-2 border-transparent text-gray-600 hover:text-gray-900 transition whitespace-nowrap"
+            >
+              All Groups
             </button>
           </nav>
         </div>
@@ -371,7 +479,7 @@ export default function GroupList() {
               </div>
               
               {/* Ready for Collection - Scrollable Content */}
-              <div className="max-h-[600px] overflow-y-auto overflow-x-hidden">
+              <div className="max-h-[400px] overflow-y-auto overflow-x-hidden">
                 {loading ? (
                   <div className="p-4 sm:p-6">
                     <div className="text-center py-8">
@@ -411,8 +519,8 @@ export default function GroupList() {
                 ) : (
                   <div className="p-4 sm:p-6">
                     <div className="grid grid-cols-1 gap-4">
-                      {filteredReadyForCollection.map((group, idx) => (
-                        <div key={`ready-${group.id ?? group._id ?? idx}`} className="bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded-lg p-4 hover:shadow-md transition">
+                      {filteredReadyForCollection.map((group) => (
+                        <div key={group.id} className="bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded-lg p-4 hover:shadow-md transition">
                           <div className="flex items-start justify-between mb-3">
                             <div className="flex-1">
                               <h3 className="font-semibold text-gray-900 mb-1">{group.name}</h3>
@@ -562,8 +670,8 @@ export default function GroupList() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-200">
-                        {filteredActiveGroups.map((group, index) => (
-                          <tr key={`group-${group.id ?? group._id ?? index}`} className="hover:bg-gray-50">
+                        {filteredActiveGroups.map((group) => (
+                          <tr key={group.id} className="hover:bg-gray-50">
                             <td className="px-2 sm:px-3 py-2 text-sm text-gray-900 truncate">{group.name}</td>
                             <td className="px-2 sm:px-3 py-2 text-sm text-gray-600 truncate">
                               {group.adminName === "Admin" ? "Admin" : group.adminName}
@@ -706,17 +814,17 @@ export default function GroupList() {
             </div>
 
             {/* Scrollable Content */}
-            <div className="flex-1 overflow-y-auto p-8 space-y-6">
+            <div className="flex-1 overflow-y-auto p-8 space-y-8">
               {/* Location Header */}
-              <div className="text-center pb-4 border-b border-gray-100">
-                <h3 className="text-xl font-bold text-gray-900 mb-1">Show at Pickup Location</h3>
-                <p className="text-gray-600 flex items-center justify-center gap-2">
-                  <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="text-center pb-6 border-b-2 border-gray-200">
+                <h3 className="text-xl font-bold text-gray-900 mb-3 block">Show at Pickup Location</h3>
+                <div className="flex items-center justify-center gap-2">
+                  <svg className="w-4 h-4 text-green-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                   </svg>
-                  {selectedQRGroup.pickupLocation}
-                </p>
+                  <p className="text-gray-600 font-medium">{selectedQRGroup.pickupLocation}</p>
+                </div>
               </div>
 
               {/* QR Code Display with Enhanced Design */}
@@ -727,7 +835,7 @@ export default function GroupList() {
                     <div className="bg-white rounded-2xl p-6 shadow-lg mx-auto inline-block">
                       <img
                         src={`data:image/png;base64,${selectedQRGroup.qrCode}`}
-                        alt="QR Code for pickup"
+                        alt="Pickup QR Code"
                         className="w-56 h-56 mx-auto rounded-xl border-4 border-green-200"
                       />
                     </div>
@@ -745,28 +853,28 @@ export default function GroupList() {
                       </div>
                     </div>
                   )}
-                  <div className="mt-6 bg-green-50 rounded-xl p-4">
-                    <p className="text-green-800 font-medium flex items-center justify-center gap-2">
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="mt-8 bg-green-50 rounded-xl p-4 border border-green-200">
+                    <div className="flex items-center justify-center gap-2">
+                      <svg className="w-5 h-5 text-green-700 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
                       </svg>
-                      Scan this QR code at the pickup location
-                    </p>
+                      <p className="text-green-800 font-medium">Scan this QR code at the pickup location</p>
+                    </div>
                   </div>
                 </div>
               </div>
 
               {/* Order Details Card */}
-              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-l-4 border-blue-500 rounded-xl p-6 shadow-sm">
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-l-4 border-blue-500 rounded-xl p-6 shadow-sm mt-8">
                 <div className="flex items-start space-x-4">
-                  <div className="bg-blue-500 rounded-full p-3">
+                  <div className="bg-blue-500 rounded-full p-3 flex-shrink-0">
                     <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
                   </div>
-                  <div className="flex-1">
-                    <h3 className="font-bold text-blue-900 mb-4 text-lg">Order Details</h3>
-                    <div className="grid grid-cols-1 gap-3">
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-bold text-blue-900 mb-6 text-lg block">Order Details</h3>
+                    <div className="space-y-3">
                       <div className="bg-white rounded-lg p-4 flex justify-between items-center">
                         <span className="text-gray-600 font-medium">Order #:</span>
                         <span className="font-mono text-blue-900 bg-blue-100 px-3 py-1 rounded-lg">{selectedQRGroup.id.toString().padStart(6, '0')}</span>
@@ -789,14 +897,62 @@ export default function GroupList() {
                           {selectedQRGroup.pickupLocation}
                         </span>
                       </div>
-                      <div className="bg-white rounded-lg p-4 flex justify-between items-center">
+                      <div className="bg-white rounded-lg p-4 flex justify-between items-center mb-2">
                         <span className="text-gray-600 font-medium">Status:</span>
-                        <span className="bg-green-100 text-green-700 px-4 py-2 rounded-full font-semibold text-sm flex items-center gap-2">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <span className="bg-green-100 text-green-700 px-4 py-2 rounded-full font-semibold text-sm flex items-center gap-2 whitespace-nowrap">
+                          <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                           </svg>
-                          Ready for Pickup
+                          <span className="whitespace-nowrap">Ready for Pickup</span>
                         </span>
+                      </div>
+                      {/* QR Code Status Row - Isolated */}
+                      <div className="bg-white rounded-lg p-4 border border-gray-200 mt-4">
+                        <div className="flex justify-between items-center">
+                          <div className="flex items-center gap-3">
+                            <span className="text-gray-600 font-medium block">QR Code Status:</span>
+                            <button
+                              onClick={refreshQRStatus}
+                              className="text-blue-600 hover:text-blue-800 p-1 rounded-full hover:bg-blue-50 transition-colors flex-shrink-0"
+                              title="Refresh QR status"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                              </svg>
+                            </button>
+                          </div>
+                          <div className={`px-4 py-2 rounded-full font-semibold text-sm flex items-center gap-2 border ${
+                            selectedQRGroup?.qrData?.is_used 
+                              ? 'bg-red-100 text-red-700 border-red-200' 
+                              : 'bg-green-100 text-green-700 border-green-200'
+                          }`}>
+                            {/* Debug logging for QR status */}
+                            {(() => {
+                              console.log('🎨 Rendering QR status display:');
+                              console.log('   selectedQRGroup:', selectedQRGroup);
+                              console.log('   qrData:', selectedQRGroup?.qrData);
+                              console.log('   is_used:', selectedQRGroup?.qrData?.is_used);
+                              console.log('   status_text:', selectedQRGroup?.qrData?.status_text);
+                              console.log('   Condition result:', selectedQRGroup?.qrData?.is_used ? 'USED (red)' : 'NOT USED (green)');
+                              return null;
+                            })()}
+                            {selectedQRGroup?.qrData?.is_used ? (
+                              <>
+                                <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                </svg>
+                                <span className="block">Used: {selectedQRGroup?.qrData?.status_text || "Yes"}</span>
+                              </>
+                            ) : (
+                              <>
+                                <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                <span className="block">Used: {selectedQRGroup?.qrData?.status_text || "No"}</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -854,15 +1010,35 @@ export default function GroupList() {
 
             {/* Action Buttons - Enhanced styling */}
             <div className="flex-shrink-0 bg-gradient-to-r from-gray-50 to-gray-100 border-t border-gray-200 p-6">
-              <button
-                onClick={closeQRCodeModal}
-                className="w-full bg-gradient-to-r from-emerald-600 to-green-600 text-white py-4 px-8 rounded-xl hover:from-emerald-700 hover:to-green-700 transition-all duration-200 font-semibold shadow-lg hover:shadow-xl transform hover:scale-105 flex items-center justify-center gap-3"
-              >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                Got it - Ready to Pickup
-              </button>
+              <div className="flex gap-3">
+                <button
+                  onClick={async () => {
+                    try {
+                      const qrData = await apiService.getGroupQRCode(selectedQRGroup.id);
+                      setSelectedQRGroup({
+                        ...selectedQRGroup,
+                        qrCode: qrData.qr_code,
+                        qrData: qrData
+                      });
+                    } catch (err) {
+                      console.error('Failed to refresh QR code:', err);
+                    }
+                  }}
+                  className="flex-1 bg-blue-600 text-white py-3 px-6 rounded-xl hover:bg-blue-700 transition-all duration-200 font-semibold shadow-lg hover:shadow-xl transform hover:scale-105 flex items-center justify-center gap-3"
+                >
+                  <RefreshCw className="w-5 h-5" />
+                  Refresh Status
+                </button>
+                <button
+                  onClick={closeQRCodeModal}
+                  className="flex-1 bg-gradient-to-r from-emerald-600 to-green-600 text-white py-3 px-6 rounded-xl hover:from-emerald-700 hover:to-green-700 transition-all duration-200 font-semibold shadow-lg hover:shadow-xl transform hover:scale-105 flex items-center justify-center gap-3"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Got it
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -1,5 +1,5 @@
 // Type declarations for api.js
-declare module '../services/api' {
+declare module './api' {
   interface ApiService {
     getSupplierDashboardMetrics(): Promise<any>;
     getSupplierOrders(status?: string): Promise<any>;

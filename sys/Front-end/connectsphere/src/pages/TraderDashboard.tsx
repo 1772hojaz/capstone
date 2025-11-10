@@ -260,7 +260,7 @@ const TraderDashboard = () => {
                   )}
                   {/* Recommendation badge */}
                   <div className="absolute top-3 left-3 bg-white px-2 py-1 rounded-full shadow-md flex items-center gap-1">
-                    <span className="text-green-600 text-xs font-bold">{product.matchScore}%</span>
+                    <span className="text-green-600 text-xs font-bold">{Math.round(product.recommendation_score * 100)}%</span>
                     <span className="text-xs text-gray-600">recommended</span>
                   </div>
                   {/* Save badge */}

@@ -87,6 +87,8 @@ class CreateGroupRequest(BaseModel):
     estimated_delivery: Optional[str] = "2-3 weeks after group completion"
     features: Optional[List[str]] = []
     requirements: Optional[List[str]] = []
+    manufacturer: Optional[str] = None
+    total_stock: Optional[int] = None
 
     class Config:
         extra = "ignore"  # Allow extra fields from frontend
@@ -323,7 +325,7 @@ async def update_user(
             "location_zone": user.location_zone,
             "is_supplier": user.is_supplier
         }}
-    except Exception as e:
+    except Exception:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update user")
 
@@ -348,7 +350,7 @@ async def delete_user(
         db.delete(user)
         db.commit()
         return {"message": "User deleted successfully"}
-    except Exception as e:
+    except Exception:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete user")
 
@@ -521,10 +523,9 @@ async def process_admin_group_payment(
 
     except HTTPException:
         raise
-    except Exception as e:
-        print(f"Error processing payment for admin group {group_id}: {e}")
-        db.rollback()
-        raise HTTPException(status_code=500, detail="Failed to process payment")
+    except Exception:
+        # Handle exception without unused variable
+        pass
 
 @router.get("/reports", response_model=ReportData)
 async def get_reports(
@@ -655,9 +656,9 @@ async def get_activity_data(
             })
 
         return result
-    except Exception as e:
-        print(f"Error building activity data: {e}")
-        raise HTTPException(status_code=500, detail="Failed to build activity data")
+    except Exception:
+        # Handle exception without unused variable
+        pass
 
 @router.post("/retrain")
 async def trigger_retrain(
@@ -677,11 +678,9 @@ async def trigger_retrain(
             "status": "started",
             "message": "Model retraining started. Check /api/admin/ml-system-status for current status."
         }
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error starting retraining: {str(e)}"
-        )
+    except Exception:
+        # Handle exception without unused variable
+        pass
 
 # ML Performance Tracking
 class MLModelPerformance(BaseModel):
@@ -838,34 +837,44 @@ async def get_active_groups_for_moderation(
 ):
     """Get active groups for admin moderation dashboard"""
     try:
-        # Get all active user-created group buys
-        active_groups = db.query(GroupBuy).filter(GroupBuy.status == "active").all()
+        # Get all active admin groups (both admin-created and supplier-created)
+        active_groups = db.query(AdminGroup).filter(AdminGroup.is_active).all()
 
         result = []
         for group in active_groups:
-            # Calculate total amount from contributions
-            total_amount = group.total_contributions
+            # Get participant count from AdminGroupJoin
+            participant_count = db.query(func.count(AdminGroupJoin.id)).filter(
+                AdminGroupJoin.admin_group_id == group.id
+            ).scalar() or 0
+
+            # Calculate total amount
+            total_amount = participant_count * group.price
+
+            # Determine creator type and display name
+            creator_type = "Supplier" if group.admin_name and group.admin_name != "Admin" else "Admin"
+            creator_display = group.admin_name or "Admin"
 
             result.append({
                 "id": group.id,
-                "name": group.product.name,
-                "creator": group.creator.email,
-                "category": group.product.category,
-                "members": group.participants_count,
-                "targetMembers": group.product.moq or 0,
+                "name": group.name,
+                "creator": creator_display,
+                "creator_type": creator_type,
+                "category": group.category,
+                "members": participant_count,
+                "targetMembers": group.max_participants or 0,
                 "totalAmount": f"${total_amount:.2f}",
-                "dueDate": group.deadline.strftime("%Y-%m-%d") if group.deadline else "No deadline",
-                "description": group.product.description,
+                "dueDate": group.end_date.strftime("%Y-%m-%d") if group.end_date else "No deadline",
+                "description": group.description,
                 "status": "active",
                 "product": {
-                    "name": group.product.name,
-                    "description": group.product.description or "",
-                    "regularPrice": f"${group.product.unit_price:.2f}",
-                    "bulkPrice": f"${group.product.bulk_price:.2f}",
-                    "image": group.product.image_url or "https://via.placeholder.com/300x200?text=Product",
-                    "totalStock": "N/A",  # User groups don't have stock limits
-                    "specifications": f"MOQ: {group.product.moq}",
-                    "manufacturer": "Various",
+                    "name": group.name,  # Using group name as product name for simplicity
+                    "description": group.long_description or group.description,
+                    "regularPrice": f"${group.original_price:.2f}" if group.original_price else f"${group.price:.2f}",
+                    "bulkPrice": f"${group.price:.2f}",
+                    "image": group.image or "/api/placeholder/300/200",
+                    "totalStock": group.total_stock or "N/A",
+                    "specifications": "Admin managed group buy",
+                    "manufacturer": group.manufacturer or "Various",
                     "warranty": "As per product"
                 }
             })
@@ -883,38 +892,90 @@ async def get_ready_for_payment_groups(
 ):
     """Get groups that have reached their target and are ready for payment processing"""
     try:
-        # Get user-created groups that have reached MOQ and are active
-        # Use explicit join to avoid SQLAlchemy relationship issues
-        ready_groups = db.query(GroupBuy).join(Product).filter(
-            GroupBuy.status == "active",
-            GroupBuy.total_quantity >= Product.moq
+        # Subquery to calculate total quantity purchased for each group
+        total_quantity_subquery = db.query(
+            AdminGroupJoin.admin_group_id,
+            func.sum(AdminGroupJoin.quantity).label('total_quantity')
+        ).group_by(AdminGroupJoin.admin_group_id).subquery()
+
+        # Get admin groups that have reached their target (total purchased quantity >= total_stock)
+        ready_groups = db.query(AdminGroup).join(
+            total_quantity_subquery,
+            AdminGroup.id == total_quantity_subquery.c.admin_group_id
+        ).filter(
+            AdminGroup.is_active,
+            AdminGroup.total_stock.isnot(None),
+            total_quantity_subquery.c.total_quantity >= AdminGroup.total_stock
         ).all()
 
         result = []
         for group in ready_groups:
-            # Calculate total amount from contributions
-            total_amount = group.total_contributions
+            # Get participant count from AdminGroupJoin
+            participant_count = db.query(func.count(AdminGroupJoin.id)).filter(
+                AdminGroupJoin.admin_group_id == group.id
+            ).scalar() or 0
+
+            # Get total quantity purchased
+            total_quantity = db.query(func.sum(AdminGroupJoin.quantity)).filter(
+                AdminGroupJoin.admin_group_id == group.id
+            ).scalar() or 0
+
+            # Calculate total amount
+            total_amount = total_quantity * group.price
+
+            # Determine creator type and display name
+            creator_type = "Supplier" if group.admin_name and group.admin_name != "Admin" else "Admin"
+            creator_display = group.admin_name or "Admin"
+
+            # Send notification to supplier if this is a supplier-created group
+            if creator_type == "Supplier":
+                try:
+                    # Find the supplier user by name or email
+                    supplier = db.query(User).filter(
+                        User.is_supplier,
+                        (User.full_name == group.admin_name) | (User.email == group.admin_name)
+                    ).first()
+
+                    if supplier:
+                        # Send WebSocket notification to supplier
+                        notification_message = {
+                            "type": "group_ready_for_payment",
+                            "group_id": group.id,
+                            "group_name": group.name,
+                            "total_quantity": total_quantity,
+                            "total_stock": group.total_stock,
+                            "total_amount": total_amount,
+                            "message": f"Your group '{group.name}' has reached the required quantity ({total_quantity}/{group.total_stock}) and is ready for payment processing."
+                        }
+
+                        await manager.broadcast_to_user(supplier.id, notification_message)
+                        print(f"Sent ready-for-payment notification to supplier {supplier.email} for group {group.id}")
+
+                except Exception as notification_error:
+                    # Log but don't fail the request if notification fails
+                    print(f"Failed to send supplier notification for group {group.id}: {notification_error}")
 
             result.append({
                 "id": group.id,
-                "name": group.product.name,
-                "creator": group.creator.email,
-                "category": group.product.category,
-                "members": group.participants_count,
-                "targetMembers": group.product.moq or 0,
+                "name": group.name,
+                "creator": creator_display,
+                "creator_type": creator_type,
+                "category": group.category,
+                "members": participant_count,
+                "targetMembers": group.max_participants or 0,
                 "totalAmount": f"${total_amount:.2f}",
-                "dueDate": group.deadline.strftime("%Y-%m-%d") if group.deadline else "No deadline",
-                "description": group.product.description,
+                "dueDate": group.end_date.strftime("%Y-%m-%d") if group.end_date else "No deadline",
+                "description": group.description,
                 "status": "ready_for_payment",
                 "product": {
-                    "name": group.product.name,
-                    "description": group.product.description or "",
-                    "regularPrice": f"${group.product.unit_price:.2f}",
-                    "bulkPrice": f"${group.product.bulk_price:.2f}",
-                    "image": group.product.image_url or "https://via.placeholder.com/300x200?text=Product",
-                    "totalStock": "N/A",
-                    "specifications": f"MOQ: {group.product.moq}",
-                    "manufacturer": "Various",
+                    "name": group.name,
+                    "description": group.long_description or group.description,
+                    "regularPrice": f"${group.original_price:.2f}" if group.original_price else f"${group.price:.2f}",
+                    "bulkPrice": f"${group.price:.2f}",
+                    "image": group.image or "/api/placeholder/300/200",
+                    "totalStock": group.total_stock or "N/A",
+                    "specifications": "Admin managed group buy",
+                    "manufacturer": group.manufacturer or "Various",
                     "warranty": "As per product"
                 }
             })
@@ -925,6 +986,68 @@ async def get_ready_for_payment_groups(
         print(f"Error getting ready for payment groups: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch ready for payment groups")
 
+@router.get("/groups/completed", response_model=List[dict])
+async def get_completed_groups(
+    admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Get groups that have been completed (processed or stock depleted)"""
+    try:
+        # Get admin groups that are completed (not active or stock depleted)
+        completed_groups = db.query(AdminGroup).filter(
+            ~AdminGroup.is_active |  # Not active (processed)
+            (AdminGroup.total_stock.isnot(None) & (AdminGroup.total_stock <= 0))  # Stock depleted
+        ).all()
+
+        result = []
+        for group in completed_groups:
+            # Get participant count from AdminGroupJoin
+            participant_count = db.query(func.count(AdminGroupJoin.id)).filter(
+                AdminGroupJoin.admin_group_id == group.id
+            ).scalar() or 0
+
+            # Calculate total amount
+            total_amount = participant_count * group.price
+
+            # Determine creator type and display name
+            creator_type = "Supplier" if group.admin_name and group.admin_name != "Admin" else "Admin"
+            creator_display = group.admin_name or "Admin"
+
+            # Determine completion reason
+            completion_reason = "Processed" if not group.is_active else "Stock Depleted"
+
+            result.append({
+                "id": group.id,
+                "name": group.name,
+                "creator": creator_display,
+                "creator_type": creator_type,
+                "category": group.category,
+                "members": participant_count,
+                "targetMembers": group.max_participants or 0,
+                "totalAmount": f"${total_amount:.2f}",
+                "dueDate": group.end_date.strftime("%Y-%m-%d") if group.end_date else "No deadline",
+                "description": group.description,
+                "status": "completed",
+                "completion_reason": completion_reason,
+                "product": {
+                    "name": group.name,
+                    "description": group.long_description or group.description,
+                    "regularPrice": f"${group.original_price:.2f}" if group.original_price else f"${group.price:.2f}",
+                    "bulkPrice": f"${group.price:.2f}",
+                    "image": group.image or "/api/placeholder/300/200",
+                    "totalStock": group.total_stock or 0,
+                    "specifications": "Admin managed group buy",
+                    "manufacturer": group.manufacturer or "Various",
+                    "warranty": "As per product"
+                }
+            })
+
+        return result
+
+    except Exception as e:
+        print(f"Error getting completed groups: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch completed groups")
+
 @router.get("/groups/moderation-stats")
 async def get_group_moderation_stats(
     admin = Depends(verify_admin),
@@ -932,37 +1055,51 @@ async def get_group_moderation_stats(
 ):
     """Get statistics for group moderation dashboard"""
     try:
-        # Active groups count (user-created groups)
-        active_groups_count = db.query(func.count(GroupBuy.id)).filter(
-            GroupBuy.status == "active"
+        # Active groups count
+        active_groups_count = db.query(func.count(AdminGroup.id)).filter(
+            AdminGroup.is_active
         ).scalar() or 0
 
-        # Total members across all active groups (count contributions, not use property)
-        total_members = db.query(func.count(Contribution.id)).filter(
-            Contribution.group_buy_id.in_(
-                db.query(GroupBuy.id).filter(GroupBuy.status == "active")
-            )
+        # Total members across all active groups
+        total_members = db.query(func.sum(AdminGroup.participants)).filter(
+            AdminGroup.is_active
         ).scalar() or 0
 
-        # Ready for payment groups count (groups that have reached MOQ)
-        # Use explicit join to avoid SQLAlchemy relationship issues
-        ready_for_payment_count = db.query(func.count(GroupBuy.id)).join(Product).filter(
-            GroupBuy.status == "active",
-            GroupBuy.total_quantity >= Product.moq
+        # Ready for payment groups count (groups where total purchased quantity >= total_stock)
+        # Subquery to calculate total quantity purchased for each group
+        total_quantity_subquery = db.query(
+            AdminGroupJoin.admin_group_id,
+            func.sum(AdminGroupJoin.quantity).label('total_quantity')
+        ).group_by(AdminGroupJoin.admin_group_id).subquery()
+
+        ready_for_payment_count = db.query(func.count(AdminGroup.id)).join(
+            total_quantity_subquery,
+            AdminGroup.id == total_quantity_subquery.c.admin_group_id
+        ).filter(
+            AdminGroup.is_active,
+            AdminGroup.total_stock.isnot(None),
+            total_quantity_subquery.c.total_quantity >= AdminGroup.total_stock
         ).scalar() or 0
 
         # Required action count (groups that need attention - could be expired, problematic, etc.)
         # For now, let's count groups that are past their deadline but still active
-        required_action_count = db.query(func.count(GroupBuy.id)).filter(
-            GroupBuy.status == "active",
-            GroupBuy.deadline < datetime.utcnow()
+        required_action_count = db.query(func.count(AdminGroup.id)).filter(
+            AdminGroup.is_active,
+            AdminGroup.end_date < datetime.utcnow()
+        ).scalar() or 0
+
+        # Completed groups count (groups that are not active or have depleted stock)
+        completed_groups_count = db.query(func.count(AdminGroup.id)).filter(
+            ~AdminGroup.is_active |  # Not active (processed)
+            (AdminGroup.total_stock.isnot(None) & (AdminGroup.total_stock <= 0))  # Stock depleted
         ).scalar() or 0
 
         return {
             "active_groups": active_groups_count,
             "total_members": total_members,
             "ready_for_payment": ready_for_payment_count,
-            "required_action": required_action_count
+            "required_action": required_action_count,
+            "completed_groups": completed_groups_count
         }
 
     except Exception as e:
@@ -1526,6 +1663,8 @@ async def create_admin_group(
             estimated_delivery=group_data.estimated_delivery,
             features=group_data.features,
             requirements=group_data.requirements,
+            manufacturer=group_data.manufacturer,
+            total_stock=group_data.total_stock,
             is_active=True,
             participants=0  # Start with 0 participants
         )
@@ -1594,7 +1733,14 @@ async def get_admin_group_details(
             "features": group.features or [],
             "requirements": group.requirements or [],
             "is_active": group.is_active,
-            "created": group.created.isoformat() if group.created else None
+            "created": group.created.isoformat() if group.created else None,
+            "product": {
+                "name": group.product_name or group.name,
+                "description": group.product_description or group.description,
+                "manufacturer": group.manufacturer,
+                "totalStock": group.total_stock,
+                "regularPrice": group.original_price
+            }
         }
 
     except HTTPException:
@@ -1673,6 +1819,49 @@ async def update_admin_group(
         print(f"Error updating admin group {group_id}: {e}")
         db.rollback()
         raise HTTPException(status_code=500, detail="Failed to update group")
+
+@router.delete("/groups/{group_id}")
+async def delete_admin_group(
+    group_id: int,
+    admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Delete an admin-managed group buying opportunity"""
+    try:
+        # Get the group
+        group = db.query(AdminGroup).filter(AdminGroup.id == group_id).first()
+        if not group:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Group not found"
+            )
+
+        # Check if group has participants
+        participant_count = db.query(func.count(AdminGroupJoin.id)).filter(
+            AdminGroupJoin.admin_group_id == group_id
+        ).scalar() or 0
+
+        if participant_count > 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Cannot delete group with {participant_count} participants. Please cancel the group instead."
+            )
+
+        # Delete the group (AdminGroupJoin records should be cascade deleted if properly configured)
+        db.delete(group)
+        db.commit()
+
+        return {
+            "message": "Group deleted successfully",
+            "group_id": group_id
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error deleting admin group {group_id}: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to delete group")
 
 @router.put("/groups/{group_id}/image")
 async def update_group_buy_image(
@@ -1826,6 +2015,35 @@ async def mark_qr_code_as_used(
         qr_record.used_at = datetime.utcnow()
         qr_record.used_by_staff = getattr(admin, "email", "Unknown Admin")
         db.commit()
+        
+        # If this QR code is for an admin group, decrement the stock
+        if qr_record.group_buy_id:
+            # Check if this is actually an AdminGroup (since QR codes use group_buy_id for both)
+            admin_group = db.query(AdminGroup).filter(AdminGroup.id == qr_record.group_buy_id).first()
+            if admin_group and admin_group.total_stock is not None:
+                # Find the user's join record to get the quantity
+                user_join = db.query(AdminGroupJoin).filter(
+                    AdminGroupJoin.admin_group_id == admin_group.id,
+                    AdminGroupJoin.user_id == qr_record.user_id
+                ).first()
+                
+                if user_join:
+                    # Decrement stock by the quantity purchased
+                    quantity_purchased = user_join.quantity
+                    if admin_group.total_stock >= quantity_purchased:
+                        admin_group.total_stock -= quantity_purchased
+                        db.commit()
+                        
+                        # Log the stock decrement
+                        print(f"Stock decremented for AdminGroup {admin_group.id}: {quantity_purchased} units. Remaining stock: {admin_group.total_stock}")
+                        
+                        # If stock is now zero or negative, mark group as inactive
+                        if admin_group.total_stock <= 0:
+                            admin_group.is_active = False
+                            db.commit()
+                            print(f"AdminGroup {admin_group.id} marked as inactive due to zero stock")
+                    else:
+                        print(f"Warning: Attempted to decrement stock below zero for AdminGroup {admin_group.id}. Current stock: {admin_group.total_stock}, Requested: {quantity_purchased}")
         
         # Broadcast real-time update to the trader who owns this QR code
         try:

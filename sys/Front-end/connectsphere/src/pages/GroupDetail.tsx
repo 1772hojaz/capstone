@@ -42,6 +42,11 @@ export default function GroupDetail() {
   // Use either recommendation or group data
   const groupData = recommendation || group;
 
+  // Debug logging
+  console.log('GroupDetail groupData:', groupData);
+  console.log('GroupDetail moq:', groupData?.moq);
+  console.log('GroupDetail participants:', groupData?.participants);
+
   // If no data available, show error
   if (!groupData) {
     return (
@@ -69,7 +74,9 @@ export default function GroupDetail() {
     );
   }
 
-  const progressPercentage = (groupData.participants_count / groupData.moq) * 100;
+  const progressPercentage = groupData.moq && (groupData.participants_count || groupData.participants)
+    ? ((groupData.participants_count || groupData.participants) / groupData.moq) * 100
+    : 0;
   const isGoalReached = groupData.participants_count >= groupData.moq;
 
   // Automatically show join form if user was redirected from recommendations in 'join' mode
@@ -453,7 +460,7 @@ export default function GroupDetail() {
                   {isGoalReached ? (
                     <p className="text-sm text-green-600 font-medium">🎉 Group goal reached! Processing orders...</p>
                   ) : (
-                    <p className="text-sm text-gray-600">{groupData.moq - (groupData.participants_count || groupData.participants)} more participants needed</p>
+                    <p className="text-sm text-gray-600">{Math.max(0, (groupData.moq || 0) - (groupData.participants_count || groupData.participants || 0))} more participants needed</p>
                   )}
                 </div>
 
