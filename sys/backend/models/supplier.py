@@ -12,7 +12,7 @@ import cloudinary.uploader
 import cloudinary.api
 
 from db.database import get_db
-from models.models import User, SupplierProduct, ProductPricingTier, SupplierOrder, SupplierOrderItem, Product, GroupBuy, SupplierPickupLocation, SupplierInvoice, SupplierPayment, SupplierNotification, AdminGroup, AdminGroupJoin
+from models.models import User, SupplierProduct, ProductPricingTier, SupplierOrder, SupplierOrderItem, Product, GroupBuy, SupplierPickupLocation, SupplierInvoice, SupplierPayment, SupplierNotification, AdminGroup, AdminGroupJoin, Transaction
 from authentication.auth import verify_token
 
 # Configure logging
@@ -72,6 +72,12 @@ class OrderActionRequest(BaseModel):
     delivery_method: Optional[str] = None
     scheduled_delivery_date: Optional[datetime] = None
     special_instructions: Optional[str] = None
+
+
+class ShipDeliveryRequest(BaseModel):
+    tracking_number: Optional[str] = None
+    tracking_url: Optional[str] = None
+    notes: Optional[str] = None
 
 class PickupLocationCreate(BaseModel):
     name: str
@@ -567,6 +573,78 @@ async def process_order_action(
         db.rollback()
         print(f"Error processing order action: {e}")
         raise HTTPException(status_code=500, detail="Failed to process order action")
+
+
+@router.post("/orders/{order_id}/ship")
+async def mark_order_shipped(
+    order_id: int,
+    ship_data: ShipDeliveryRequest,
+    supplier: User = Depends(verify_supplier),
+    db: Session = Depends(get_db)
+):
+    """Mark a confirmed order as shipped"""
+    try:
+        order = db.query(SupplierOrder).filter(
+            SupplierOrder.id == order_id,
+            SupplierOrder.supplier_id == supplier.id
+        ).first()
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found")
+
+        if order.status != "confirmed":
+            raise HTTPException(status_code=400, detail="Only confirmed orders can be marked as shipped")
+
+        order.status = "shipped"
+        order.shipped_at = datetime.utcnow()
+        if ship_data.tracking_number:
+            order.tracking_number = ship_data.tracking_number
+        if ship_data.tracking_url:
+            order.tracking_url = ship_data.tracking_url
+        if ship_data.notes:
+            order.shipment_notes = ship_data.notes
+
+        db.commit()
+        return {"message": "Order marked as shipped"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        print(f"Error marking order shipped: {e}")
+        raise HTTPException(status_code=500, detail="Failed to mark order as shipped")
+
+
+@router.post("/orders/{order_id}/deliver")
+async def mark_order_delivered(
+    order_id: int,
+    deliver_data: ShipDeliveryRequest,
+    supplier: User = Depends(verify_supplier),
+    db: Session = Depends(get_db)
+):
+    """Mark a shipped order as delivered"""
+    try:
+        order = db.query(SupplierOrder).filter(
+            SupplierOrder.id == order_id,
+            SupplierOrder.supplier_id == supplier.id
+        ).first()
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found")
+
+        if order.status != "shipped":
+            raise HTTPException(status_code=400, detail="Only shipped orders can be marked as delivered")
+
+        order.status = "delivered"
+        order.delivered_at = datetime.utcnow()
+        if deliver_data.notes:
+            order.delivery_notes = deliver_data.notes
+
+        db.commit()
+        return {"message": "Order marked as delivered"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        print(f"Error marking order delivered: {e}")
+        raise HTTPException(status_code=500, detail="Failed to mark order as delivered")
 
 # Pickup Location Management
 @router.get("/pickup-locations", response_model=List[PickupLocationResponse])
@@ -1606,23 +1684,69 @@ async def delete_supplier_group(
             )
 
         # Check if group has participants
-        participant_count = db.query(func.count(AdminGroupJoin.id)).filter(
+        joins = db.query(AdminGroupJoin).filter(
             AdminGroupJoin.admin_group_id == group_id
-        ).scalar() or 0
+        ).all()
 
-        if participant_count > 0:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Cannot delete group with {participant_count} active participants"
-            )
+        refunded = []
+        manual_refund_required = []
 
-        # Delete the group
-        db.delete(group)
-        db.commit()
+        if joins:
+            # Process refunds for joined participants where possible
+            for join in joins:
+                try:
+                    # Calculate refund amount (price * quantity)
+                    refund_amount = (group.price or 0.0) * (join.quantity or 0)
+
+                    # Only create an internal refund transaction if we have a linked product
+                    # and therefore a sensible product_id to attach. For admin groups without
+                    # a product_id or where external payment is used, record for manual review.
+                    if getattr(group, 'product_id', None):
+                        txn = Transaction(
+                            user_id=join.user_id,
+                            group_buy_id=None,
+                            product_id=group.product_id,
+                            quantity=join.quantity or 0,
+                            amount=-1 * round(refund_amount, 2),
+                            transaction_type="refund",
+                            location_zone=(getattr(join.user, 'location_zone', None) or "Unknown")
+                        )
+                        db.add(txn)
+                        refunded.append({
+                            "user_id": join.user_id,
+                            "quantity": join.quantity,
+                            "refund_amount": round(refund_amount, 2)
+                        })
+                    else:
+                        # Mark for manual refund if we can't create an internal transaction
+                        manual_refund_required.append({
+                            "user_id": join.user_id,
+                            "quantity": join.quantity,
+                            "reason": "No linked product_id - requires manual refund"
+                        })
+
+                    # Remove the join record
+                    db.delete(join)
+                except Exception as e:
+                    print(f"Error refunding join {join.id} for group {group_id}: {e}")
+                    db.rollback()
+                    raise HTTPException(status_code=500, detail="Failed while processing refunds")
+
+        # Finally delete the group itself
+        try:
+            db.delete(group)
+            db.commit()
+        except Exception as e:
+            print(f"Error deleting supplier group {group_id}: {e}")
+            db.rollback()
+            raise HTTPException(status_code=500, detail="Failed to delete group after refunds")
 
         return {
             "message": "Group deleted successfully",
-            "group_id": group_id
+            "group_id": group_id,
+            "refunded_count": len(refunded),
+            "refunded": refunded,
+            "manual_refund_required": manual_refund_required
         }
 
     except HTTPException:
@@ -2234,6 +2358,8 @@ class CreateGroupRequest(BaseModel):
     estimated_delivery: Optional[str] = None
     features: Optional[List[str]] = None
     requirements: Optional[List[str]] = None
+    manufacturer: Optional[str] = None
+    total_stock: Optional[int] = None
 
 @router.post("/groups/create")
 async def create_supplier_group(
@@ -2296,6 +2422,8 @@ async def create_supplier_group(
             estimated_delivery=group_data.estimated_delivery,
             features=group_data.features,
             requirements=group_data.requirements,
+            manufacturer=group_data.manufacturer,
+            total_stock=group_data.total_stock,
             is_active=True,
             participants=0  # Start with 0 participants
         )
@@ -2322,5 +2450,8 @@ async def create_supplier_group(
         raise
     except Exception as e:
         print(f"Error creating supplier group: {e}")
-        db.rollback()
         raise HTTPException(status_code=500, detail="Failed to create group")
+
+# Include the supplier orders router
+from routers.supplier_orders import router as orders_router
+router.include_router(orders_router)

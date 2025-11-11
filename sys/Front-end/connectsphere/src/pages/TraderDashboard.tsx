@@ -284,8 +284,8 @@ const TraderDashboard = () => {
                   {/* Progress bar */}
                   <div className="mb-4">
                     <div className="flex items-center justify-between text-xs mb-1">
-                      <span className="text-gray-600">{product.participants_count} joined</span>
-                      <span className="text-gray-600">{product.moq} needed</span>
+                      <span className="text-gray-600">${(product.participants_count || 0) * (product.bulk_price || 0)} collected</span>
+                      <span className="text-gray-600">${(product.moq || 0) * (product.bulk_price || 0)} target</span>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
                       <div 

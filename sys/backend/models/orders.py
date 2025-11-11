@@ -9,7 +9,7 @@ class Order(Base):
     id = Column(Integer, primary_key=True, index=True)
     order_number = Column(String(50), unique=True, index=True, nullable=False)
     supplier_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    group_id = Column(Integer, ForeignKey("groupbuys.id"), nullable=True)
+    group_id = Column(Integer, ForeignKey("group_buys.id"), nullable=True)
     group_name = Column(String(255), nullable=False)
     trader_count = Column(Integer, default=0)
     delivery_location = Column(String(255))

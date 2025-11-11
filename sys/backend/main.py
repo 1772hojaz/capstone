@@ -124,6 +124,7 @@ async def startup_event():
     db = SessionLocal()
     try:
         from models.models import MLModel, Transaction, User, Product
+        from models.orders import Order, OrderItem  # Import Order models before User references them
         from ml.ml import train_clustering_model_with_progress, load_models
         
         print("\n" + "="*60)

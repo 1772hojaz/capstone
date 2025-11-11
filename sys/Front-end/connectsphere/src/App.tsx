@@ -13,6 +13,8 @@ import AllGroups from './pages/AllGroups';
 import GroupDetail from './pages/GroupDetail';
 import ProfilePage from './pages/ProfilePage';
 import GroupModeration from './pages/GroupModeration';
+import CompletedGroups from './pages/CompletedGroups';
+import ReadyForPaymentGroups from './pages/ReadyForPaymentGroups';
 import Users from './pages/Users';
 import SystemSettings from './pages/SystemSettings';
 import PaymentSuccess from './pages/PaymentSuccess';
@@ -144,6 +146,18 @@ function App() {
         <Route path="/moderation" element={
           <MainLayout>
             <GroupModeration />
+          </MainLayout>
+        } />
+
+        <Route path="/ready-for-payment" element={
+          <MainLayout>
+            <ReadyForPaymentGroups />
+          </MainLayout>
+        } />
+
+        <Route path="/completed-groups" element={
+          <MainLayout>
+            <CompletedGroups />
           </MainLayout>
         } />
 

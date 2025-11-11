@@ -445,7 +445,7 @@ export default function GroupDetail() {
                   <div className="flex items-center justify-between mb-2">
                     <span className="flex items-center gap-2 text-sm font-medium text-gray-700">
                       <Users className="w-4 h-4" />
-                      <span>{groupData.participants_count || groupData.participants} of {groupData.moq} joined</span>
+                      <span>${(groupData.participants_count || groupData.participants || 0) * (groupData.bulk_price || groupData.price || 0)} of ${(groupData.moq || 0) * (groupData.bulk_price || groupData.price || 0)} collected</span>
                     </span>
                     <span className="text-sm text-gray-500">{Math.round(progressPercentage)}% complete</span>
                   </div>
@@ -460,7 +460,7 @@ export default function GroupDetail() {
                   {isGoalReached ? (
                     <p className="text-sm text-green-600 font-medium">🎉 Group goal reached! Processing orders...</p>
                   ) : (
-                    <p className="text-sm text-gray-600">{Math.max(0, (groupData.moq || 0) - (groupData.participants_count || groupData.participants || 0))} more participants needed</p>
+                    <p className="text-sm text-gray-600">${Math.max(0, ((groupData.moq || 0) - (groupData.participants_count || groupData.participants || 0)) * (groupData.bulk_price || groupData.price || 0))} more needed</p>
                   )}
                 </div>
 

@@ -123,8 +123,8 @@ const ProductDetail = () => {
               {/* Group Progress */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-sm">
-                  <span>{product.participants_count} joined</span>
-                  <span>{product.moq} needed</span>
+                  <span>${(product.participants_count || 0) * (product.bulk_price || 0)} collected</span>
+                  <span>${(product.moq || 0) * (product.bulk_price || 0)} target</span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-2.5">
                   <div 

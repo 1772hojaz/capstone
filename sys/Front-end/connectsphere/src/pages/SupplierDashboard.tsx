@@ -118,7 +118,6 @@ const SupplierDashboard: React.FC = () => {
 
   const fetchDashboardData = async () => {
     try {
-      const token = localStorage.getItem('token');
       const [
         metricsResponse,
         ordersResponse,
@@ -127,43 +126,20 @@ const SupplierDashboard: React.FC = () => {
         paymentDashboardResponse,
         notificationsResponse
       ] = await Promise.all([
-        fetch('/api/supplier/dashboard/metrics', { headers: { Authorization: `Bearer ${token}` } }),
-        fetch('/api/supplier/orders?status=pending', { headers: { Authorization: `Bearer ${token}` } }),
-        fetch('/api/supplier/invoices', { headers: { Authorization: `Bearer ${token}` } }),
-        fetch('/api/supplier/payments', { headers: { Authorization: `Bearer ${token}` } }),
-        fetch('/api/supplier/payments/dashboard', { headers: { Authorization: `Bearer ${token}` } }),
-        fetch('/api/supplier/notifications', { headers: { Authorization: `Bearer ${token}` } })
+        apiService.getSupplierDashboardMetrics(),
+        apiService.getSupplierOrders('pending'),
+        apiService.getSupplierInvoices(),
+        apiService.getSupplierPayments(),
+        apiService.getPaymentDashboard(),
+        apiService.getSupplierNotifications()
       ]);
 
-      if (metricsResponse.ok) {
-        const metricsData = await metricsResponse.json();
-        setMetrics(metricsData);
-      }
-
-      if (ordersResponse.ok) {
-        const ordersData = await ordersResponse.json();
-        setOrders(ordersData);
-      }
-
-      if (invoicesResponse.ok) {
-        const invoicesData = await invoicesResponse.json();
-        setInvoices(invoicesData);
-      }
-
-      if (paymentsResponse.ok) {
-        const paymentsData = await paymentsResponse.json();
-        setPayments(paymentsData);
-      }
-
-      if (paymentDashboardResponse.ok) {
-        const paymentDashboardData = await paymentDashboardResponse.json();
-        setPaymentDashboard(paymentDashboardData);
-      }
-
-      if (notificationsResponse.ok) {
-        const notificationsData = await notificationsResponse.json();
-        setNotifications(notificationsData);
-      }
+      setMetrics(metricsResponse);
+      setOrders(Array.isArray(ordersResponse) ? ordersResponse : []);
+      setInvoices(Array.isArray(invoicesResponse) ? invoicesResponse : []);
+      setPayments(Array.isArray(paymentsResponse) ? paymentsResponse : []);
+      setPaymentDashboard(paymentDashboardResponse);
+      setNotifications(Array.isArray(notificationsResponse) ? notificationsResponse : []);
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
     } finally {
@@ -173,20 +149,9 @@ const SupplierDashboard: React.FC = () => {
 
   const handleOrderAction = async (orderId: number, action: 'confirm' | 'reject', reason?: string) => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`/api/supplier/orders/${orderId}/action`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({ action, reason })
-      });
-
-      if (response.ok) {
-        // Refresh orders
-        fetchDashboardData();
-      }
+      await apiService.processOrderAction(orderId, action, reason);
+      // Refresh orders
+      fetchDashboardData();
     } catch (error) {
       console.error('Error processing order:', error);
     }
@@ -203,10 +168,12 @@ const SupplierDashboard: React.FC = () => {
 
   const fetchGroupBuys = async () => {
     try {
-      const pending = await apiService.getSupplierOrders('pending');
-      const paid = await apiService.getSupplierOrders('paid');
+      const [pending, confirmed] = await Promise.all([
+        apiService.getSupplierOrders('pending'),
+        apiService.getSupplierOrders('confirmed')
+      ]);
       setPendingGroupBuys(Array.isArray(pending) ? pending : []);
-      setPaidGroupBuys(Array.isArray(paid) ? paid : []);
+      setPaidGroupBuys(Array.isArray(confirmed) ? confirmed : []);
     } catch (error) {
       console.error('Error fetching group buys:', error);
     }
@@ -269,10 +236,32 @@ const SupplierDashboard: React.FC = () => {
     }
   };
 
+  const handleMarkShipped = async (orderId: number) => {
+    try {
+      await apiService.markOrderShipped(orderId, {});
+      fetchGroupBuys();
+      alert('Order marked as shipped');
+    } catch (error) {
+      console.error('Error marking as shipped:', error);
+      alert('Failed to mark order as shipped');
+    }
+  };
+
+  const handleMarkDelivered = async (orderId: number) => {
+    try {
+      await apiService.markOrderDelivered(orderId, {});
+      fetchGroupBuys();
+      alert('Order marked as delivered');
+    } catch (error) {
+      console.error('Error marking as delivered:', error);
+      alert('Failed to mark order as delivered');
+    }
+  };
+
   const handleGenerateInvoice = async (orderId: number) => {
     try {
       // Call API to generate invoice for the completed order
-      const result = await apiService.generateInvoiceForOrder(orderId);
+      const result = await apiService.generateInvoice(orderId);
       if (result) {
         alert('Invoice generated successfully!');
         // Optionally download or show the invoice
@@ -541,7 +530,7 @@ const SupplierDashboard: React.FC = () => {
                           </div>
                           <Badge variant="outline" className="flex items-center gap-1">
                             <Clock className="h-3 w-3" />
-                            Pending
+                            {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
                           </Badge>
                         </div>
 
@@ -561,21 +550,37 @@ const SupplierDashboard: React.FC = () => {
                         </div>
 
                         <div className="flex gap-2">
-                          <Button
-                            onClick={() => handleOrderAction(order.id, 'confirm')}
-                            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white"
-                          >
-                            <CheckCircle className="h-4 w-4" />
-                            Confirm Order
-                          </Button>
-                          <Button
-                            variant="outline"
-                            onClick={() => handleOrderAction(order.id, 'reject', 'Capacity constraints')}
-                            className="flex items-center gap-2 text-red-600 border-red-300 hover:bg-red-50"
-                          >
-                            <AlertCircle className="h-4 w-4" />
-                            Reject Order
-                          </Button>
+                          {order.status === 'pending' && (
+                            <>
+                              <Button
+                                onClick={() => handleOrderAction(order.id, 'confirm')}
+                                className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white"
+                              >
+                                <CheckCircle className="h-4 w-4" />
+                                Confirm Order
+                              </Button>
+                              <Button
+                                variant="outline"
+                                onClick={() => handleOrderAction(order.id, 'reject', 'Capacity constraints')}
+                                className="flex items-center gap-2 text-red-600 border-red-300 hover:bg-red-50"
+                              >
+                                <AlertCircle className="h-4 w-4" />
+                                Reject Order
+                              </Button>
+                            </>
+                          )}
+                          {order.status === 'confirmed' && (
+                            <div className="flex items-center gap-2 text-green-600">
+                              <CheckCircle className="h-4 w-4" />
+                              <span className="text-sm font-medium">Order Confirmed</span>
+                            </div>
+                          )}
+                          {order.status === 'rejected' && (
+                            <div className="flex items-center gap-2 text-red-600">
+                              <XCircle className="h-4 w-4" />
+                              <span className="text-sm font-medium">Order Rejected</span>
+                            </div>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -977,10 +982,41 @@ const SupplierDashboard: React.FC = () => {
                               <div className="text-sm text-green-600">Savings: ${group.total_savings}</div>
                             </td>
                             <td className="py-4 px-4 text-center">
-                              <Badge variant="default" className="bg-green-100 text-green-800">
-                                <CheckCircle className="h-3 w-3 mr-1" />
-                                Completed
-                              </Badge>
+                              {group.status === 'confirmed' && (
+                                <div className="flex flex-col items-center gap-2">
+                                  <Button
+                                    onClick={() => handleMarkShipped(group.id)}
+                                    size="sm"
+                                    className="bg-yellow-600 hover:bg-yellow-700"
+                                  >
+                                    Ship
+                                  </Button>
+                                  <div className="text-sm text-gray-500">Awaiting shipment</div>
+                                </div>
+                              )}
+                              {group.status === 'shipped' && (
+                                <div className="flex flex-col items-center gap-2">
+                                  <Button
+                                    onClick={() => handleMarkDelivered(group.id)}
+                                    size="sm"
+                                    className="bg-blue-600 hover:bg-blue-700"
+                                  >
+                                    Mark Delivered
+                                  </Button>
+                                  <div className="text-sm text-gray-500">In transit</div>
+                                </div>
+                              )}
+                              {group.status === 'delivered' && (
+                                <Badge variant="default" className="bg-green-100 text-green-800">
+                                  <CheckCircle className="h-3 w-3 mr-1" />
+                                  Delivered
+                                </Badge>
+                              )}
+                              {!['confirmed','shipped','delivered'].includes(group.status) && (
+                                <Badge variant="default" className="bg-gray-100 text-gray-700">
+                                  {group.status}
+                                </Badge>
+                              )}
                             </td>
                           </tr>
                         ))}
@@ -2393,33 +2429,33 @@ const SupplierDashboard: React.FC = () => {
               </div>
 
               {/* Product Details */}
-              {selectedGroup.product && (
+              {selectedGroup && (
                 <div className="bg-white rounded-xl p-6 shadow-sm">
                   <h3 className="text-lg font-semibold text-gray-900 mb-4">Product Details</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">Product Name</label>
-                      <p className="text-base text-gray-900 font-medium">{selectedGroup.product.name}</p>
+                      <p className="text-base text-gray-900 font-medium">{selectedGroup.product_name || selectedGroup.name}</p>
                     </div>
 
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">Manufacturer</label>
-                      <p className="text-base text-gray-900">{selectedGroup.product.manufacturer || 'N/A'}</p>
+                      <p className="text-base text-gray-900">{selectedGroup.manufacturer || 'N/A'}</p>
                     </div>
 
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">Total Stock</label>
-                      <p className="text-base text-gray-900">{selectedGroup.product.totalStock || 'N/A'} units</p>
+                      <p className="text-base text-gray-900">{selectedGroup.total_stock || 'N/A'} units</p>
                     </div>
 
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">Regular Price</label>
-                      <p className="text-base text-gray-500">{selectedGroup.product.regularPrice}</p>
+                      <p className="text-base text-gray-500">${selectedGroup.original_price}</p>
                     </div>
 
                     <div className="md:col-span-2">
                       <label className="block text-sm font-medium text-gray-700 mb-2">Product Description</label>
-                      <p className="text-base text-gray-700">{selectedGroup.product.description}</p>
+                      <p className="text-base text-gray-700">{selectedGroup.product_description || selectedGroup.long_description || selectedGroup.description}</p>
                     </div>
                   </div>
                 </div>

@@ -63,6 +63,7 @@ class User(Base):
     chat_messages = relationship("ChatMessage", back_populates="user")
     supplier_products = relationship("SupplierProduct", back_populates="supplier")
     supplier_orders = relationship("SupplierOrder", back_populates="supplier")
+    orders = relationship("Order", back_populates="supplier")
 
 class Product(Base):
     __tablename__ = "products"
@@ -111,6 +112,7 @@ class GroupBuy(Base):
     creator = relationship("User", back_populates="created_groups", foreign_keys=[creator_id])
     contributions = relationship("Contribution", back_populates="group_buy", cascade="all, delete-orphan")
     chat_messages = relationship("ChatMessage", back_populates="group_buy", cascade="all, delete-orphan")
+    orders = relationship("Order", back_populates="group")
     
     @property
     def moq_progress(self):

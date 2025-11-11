@@ -1,16 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
 import apiService from '../services/api';
-import { 
-  Search, 
-  Shield, 
+import {
+  Search,
+  Shield,
   XCircle,
   DollarSign,
   CheckCircle2,
   Loader2,
   Users,
-  Calendar,
-  Clock,
   Plus,
   Package,
   AlertTriangle,
@@ -20,9 +18,7 @@ import {
   Edit2,
   Save,
   Eye
-} from 'lucide-react';
-
-const GroupModeration = () => {
+} from 'lucide-react';const GroupModeration = () => {
   const [showPaymentModal, setShowPaymentModal] = React.useState(false);
   const [selectedPaymentGroup, setSelectedPaymentGroup] = React.useState<any>(null);
   type PaymentStatus = 'pending' | 'processing' | 'completed' | 'failed';
@@ -74,8 +70,7 @@ const GroupModeration = () => {
 
   // State for dynamic data
   const [activeGroups, setActiveGroups] = useState<any[]>([]);
-  const [readyForPaymentGroupsData, setReadyForPaymentGroupsData] = useState<any[]>([]);
-  const [completedGroups, setCompletedGroups] = useState<any[]>([]);
+  const [readyForPaymentGroups, setReadyForPaymentGroups] = useState<any[]>([]);
   const [moderationStats, setModerationStats] = useState({
     active_groups: 0,
     total_members: 0,
@@ -87,7 +82,6 @@ const GroupModeration = () => {
   const [error, setError] = useState<string | null>(null);
   const [activeGroupsSearch, setActiveGroupsSearch] = useState('');
   const [readyForPaymentSearch, setReadyForPaymentSearch] = useState('');
-  const [completedGroupsSearch, setCompletedGroupsSearch] = useState('');
 
   // Fetch data on component mount
   useEffect(() => {
@@ -105,12 +99,8 @@ const GroupModeration = () => {
         setActiveGroups(activeData);
 
         // Fetch ready for payment groups
-        const readyData = await apiService.getReadyForPaymentGroups();
-        setReadyForPaymentGroupsData(readyData);
-
-        // Fetch completed groups
-        const completedData = await apiService.getCompletedGroups();
-        setCompletedGroups(completedData);
+        const readyForPaymentData = await apiService.getReadyForPaymentGroups();
+        setReadyForPaymentGroups(readyForPaymentData);
 
       } catch (err) {
         console.error('Error fetching moderation data:', err);
@@ -152,21 +142,51 @@ const GroupModeration = () => {
 
 
   const handleDeleteGroup = async (groupId: number) => {
-    if (!window.confirm('Are you sure you want to delete this group? This action cannot be undone.')) {
+    // First, get the group details to check if it has participants
+    let groupDetails;
+    try {
+      const response = await fetch(`http://localhost:8000/api/admin/groups/${groupId}`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      if (response.ok) {
+        groupDetails = await response.json();
+      }
+    } catch (error) {
+      console.error('Error fetching group details:', error);
+    }
+
+    // Check if group has participants who may need refunds
+    const hasParticipants = groupDetails && (groupDetails.members > 0 || groupDetails.participants > 0);
+
+    const confirmMessage = hasParticipants
+      ? `This group has ${groupDetails.members || groupDetails.participants || 0} participant(s). Deleting this group will automatically process refunds for all participants who have paid. Are you sure you want to proceed?`
+      : 'Are you sure you want to delete this group? This action cannot be undone.';
+
+    if (!window.confirm(confirmMessage)) {
       return;
     }
 
     try {
+      // If group has participants, process refunds first
+      if (hasParticipants) {
+        console.log('Processing refunds for group participants...');
+        await apiService.processGroupDeletionRefund(groupId);
+        alert('Refunds processed successfully for all participants.');
+      }
+
+      // Then delete the group
       await apiService.deleteAdminGroup(groupId);
+
       // Refresh data after deletion
       const stats = await apiService.getGroupModerationStats();
       setModerationStats(stats);
       const activeData = await apiService.getActiveGroups();
       setActiveGroups(activeData);
-      const readyData = await apiService.getReadyForPaymentGroups();
-      setReadyForPaymentGroupsData(readyData);
-      const completedData = await apiService.getCompletedGroups();
-      setCompletedGroups(completedData);
+      const readyForPaymentData = await apiService.getReadyForPaymentGroups();
+      setReadyForPaymentGroups(readyForPaymentData);
+
       alert('Group deleted successfully!');
     } catch (error: any) {
       console.error('Failed to delete group:', error);
@@ -253,10 +273,6 @@ const GroupModeration = () => {
       setModerationStats(stats);
       const activeData = await apiService.getActiveGroups();
       setActiveGroups(activeData);
-      const readyData = await apiService.getReadyForPaymentGroups();
-      setReadyForPaymentGroupsData(readyData);
-      const completedData = await apiService.getCompletedGroups();
-      setCompletedGroups(completedData);
 
       // Update the selected group with new data
       const updatedResponse = await fetch(`http://localhost:8000/api/admin/groups/${editedGroup.id}`, {
@@ -373,7 +389,7 @@ const GroupModeration = () => {
       )}
 
       {/* Groups List */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         {/* Active Groups */}
         <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
           <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-blue-50 via-indigo-50 to-blue-50">
@@ -406,7 +422,7 @@ const GroupModeration = () => {
             {activeGroups
               .filter((group) => {
                 if (!activeGroupsSearch.trim()) return true;
-                
+
                 const searchTerm = activeGroupsSearch.toLowerCase();
                 return (
                   group.name?.toLowerCase().includes(searchTerm) ||
@@ -481,7 +497,7 @@ const GroupModeration = () => {
                     <DollarSign className="w-4 h-4" />
                     Process Payment
                   </button>
-                  <button 
+                  <button
                     onClick={() => handleViewDetails(group)}
                     className="px-4 py-2.5 border-2 border-gray-300 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50 hover:border-gray-400 transition-all duration-200"
                   >
@@ -500,22 +516,19 @@ const GroupModeration = () => {
           </div>
         </div>
 
-        {/* Ready for Payment */}
+        {/* Ready for Payment Groups */}
         <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
-          <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-green-50 via-emerald-50 to-green-50">
+          <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-purple-50 via-violet-50 to-purple-50">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
-                <div className="p-2.5 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl shadow-md">
+                <div className="p-2.5 bg-gradient-to-br from-purple-500 to-violet-600 rounded-xl shadow-md">
                   <DollarSign className="w-6 h-6 text-white" />
                 </div>
                 <div>
                   <h3 className="text-xl font-bold text-gray-900">Ready for Payment</h3>
-                  <p className="text-sm text-gray-500 mt-0.5">Groups that have reached their target and are ready for payment</p>
+                  <p className="text-sm text-gray-500 mt-0.5">Groups that have reached their target and need payment processing</p>
                 </div>
               </div>
-              <span className="inline-flex items-center px-3 py-1.5 rounded-full text-sm font-bold bg-green-100 text-green-700 shadow-sm">
-                {readyForPaymentGroupsData.length} Groups
-              </span>
             </div>
             {/* Search Bar */}
             <div className="relative">
@@ -524,18 +537,18 @@ const GroupModeration = () => {
               </div>
               <input
                 type="text"
-                placeholder="Search ready for payment groups by name, category..."
+                placeholder="Search ready for payment groups..."
                 value={readyForPaymentSearch}
                 onChange={(e) => setReadyForPaymentSearch(e.target.value)}
-                className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm bg-white shadow-sm transition-all duration-200"
+                className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-sm bg-white shadow-sm transition-all duration-200"
               />
             </div>
           </div>
-          <div className="p-6 max-h-[500px] overflow-y-auto space-y-4 bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50">
-            {readyForPaymentGroupsData
-              .filter((group: any) => {
+          <div className="p-6 max-h-[500px] overflow-y-auto space-y-4 bg-gradient-to-br from-purple-50 via-violet-50 to-pink-50">
+            {readyForPaymentGroups
+              .filter((group) => {
                 if (!readyForPaymentSearch.trim()) return true;
-                
+
                 const searchTerm = readyForPaymentSearch.toLowerCase();
                 return (
                   group.name?.toLowerCase().includes(searchTerm) ||
@@ -546,33 +559,58 @@ const GroupModeration = () => {
                   group.product?.manufacturer?.toLowerCase().includes(searchTerm)
                 );
               })
-              .map((group: any) => (
-              <div key={group.id} className="bg-gradient-to-br from-green-50 to-emerald-50 border-2 border-green-200 rounded-xl p-5 hover:shadow-lg transition-all duration-300 hover:border-green-300 transform hover:-translate-y-1">
-                <div className="flex items-start justify-between mb-4">
+              .map((group) => (
+              <div key={`ready-${group.id}`} className="bg-white border border-purple-200 rounded-xl p-5 hover:shadow-lg transition-all duration-300 hover:border-purple-300 transform hover:-translate-y-1">
+                <div className="flex items-start gap-4 mb-4">
+                  {/* Thumbnail */}
+                  <div className="flex-shrink-0">
+                    <img
+                      src={group.product?.image || group.image || '/api/placeholder/150/100'}
+                      alt={group.product?.name || group.name}
+                      className="w-32 h-24 object-cover rounded-xl border-2 border-purple-200 shadow-md"
+                    />
+                  </div>
+
                   <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-3">
+                    {/* Group Details */}
+                    <div className="flex items-center gap-2 mb-2">
                       <h4 className="text-lg font-bold text-gray-900">{group.name}</h4>
-                      <span className="inline-flex items-center gap-1 px-3 py-1 text-xs font-bold bg-green-500 text-white rounded-full shadow-md">
-                        <CheckCircle2 className="w-3 h-3" /> Ready
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold bg-green-100 text-green-700 rounded-full shadow-sm">
+                        <CheckCircle2 className="w-3 h-3" /> Target Reached
                       </span>
                     </div>
-                    <div className="grid grid-cols-2 gap-3 mt-4">
-                      <div className="bg-white p-3 rounded-xl shadow-sm">
-                        <p className="text-xs text-gray-500 mb-1 font-medium">Members</p>
-                        <p className="text-lg font-bold text-gray-900">{group.members}/{group.targetMembers}</p>
+                    <p className="text-sm text-gray-600 mb-3 line-clamp-2">{group.description}</p>
+                    <div className="flex flex-wrap gap-3 text-xs text-gray-600 mb-4">
+                      <span className="px-2 py-1 bg-gray-100 rounded-full">Category: <span className="font-semibold text-gray-800">{group.category}</span></span>
+                      <span className="px-2 py-1 bg-gray-100 rounded-full">Due: <span className="font-semibold text-gray-800">{group.dueDate}</span></span>
+                      <span className="px-2 py-1 bg-green-100 rounded-full">Amount: <span className="font-semibold text-green-700">{group.totalAmount}</span></span>
+                      <span className="px-2 py-1 bg-purple-100 rounded-full">Created by: <span className="font-semibold text-purple-700">{group.creator}</span> <span className={`text-xs px-1.5 py-0.5 rounded-full ml-1 ${group.creator_type === 'Supplier' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>{group.creator_type}</span></span>
+                    </div>
+
+                    {/* Product Details */}
+                    <div className="bg-gradient-to-br from-gray-50 to-purple-50 p-4 rounded-xl mb-3 border border-purple-200">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Package className="w-4 h-4 text-purple-600" />
+                        <h5 className="font-semibold text-gray-900">{group.product.name}</h5>
                       </div>
-                      <div className="bg-white p-3 rounded-xl shadow-sm">
-                        <p className="text-xs text-gray-500 mb-1 font-medium">Total Amount</p>
-                        <p className="text-lg font-bold text-green-600">{group.totalAmount}</p>
-                      </div>
-                      <div className="bg-white p-3 rounded-xl shadow-sm">
-                        <p className="text-xs text-gray-500 mb-1 font-medium">Category</p>
-                        <p className="text-sm font-bold text-gray-900">{group.category}</p>
-                      </div>
-                      <div className="bg-white p-3 rounded-xl shadow-sm">
-                        <p className="text-xs text-gray-500 mb-1 font-medium">Created by</p>
-                        <p className="text-sm font-bold text-purple-600">{group.creator}</p>
-                        <span className={`text-xs px-1.5 py-0.5 rounded-full mt-1 inline-block ${group.creator_type === 'Supplier' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>{group.creator_type}</span>
+                      <p className="text-sm text-gray-600 mb-3 line-clamp-1">{group.product.description}</p>
+                      <div className="grid grid-cols-2 gap-3 text-sm">
+                        <div className="bg-white p-2 rounded-lg">
+                          <span className="text-gray-500 text-xs">Regular Price</span>
+                          <p className="font-semibold text-gray-900">{group.product.regularPrice}</p>
+                        </div>
+                        <div className="bg-green-50 p-2 rounded-lg">
+                          <span className="text-green-600 text-xs">Bulk Price</span>
+                          <p className="font-semibold text-green-700">{group.product.bulkPrice}</p>
+                        </div>
+                        <div className="bg-white p-2 rounded-lg">
+                          <span className="text-gray-500 text-xs">Stock</span>
+                          <p className="font-semibold text-gray-900">{group.product.totalStock} units</p>
+                        </div>
+                        <div className="bg-white p-2 rounded-lg">
+                          <span className="text-gray-500 text-xs">Manufacturer</span>
+                          <p className="font-semibold text-gray-900 truncate">{group.product.manufacturer}</p>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -580,136 +618,32 @@ const GroupModeration = () => {
                 <div className="flex gap-2">
                   <button
                     onClick={() => handlePaymentProcess(group)}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-green-600 to-emerald-600 text-white text-sm font-medium rounded-xl hover:from-green-700 hover:to-emerald-700 transition-all duration-200 shadow-md hover:shadow-lg"
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-purple-600 to-violet-600 text-white text-sm font-medium rounded-xl hover:from-purple-700 hover:to-violet-700 transition-all duration-200 shadow-md hover:shadow-lg"
                   >
                     <DollarSign className="w-4 h-4" />
                     Process Payment
                   </button>
                   <button
                     onClick={() => handleViewDetails(group)}
-                    className="px-4 py-2.5 border-2 border-gray-300 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50 hover:border-gray-400 transition-all duration-200"
-                  >
-                    View
-                  </button>
-                  <button
-                    onClick={() => handleDeleteGroup(group.id)}
-                    className="flex items-center gap-2 px-4 py-2.5 bg-red-600 text-white text-sm font-medium rounded-xl hover:bg-red-700 transition-all duration-200 shadow-md hover:shadow-lg"
-                    title="Delete Group"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Completed Groups */}
-        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
-          <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-gray-50 via-slate-50 to-gray-50">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 bg-gradient-to-br from-gray-500 to-slate-600 rounded-xl shadow-md">
-                  <CheckCircle2 className="w-6 h-6 text-white" />
-                </div>
-                <div>
-                  <h3 className="text-xl font-bold text-gray-900">Completed Groups</h3>
-                  <p className="text-sm text-gray-500 mt-0.5">Groups that have been completed due to stock depletion or other reasons</p>
-                </div>
-              </div>
-              <span className="inline-flex items-center px-3 py-1.5 rounded-full text-sm font-bold bg-gray-100 text-gray-700 shadow-sm">
-                {completedGroups.length} Groups
-              </span>
-            </div>
-            {/* Search Bar */}
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Search className="h-5 w-5 text-gray-400" />
-              </div>
-              <input
-                type="text"
-                placeholder="Search completed groups by name, category..."
-                value={completedGroupsSearch}
-                onChange={(e) => setCompletedGroupsSearch(e.target.value)}
-                className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-gray-500 focus:border-gray-500 text-sm bg-white shadow-sm transition-all duration-200"
-              />
-            </div>
-          </div>
-          <div className="p-6 max-h-[500px] overflow-y-auto space-y-4 bg-gradient-to-br from-gray-50 via-slate-50 to-gray-50">
-            {completedGroups
-              .filter((group: any) => {
-                if (!completedGroupsSearch.trim()) return true;
-                
-                const searchTerm = completedGroupsSearch.toLowerCase();
-                return (
-                  group.name?.toLowerCase().includes(searchTerm) ||
-                  group.description?.toLowerCase().includes(searchTerm) ||
-                  group.category?.toLowerCase().includes(searchTerm) ||
-                  group.product?.name?.toLowerCase().includes(searchTerm) ||
-                  group.product?.description?.toLowerCase().includes(searchTerm) ||
-                  group.product?.manufacturer?.toLowerCase().includes(searchTerm) ||
-                  group.completion_reason?.toLowerCase().includes(searchTerm)
-                );
-              })
-              .map((group: any) => (
-              <div key={group.id} className="bg-gradient-to-br from-gray-50 to-slate-50 border-2 border-gray-200 rounded-xl p-5 hover:shadow-lg transition-all duration-300 hover:border-gray-300 transform hover:-translate-y-1">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-3">
-                      <h4 className="text-lg font-bold text-gray-900">{group.name}</h4>
-                      <span className="inline-flex items-center gap-1 px-3 py-1 text-xs font-bold bg-gray-500 text-white rounded-full shadow-md">
-                        <CheckCircle2 className="w-3 h-3" /> Completed
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3 mt-4">
-                      <div className="bg-white p-3 rounded-xl shadow-sm">
-                        <p className="text-xs text-gray-500 mb-1 font-medium">Members</p>
-                        <p className="text-lg font-bold text-gray-900">{group.members}/{group.targetMembers}</p>
-                      </div>
-                      <div className="bg-white p-3 rounded-xl shadow-sm">
-                        <p className="text-xs text-gray-500 mb-1 font-medium">Total Amount</p>
-                        <p className="text-lg font-bold text-gray-600">{group.totalAmount}</p>
-                      </div>
-                      <div className="bg-white p-3 rounded-xl shadow-sm">
-                        <p className="text-xs text-gray-500 mb-1 font-medium">Category</p>
-                        <p className="text-sm font-bold text-gray-900">{group.category}</p>
-                      </div>
-                      <div className="bg-white p-3 rounded-xl shadow-sm">
-                        <p className="text-xs text-gray-500 mb-1 font-medium">Created by</p>
-                        <p className="text-sm font-bold text-purple-600">{group.creator}</p>
-                        <span className={`text-xs px-1.5 py-0.5 rounded-full mt-1 inline-block ${group.creator_type === 'Supplier' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>{group.creator_type}</span>
-                      </div>
-                    </div>
-                    {/* Completion Reason */}
-                    <div className="mt-4 p-3 bg-gray-100 rounded-xl border border-gray-200">
-                      <p className="text-xs text-gray-500 mb-1 font-medium">Completion Reason</p>
-                      <p className="text-sm font-semibold text-gray-700">{group.completion_reason || 'Stock depleted'}</p>
-                    </div>
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => handleViewDetails(group)}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-gray-600 to-slate-600 text-white text-sm font-medium rounded-xl hover:from-gray-700 hover:to-slate-700 transition-all duration-200 shadow-md hover:shadow-lg"
+                    className="px-4 py-3 border-2 border-gray-300 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50 hover:border-gray-400 transition-all duration-200"
                   >
                     <Eye className="w-4 h-4" />
-                    View Details
-                  </button>
-                  <button
-                    onClick={() => handleDeleteGroup(group.id)}
-                    className="flex items-center gap-2 px-4 py-2.5 bg-red-600 text-white text-sm font-medium rounded-xl hover:bg-red-700 transition-all duration-200 shadow-md hover:shadow-lg"
-                    title="Delete Group"
-                  >
-                    <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
               </div>
             ))}
+            {activeGroups.filter((group) => group.members >= group.targetMembers).length === 0 && (
+              <div className="text-center py-8">
+                <div className="w-16 h-16 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <DollarSign className="w-8 h-8" />
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">No Groups Ready for Payment</h3>
+                <p className="text-gray-600">Groups that have reached their target will appear here for payment processing.</p>
+              </div>
+            )}
           </div>
         </div>
       </div>
-
-
 
       {/* Create Group Modal */}
       {showCreateModal && (
@@ -1066,12 +1000,6 @@ const GroupModeration = () => {
 
                           const activeData = await apiService.getActiveGroups();
                           setActiveGroups(activeData);
-
-                          const readyData = await apiService.getReadyForPaymentGroups();
-                          setReadyForPaymentGroupsData(readyData);
-
-                          const completedData = await apiService.getCompletedGroups();
-                          setCompletedGroups(completedData);
 
                         } catch (err) {
                           console.error('Error fetching moderation data:', err);

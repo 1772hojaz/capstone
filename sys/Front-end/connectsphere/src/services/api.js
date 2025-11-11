@@ -283,6 +283,12 @@ class ApiService {
       method: 'DELETE',
     });
   }
+
+  async processGroupDeletionRefund(groupId) {
+    return this.request(`/api/admin/groups/${groupId}/refund-participants`, {
+      method: 'POST',
+    });
+  }
   async getReports() {
     return this.request('/api/admin/reports');
   }
@@ -441,6 +447,20 @@ class ApiService {
     return this.request(`/api/supplier/orders/${orderId}/action`, {
       method: 'POST',
       body: JSON.stringify(requestData),
+    });
+  }
+
+  async markOrderShipped(orderId, shipData = {}) {
+    return this.request(`/api/supplier/orders/${orderId}/ship`, {
+      method: 'POST',
+      body: JSON.stringify(shipData),
+    });
+  }
+
+  async markOrderDelivered(orderId, deliverData = {}) {
+    return this.request(`/api/supplier/orders/${orderId}/deliver`, {
+      method: 'POST',
+      body: JSON.stringify(deliverData),
     });
   }
 

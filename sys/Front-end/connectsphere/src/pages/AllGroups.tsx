@@ -487,8 +487,8 @@ export default function AllGroups() {
 
                     <div className="mb-4">
                       <div className="flex items-center justify-between text-xs mb-1">
-                        <span className="text-gray-600">{group.participants ?? 0} joined</span>
-                        <span className="text-gray-600">{group.moq ? `${group.moq} needed` : ''}</span>
+                        <span className="text-gray-600">${(group.participants ?? 0) * (group.price || 0)} collected</span>
+                        <span className="text-gray-600">${(group.moq || 0) * (group.price || 0)} target</span>
                       </div>
                       {group.moq_progress ? (
                         <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">

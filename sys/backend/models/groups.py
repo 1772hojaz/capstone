@@ -11,8 +11,9 @@ import io
 import secrets
 from cryptography.fernet import Fernet
 from db.database import get_db
-from models.models import User, AdminGroup, Contribution, GroupBuy, AdminGroupJoin, QRCodePickup
+from models.models import User, AdminGroup, Contribution, GroupBuy, AdminGroupJoin, QRCodePickup, Transaction
 from authentication.auth import verify_token
+from payment.flutterwave_service import flutterwave_service
 
 router = APIRouter()
 
@@ -926,6 +927,13 @@ async def update_contribution(
         group_buy.total_quantity += additional_quantity
         group_buy.total_contributions += additional_amount
 
+        # Check if group should be completed (reached MOQ)
+        if group_buy.moq_progress >= 100 and group_buy.status == "active":
+            group_buy.status = "completed"
+            # Create order automatically when group completes
+            from routers.supplier_orders import create_order_from_completed_group
+            create_order_from_completed_group(db, group_id)
+
         db.commit()
 
         return {
@@ -1025,6 +1033,12 @@ async def join_group(
 
             # Update group participant count
             admin_group.participants += 1
+
+            # Check if group has reached target and create order for supplier approval
+            if admin_group.max_participants and admin_group.participants >= admin_group.max_participants:
+                # Create order for supplier approval
+                from routers.supplier_orders import create_order_from_admin_group
+                create_order_from_admin_group(db, group_id)
 
             # Create initial transaction record only if admin group has a linked product
             if admin_group.product_id:
@@ -1275,6 +1289,13 @@ async def update_group_quantity(
             # Update group totals
             group_buy.total_quantity += request.quantity_increase
             group_buy.total_contributions += additional_amount
+
+            # Check if group should be completed (reached MOQ)
+            if group_buy.moq_progress >= 100 and group_buy.status == "active":
+                group_buy.status = "completed"
+                # Create order automatically when group completes
+                from routers.supplier_orders import create_order_from_completed_group
+                create_order_from_completed_group(db, group_id)
 
             # Create transaction record for the additional quantity
             from models import Transaction
@@ -1835,3 +1856,482 @@ async def generate_supplier_group_qr(
     except Exception as e:
         print(f"Error generating supplier group QR: {e}")
         raise HTTPException(status_code=500, detail="Failed to generate QR code")
+
+
+# Admin Group Moderation Endpoints
+
+@router.get("/admin/groups/ready-for-payment")
+async def get_admin_ready_for_payment_groups(
+    user: User = Depends(verify_token),
+    db: Session = Depends(get_db)
+):
+    """Get all groups ready for payment processing (admin endpoint)"""
+    try:
+        # Verify user is admin
+        if not user.is_admin:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Admin access required"
+            )
+
+        # Get GroupBuy groups that are ready for payment
+        ready_groups = db.query(GroupBuy).join(GroupBuy.product).filter(
+            GroupBuy.status == "ready_for_payment"
+        ).all()
+
+        result = []
+        for group in ready_groups:
+            # Calculate participants count
+            participants_count = db.query(Contribution).filter(
+                Contribution.group_buy_id == group.id
+            ).count()
+
+            # Get supplier info
+            supplier_name = "Unknown Supplier"
+            if group.creator and group.creator.is_supplier:
+                supplier_name = group.creator.company_name or group.creator.full_name or "Supplier"
+
+            result.append({
+                "id": group.id,
+                "name": group.product.name if group.product else f"Group Buy #{group.id}",
+                "description": group.product.description if group.product else "User-created group buy",
+                "category": group.product.category if group.product else "General",
+                "supplier": supplier_name,
+                "members": participants_count,
+                "targetMembers": group.product.moq if group.product else 10,
+                "total_value": round(group.total_contributions, 2),
+                "total_savings": round(group.total_contributions * (group.product.savings_factor if group.product else 0), 2),
+                "product": {
+                    "name": group.product.name if group.product else f"Group Buy #{group.id}",
+                    "image": group.product.image_url if group.product and group.product.image_url else "/api/placeholder/150/100",
+                    "bulkPrice": group.product.bulk_price if group.product else 0,
+                    "regularPrice": group.product.unit_price if group.product else 0,
+                    "manufacturer": group.product.manufacturer if group.product else None
+                },
+                "status": "ready_for_payment",
+                "progress": f"{participants_count}/{group.product.moq if group.product else 10}",
+                "progressPercentage": 100.0,  # Ready for payment groups are at 100%
+                "created_at": group.created_at.isoformat() if group.created_at else None,
+                "completed_at": group.deadline.isoformat() if group.deadline else None
+            })
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error getting admin ready for payment groups: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve ready for payment groups")
+
+@router.post("/admin/groups/{group_id}/process-payment")
+async def process_admin_group_payment(
+    group_id: int,
+    user: User = Depends(verify_token),
+    db: Session = Depends(get_db)
+):
+    """Process payment for a group ready for payment (admin endpoint)"""
+    try:
+        # Verify user is admin
+        if not user.is_admin:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Admin access required"
+            )
+
+        # Get the group
+        group_buy = db.query(GroupBuy).filter(
+            GroupBuy.id == group_id,
+            GroupBuy.status == "ready_for_payment"
+        ).first()
+
+        if not group_buy:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Group not found or not ready for payment"
+            )
+
+        # Here you would integrate with payment processing
+        # For now, just mark as paid and update status
+        group_buy.status = "payment_completed"
+        group_buy.completed_at = datetime.utcnow()
+
+        # Create payment records for all contributors
+        contributions = db.query(Contribution).filter(
+            Contribution.group_buy_id == group_id,
+            not Contribution.is_fully_paid
+        ).all()
+
+        for contribution in contributions:
+            # Mark contribution as paid
+            contribution.is_fully_paid = True
+            contribution.paid_amount = contribution.contribution_amount
+
+            # Create transaction record
+            transaction = Transaction(
+                user_id=contribution.user_id,
+                group_buy_id=group_id,
+                product_id=group_buy.product_id,
+                quantity=contribution.quantity,
+                amount=contribution.contribution_amount,
+                transaction_type="payment_completed",
+                location_zone=contribution.user.location_zone or "Unknown"
+            )
+            db.add(transaction)
+
+        db.commit()
+
+        return {
+            "message": "Payment processed successfully",
+            "group_id": group_id,
+            "total_amount": round(group_buy.total_contributions, 2),
+            "contributors_paid": len(contributions),
+            "status": "payment_completed"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        print(f"Error processing admin group payment: {e}")
+        raise HTTPException(status_code=500, detail="Failed to process payment")
+
+@router.get("/admin/groups/moderation-stats")
+async def get_admin_group_moderation_stats(
+    user: User = Depends(verify_token),
+    db: Session = Depends(get_db)
+):
+    """Get group moderation statistics for admin"""
+    try:
+        # Verify user is admin
+        if not user.is_admin:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                               detail="Admin access required"
+            )
+
+        # Count groups ready for payment
+        ready_for_payment = db.query(GroupBuy).filter(
+            GroupBuy.status == "ready_for_payment"
+        ).count()
+
+        # Count active groups
+        active_groups = db.query(GroupBuy).filter(
+            GroupBuy.status == "active"
+        ).count()
+
+        # Count completed groups
+        completed_groups = db.query(GroupBuy).filter(
+            GroupBuy.status == "completed"
+        ).count()
+
+        # Count total participants across all groups
+        total_participants = db.query(Contribution).count()
+
+        # Count pending actions (groups that need admin attention)
+        # For admin, this could be groups that are completed and need payment processing
+        pending_actions = ready_for_payment  # All ready for payment groups need admin action
+
+        return {
+            "ready_for_payment": ready_for_payment,
+            "active_groups": active_groups,
+            "completed_groups": completed_groups,
+            "total_participants": total_participants,
+            "pending_actions": pending_actions,
+            "total_groups": active_groups + completed_groups + ready_for_payment
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error getting admin group moderation stats: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve moderation stats")
+
+@router.post("/admin/groups/{group_id}/refund-participants")
+async def refund_group_participants(
+    group_id: int,
+    user: User = Depends(verify_token),
+    db: Session = Depends(get_db)
+):
+    """Refund all participants who joined a group (admin endpoint)"""
+    try:
+        # Verify user is admin
+        if not user.is_admin:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Admin access required"
+            )
+
+        refunded = []
+        manual_refund_required = []
+        flutterwave_refunds = []
+        ledger_refunds = []
+
+        # First try to find as GroupBuy
+        group_buy = db.query(GroupBuy).filter(GroupBuy.id == group_id).first()
+        if group_buy:
+            # Handle GroupBuy refunds
+            contributions = db.query(Contribution).filter(
+                Contribution.group_buy_id == group_id
+            ).all()
+
+            for contribution in contributions:
+                try:
+                    refund_amount = contribution.contribution_amount
+                    
+                    # Try Flutterwave refund first if payment_transaction_id exists
+                    flutterwave_success = False
+                    if hasattr(contribution, 'payment_transaction_id') and contribution.payment_transaction_id:
+                        try:
+                            flutterwave_result = flutterwave_service.refund_payment(
+                                transaction_id=contribution.payment_transaction_id,
+                                amount=refund_amount
+                            )
+                            
+                            if flutterwave_result.get("status") == "success":
+                                flutterwave_success = True
+                                flutterwave_refunds.append({
+                                    "user_id": contribution.user_id,
+                                    "quantity": contribution.quantity,
+                                    "refund_amount": round(refund_amount, 2),
+                                    "transaction_id": contribution.payment_transaction_id,
+                                    "flutterwave_refund_id": flutterwave_result.get("data", {}).get("id")
+                                })
+                            else:
+                                print(f"Flutterwave refund failed for contribution {contribution.id}: {flutterwave_result}")
+                        except Exception as fw_e:
+                            print(f"Flutterwave refund error for contribution {contribution.id}: {fw_e}")
+                    
+                    # If Flutterwave refund succeeded, still create ledger transaction for tracking
+                    # If Flutterwave failed or no transaction ID, create ledger refund
+                    if not flutterwave_success:
+                        transaction = Transaction(
+                            user_id=contribution.user_id,
+                            group_buy_id=None,  # Admin groups don't have group_buy_id
+                            product_id=group_buy.product_id,
+                            quantity=contribution.quantity,
+                            amount=-1 * round(refund_amount, 2),  # Negative amount for refund
+                            transaction_type="refund",
+                            location_zone=contribution.user.location_zone or "Unknown"
+                        )
+                        db.add(transaction)
+                        ledger_refunds.append({
+                            "user_id": contribution.user_id,
+                            "quantity": contribution.quantity,
+                            "refund_amount": round(refund_amount, 2)
+                        })
+
+                    # Mark contribution as refunded (if it was paid)
+                    if contribution.is_fully_paid:
+                        contribution.paid_amount = 0.0
+                        contribution.is_fully_paid = False
+
+                    refunded.append({
+                        "user_id": contribution.user_id,
+                        "quantity": contribution.quantity,
+                        "refund_amount": round(refund_amount, 2),
+                        "method": "flutterwave" if flutterwave_success else "ledger"
+                    })
+
+                except Exception as e:
+                    print(f"Error refunding contribution {contribution.id}: {e}")
+                    manual_refund_required.append({
+                        "user_id": contribution.user_id,
+                        "quantity": contribution.quantity,
+                        "reason": f"Error processing refund: {str(e)}"
+                    })
+
+        else:
+            # Handle AdminGroup refunds
+            admin_group = db.query(AdminGroup).filter(AdminGroup.id == group_id).first()
+            if admin_group:
+                joins = db.query(AdminGroupJoin).filter(
+                    AdminGroupJoin.admin_group_id == group_id
+                ).all()
+
+                for join in joins:
+                    try:
+                        refund_amount = join.contribution_amount
+                        
+                        # Try Flutterwave refund first if payment_transaction_id exists
+                        flutterwave_success = False
+                        if hasattr(join, 'payment_transaction_id') and join.payment_transaction_id:
+                            try:
+                                flutterwave_result = flutterwave_service.refund_payment(
+                                    transaction_id=join.payment_transaction_id,
+                                    amount=refund_amount
+                                )
+                                
+                                if flutterwave_result.get("status") == "success":
+                                    flutterwave_success = True
+                                    flutterwave_refunds.append({
+                                        "user_id": join.user_id,
+                                        "quantity": join.quantity,
+                                        "refund_amount": round(refund_amount, 2),
+                                        "transaction_id": join.payment_transaction_id,
+                                        "flutterwave_refund_id": flutterwave_result.get("data", {}).get("id")
+                                    })
+                                else:
+                                    print(f"Flutterwave refund failed for join {join.id}: {flutterwave_result}")
+                            except Exception as fw_e:
+                                print(f"Flutterwave refund error for join {join.id}: {fw_e}")
+                        
+                        # If Flutterwave refund succeeded, still create ledger transaction for tracking
+                        # If Flutterwave failed or no transaction ID, create ledger refund
+                        if not flutterwave_success:
+                            transaction = Transaction(
+                                user_id=join.user_id,
+                                admin_group_id=group_id,
+                                product_id=admin_group.product_id,
+                                quantity=join.quantity,
+                                amount=-1 * round(refund_amount, 2),  # Negative amount for refund
+                                transaction_type="refund",
+                                location_zone=join.user.location_zone or "Unknown"
+                            )
+                            db.add(transaction)
+                            ledger_refunds.append({
+                                "user_id": join.user_id,
+                                "quantity": join.quantity,
+                                "refund_amount": round(refund_amount, 2)
+                            })
+
+                        # Mark join as refunded (if it was paid)
+                        if join.is_fully_paid:
+                            join.paid_amount = 0.0
+                            join.is_fully_paid = False
+
+                        refunded.append({
+                            "user_id": join.user_id,
+                            "quantity": join.quantity,
+                            "refund_amount": round(refund_amount, 2),
+                            "method": "flutterwave" if flutterwave_success else "ledger"
+                        })
+
+                    except Exception as e:
+                        print(f"Error refunding join {join.id}: {e}")
+                        manual_refund_required.append({
+                            "user_id": join.user_id,
+                            "quantity": join.quantity,
+                            "reason": f"Error processing refund: {str(e)}"
+                        })
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Group not found"
+                )
+
+        db.commit()
+
+        return {
+            "message": "Refund processing completed",
+            "group_id": group_id,
+            "refunded_count": len(refunded),
+            "refunded": refunded,
+            "flutterwave_refunds": flutterwave_refunds,
+            "ledger_refunds": ledger_refunds,
+            "manual_refund_required": manual_refund_required
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        print(f"Error refunding group participants: {e}")
+        raise HTTPException(status_code=500, detail="Failed to process refunds")
+
+@router.delete("/{group_id}")
+async def delete_admin_group(
+    group_id: int,
+    user: User = Depends(verify_token),
+    db: Session = Depends(get_db)
+):
+    """Delete any group (admin endpoint) - automatically refunds all participants"""
+    try:
+        # Verify user is admin
+        if not user.is_admin:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Admin access required"
+            )
+
+        refund_result = None
+        
+        # First try to find as GroupBuy
+        group_buy = db.query(GroupBuy).filter(GroupBuy.id == group_id).first()
+        if group_buy:
+            # Handle GroupBuy deletion
+            # Check if group has participants
+            contributions = db.query(Contribution).filter(
+                Contribution.group_buy_id == group_id
+            ).all()
+
+            if contributions:
+                # AUTO-TRIGGER REFUNDS before deletion
+                print(f"Auto-refunding {len(contributions)} participants before deleting GroupBuy {group_id}")
+                try:
+                    refund_result = await refund_group_participants(group_id, user, db)
+                except Exception as refund_error:
+                    print(f"Error during automatic refund: {refund_error}")
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Failed to process refunds before deletion: {str(refund_error)}"
+                    )
+
+            # Delete the group
+            db.delete(group_buy)
+            db.commit()
+
+            return {
+                "message": "Group deleted successfully and participants refunded",
+                "group_id": group_id,
+                "group_type": "GroupBuy",
+                "refunded_count": len(contributions),
+                "automatic_refund_result": refund_result if refund_result else None
+            }
+
+        # Try to find as AdminGroup
+        admin_group = db.query(AdminGroup).filter(AdminGroup.id == group_id).first()
+        if admin_group:
+            # Handle AdminGroup deletion
+            # Check if group has participants
+            joins = db.query(AdminGroupJoin).filter(
+                AdminGroupJoin.admin_group_id == group_id
+            ).all()
+
+            if joins:
+                # AUTO-TRIGGER REFUNDS before deletion
+                print(f"Auto-refunding {len(joins)} participants before deleting AdminGroup {group_id}")
+                try:
+                    refund_result = await refund_group_participants(group_id, user, db)
+                except Exception as refund_error:
+                    print(f"Error during automatic refund: {refund_error}")
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Failed to process refunds before deletion: {str(refund_error)}"
+                    )
+
+            # Delete the group
+            db.delete(admin_group)
+            db.commit()
+
+            return {
+                "message": "Group deleted successfully and participants refunded",
+                "group_id": group_id,
+                "group_type": "AdminGroup",
+                "refunded_count": len(joins),
+                "automatic_refund_result": refund_result if refund_result else None
+            }
+
+        # If neither found
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Group not found"
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        print(f"Error deleting admin group: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Failed to delete group")

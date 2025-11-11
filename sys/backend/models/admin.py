@@ -25,6 +25,9 @@ cloudinary.config(
 
 router = APIRouter()
 
+# Import groups module to reuse refund logic implemented there
+import models.groups as groups_module
+
 # Pydantic Models
 class DashboardStats(BaseModel):
     total_users: int
@@ -48,6 +51,21 @@ class GroupBuyDetail(BaseModel):
     participants_count: int
     total_contributions: float
     total_paid: float
+
+
+@router.post("/groups/{group_id}/refund-participants")
+async def admin_refund_group_participants(
+    group_id: int,
+    admin_user: User = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Admin shim endpoint that forwards to the refund logic implemented in models.groups.
+
+    This keeps the canonical refund implementation in `models/groups.py` while exposing
+    the expected admin route under `/api/admin/groups/{id}/refund-participants`.
+    """
+    # Call the groups module handler directly and pass through the admin user and db
+    return await groups_module.refund_group_participants(group_id=group_id, user=admin_user, db=db)
     is_fully_funded: bool
 
 class UserDetail(BaseModel):

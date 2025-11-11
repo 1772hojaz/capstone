@@ -89,5 +89,64 @@ class FlutterwaveService:
             logger.error(f"Fee calculation failed: {str(e)}")
             raise
 
+
+    def refund_payment(self, transaction_id: str, amount: float = None) -> Dict[str, Any]:
+        """Refund a payment transaction"""
+        try:
+            payload = {
+                "id": transaction_id,  # Flutterwave transaction ID
+            }
+            
+            # If amount is specified, add it to the payload for partial refund
+            if amount is not None:
+                payload["amount"] = str(amount)
+
+            response = requests.post(
+                f"{self.base_url}/transactions/{transaction_id}/refund",
+                json=payload,
+                headers=self.headers
+            )
+
+            try:
+                result = response.json()
+            except ValueError:
+                result = {"message": response.text}
+
+            if response.ok:
+                logger.info(f"Refund initiated: {result}")
+                return result
+            else:
+                logger.error(f"Refund failed: status={response.status_code}, body={result}")
+                return result
+                
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Refund request failed: {str(e)}")
+            raise
+
+    def get_refund_status(self, refund_id: str) -> Dict[str, Any]:
+        """Get the status of a refund"""
+        try:
+            response = requests.get(
+                f"{self.base_url}/refunds/{refund_id}",
+                headers=self.headers
+            )
+            
+            try:
+                result = response.json()
+            except ValueError:
+                result = {"message": response.text}
+
+            if response.ok:
+                logger.info(f"Refund status retrieved: {result}")
+                return result
+            else:
+                logger.error(f"Refund status check failed: status={response.status_code}, body={result}")
+                return result
+                
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Refund status check failed: {str(e)}")
+            raise
+
+
 # Global instance
 flutterwave_service = FlutterwaveService()

@@ -1087,6 +1087,20 @@ const AdminDashboard = () => {
                 link="/moderation"
               />
               <ManagementCard
+                icon={<DollarSign className="w-8 h-8" />}
+                title="Ready for Payment"
+                description="Process payments for groups that have reached their target and are ready for fulfillment."
+                buttonText="Process Payments"
+                link="/ready-for-payment"
+              />
+              <ManagementCard
+                icon={<Clock className="w-8 h-8" />}
+                title="Completed Groups"
+                description="Manage groups where orders have been paid and are ready for trader pickup."
+                buttonText="Manage Pickups"
+                link="/completed-groups"
+              />
+              <ManagementCard
                 icon={<TrendingUp className="w-8 h-8" />}
                 title="Product Catalog"
                 description="Update and manage the inventory of products available for group buying."

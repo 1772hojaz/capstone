@@ -5,3 +5,4 @@ from .models import (
     SupplierOrder, SupplierOrderItem, SupplierPickupLocation,
     SupplierInvoice, SupplierPayment, SupplierNotification, QRScanHistory
 )
+from .orders import Order, OrderItem
