@@ -1,12 +1,30 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.orm import Session
+from sqlalchemy import func, or_
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime, timedelta
 import json
+import logging
+import os
+import cloudinary
+import cloudinary.uploader
+import cloudinary.api
+
 from db.database import get_db
-from models.models import User, SupplierProduct, ProductPricingTier, SupplierOrder, SupplierOrderItem, Product, GroupBuy, SupplierPickupLocation, SupplierInvoice, SupplierPayment, SupplierNotification
+from models.models import User, SupplierProduct, ProductPricingTier, SupplierOrder, SupplierOrderItem, Product, GroupBuy, SupplierPickupLocation, SupplierInvoice, SupplierPayment, SupplierNotification, AdminGroup, AdminGroupJoin
 from authentication.auth import verify_token
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Configure Cloudinary
+cloudinary.config(
+    cloud_name=os.getenv('CLOUDINARY_CLOUD_NAME'),
+    api_key=os.getenv('CLOUDINARY_API_KEY'),
+    api_secret=os.getenv('CLOUDINARY_API_SECRET')
+)
 
 router = APIRouter()
 
@@ -102,14 +120,107 @@ class NotificationResponse(BaseModel):
     is_read: bool
     created_at: datetime
 
-# Helper function to verify supplier
-def verify_supplier(user: User = Depends(verify_token)):
+class ImageUploadResponse(BaseModel):
+    image_url: str
+    public_id: str
+
+# Enhanced error handling and validation functions
+def handle_supplier_error(operation: str, error: Exception, supplier_id: int = None):
+    """Centralized error handling for supplier operations"""
+    error_msg = str(error)
+    logger.error(f"Supplier operation '{operation}' failed for supplier {supplier_id}: {error_msg}")
+    
+    if isinstance(error, HTTPException):
+        raise error
+    elif "foreign key" in error_msg.lower():
+        raise HTTPException(status_code=400, detail="Invalid reference to related data")
+    elif "unique constraint" in error_msg.lower():
+        raise HTTPException(status_code=409, detail="Duplicate entry - record already exists")
+    elif "not null constraint" in error_msg.lower():
+        raise HTTPException(status_code=400, detail="Missing required information")
+    else:
+        raise HTTPException(status_code=500, detail=f"Failed to {operation}")
+
+def validate_supplier_permissions(user: User, resource_supplier_id: int = None, resource_name: str = "resource"):
+    """Enhanced permission validation for supplier operations"""
     if not user.is_supplier:
+        logger.warning(f"Non-supplier user {user.id} attempted supplier operation")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Supplier access required"
         )
+    
+    if resource_supplier_id and resource_supplier_id != user.id:
+        logger.warning(f"Supplier {user.id} attempted unauthorized access to {resource_name} owned by supplier {resource_supplier_id}")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"You don't have permission to access this {resource_name}"
+        )
+    
+    # Check if supplier is verified for sensitive operations
+    if not user.is_verified and resource_name in ["payment", "invoice", "order"]:
+        logger.warning(f"Unverified supplier {user.id} attempted sensitive operation: {resource_name}")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account verification required for this operation"
+        )
+    
     return user
+
+def validate_business_data(data: dict, required_fields: List[str] = None):
+    """Validate business-related data inputs"""
+    errors = []
+    
+    if required_fields:
+        for field in required_fields:
+            if not data.get(field):
+                errors.append(f"'{field}' is required")
+    
+    # Validate email format
+    if 'email' in data and data['email']:
+        import re
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        if not re.match(email_pattern, data['email']):
+            errors.append("Invalid email format")
+    
+    # Validate phone number format
+    if 'phone_number' in data and data['phone_number']:
+        phone_clean = re.sub(r'[^\d+]', '', data['phone_number'])
+        if len(phone_clean) < 10:
+            errors.append("Phone number must be at least 10 digits")
+    
+    # Validate price values
+    for field in ['price', 'original_price', 'unit_price', 'bulk_price']:
+        if field in data and data[field] is not None:
+            try:
+                price = float(data[field])
+                if price < 0:
+                    errors.append(f"'{field}' must be a positive number")
+                if price > 1000000:  # Reasonable upper limit
+                    errors.append(f"'{field}' exceeds maximum allowed value")
+            except (ValueError, TypeError):
+                errors.append(f"'{field}' must be a valid number")
+    
+    # Validate quantities
+    for field in ['max_participants', 'total_stock', 'quantity']:
+        if field in data and data[field] is not None:
+            try:
+                qty = int(data[field])
+                if qty < 0:
+                    errors.append(f"'{field}' must be a positive integer")
+                if qty > 100000:  # Reasonable upper limit
+                    errors.append(f"'{field}' exceeds maximum allowed value")
+            except (ValueError, TypeError):
+                errors.append(f"'{field}' must be a valid integer")
+    
+    if errors:
+        raise HTTPException(status_code=400, detail={"validation_errors": errors})
+    
+    return True
+
+# Helper function to verify supplier with enhanced validation
+def verify_supplier(user: User = Depends(verify_token)):
+    return validate_supplier_permissions(user)
 
 # Dashboard endpoints
 @router.get("/dashboard/metrics", response_model=DashboardMetrics)
@@ -371,12 +482,18 @@ async def get_supplier_orders(
         group_name = "Unknown Group"
         trader_count = 0
 
-        if order.group_buy:
-            group_name = f"Group Buy #{order.group_buy.id}"
-            trader_count = order.group_buy.participants_count
-        elif order.admin_group:
-            group_name = order.admin_group.name
-            trader_count = order.admin_group.participants
+        if order.group_buy_id:
+            # Query the GroupBuy object
+            group_buy = db.query(GroupBuy).filter(GroupBuy.id == order.group_buy_id).first()
+            if group_buy:
+                group_name = f"Group Buy #{group_buy.id}"
+                trader_count = group_buy.total_quantity  # Use total_quantity instead of participants_count
+        elif order.admin_group_id:
+            # Query the AdminGroup object
+            admin_group = db.query(AdminGroup).filter(AdminGroup.id == order.admin_group_id).first()
+            if admin_group:
+                group_name = admin_group.name
+                trader_count = admin_group.participants or 0
 
         # Get products
         products = []
@@ -946,3 +1063,1264 @@ async def bulk_upload_products(
         db.rollback()
         print(f"Error in bulk upload: {e}")
         raise HTTPException(status_code=500, detail="Failed to process bulk upload")
+
+@router.post("/upload-image", response_model=ImageUploadResponse)
+async def upload_supplier_image(
+    file: UploadFile = File(...),
+    supplier: User = Depends(verify_supplier)
+):
+    """Upload an image to Cloudinary and return the URL for suppliers"""
+    try:
+        # Validate file type
+        if not file.content_type.startswith('image/'):
+            raise HTTPException(status_code=400, detail="File must be an image")
+
+        # Validate file size (5MB limit)
+        file_content = await file.read()
+        if len(file_content) > 5 * 1024 * 1024:  # 5MB
+            raise HTTPException(status_code=400, detail="File size must be less than 5MB")
+
+        # Upload to Cloudinary
+        result = cloudinary.uploader.upload(
+            file_content,
+            folder="supplier_products",
+            resource_type="image",
+            quality="auto",
+            format="webp"
+        )
+
+        return ImageUploadResponse(
+            image_url=result['secure_url'],
+            public_id=result['public_id']
+        )
+
+    except cloudinary.exceptions.Error as e:
+        print(f"Cloudinary error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to upload image")
+    except Exception as e:
+        print(f"Error uploading image: {e}")
+        raise HTTPException(status_code=500, detail="Failed to upload image")
+
+# Group Moderation Endpoints (Similar to Admin)
+@router.get("/groups/active", response_model=List[dict])
+async def get_supplier_active_groups_for_moderation(
+    supplier: User = Depends(verify_supplier),
+    db: Session = Depends(get_db)
+):
+    """Get active groups created by supplier for moderation"""
+    try:
+        result = []
+
+        # Get groups created by this supplier (based on admin_name)
+        supplier_name = supplier.company_name or supplier.full_name or "Supplier"
+        supplier_created_groups = db.query(AdminGroup).filter(
+            AdminGroup.is_active,
+            AdminGroup.admin_name == supplier_name
+        ).all()
+
+        for group in supplier_created_groups:
+            # Get participant count from AdminGroupJoin
+            participant_count = db.query(func.count(AdminGroupJoin.id)).filter(
+                AdminGroupJoin.admin_group_id == group.id
+            ).scalar() or 0
+
+            # Calculate total amount
+            total_amount = participant_count * group.price
+
+            result.append({
+                "id": group.id,
+                "name": group.name,
+                "creator": group.admin_name or "Admin",
+                "category": group.category,
+                "members": participant_count,
+                "targetMembers": group.max_participants or 0,
+                "totalAmount": f"${total_amount:.2f}",
+                "dueDate": group.end_date.strftime("%Y-%m-%d") if group.end_date else "No deadline",
+                "description": group.description,
+                "status": "active",
+                "product": {
+                    "name": group.product_name or group.name,
+                    "description": group.product_description or group.long_description or group.description,
+                    "regularPrice": f"${group.original_price:.2f}" if group.original_price else f"${group.price:.2f}",
+                    "bulkPrice": f"${group.price:.2f}",
+                    "image": group.image or "https://via.placeholder.com/300x200?text=Product",
+                    "totalStock": group.total_stock or "N/A",
+                    "specifications": group.specifications or "Supplier managed group buy",
+                    "manufacturer": group.manufacturer or "Various",
+                    "warranty": "As per product"
+                }
+            })
+
+        return result
+
+    except Exception as e:
+        print(f"Error getting active groups for supplier {supplier.id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch active groups")
+
+@router.get("/groups/pending-orders", response_model=List[dict])
+async def get_supplier_pending_group_orders(
+    supplier: User = Depends(verify_supplier),
+    db: Session = Depends(get_db)
+):
+    """Get pending group orders created by supplier"""
+    try:
+        result = []
+        supplier_name = supplier.company_name or supplier.full_name or "Supplier"
+
+        # Get supplier-created groups that are pending (not yet ready for payment)
+        supplier_pending_groups = db.query(AdminGroup).filter(
+            AdminGroup.is_active,
+            AdminGroup.admin_name == supplier_name,
+            or_(
+                AdminGroup.max_participants.is_(None),
+                AdminGroup.participants < AdminGroup.max_participants
+            )
+        ).all()
+
+        for group in supplier_pending_groups:
+            # Get participant count from AdminGroupJoin
+            participant_count = db.query(func.count(AdminGroupJoin.id)).filter(
+                AdminGroupJoin.admin_group_id == group.id
+            ).scalar() or 0
+
+            # Calculate total amount
+            total_amount = participant_count * group.price
+
+            result.append({
+                "id": group.id,
+                "name": group.name,
+                "creator": group.admin_name or "Admin",
+                "category": group.category,
+                "members": participant_count,
+                "targetMembers": group.max_participants or 0,
+                "totalAmount": f"${total_amount:.2f}",
+                "dueDate": group.end_date.strftime("%Y-%m-%d") if group.end_date else "No deadline",
+                "description": group.description,
+                "status": "pending",
+                "product": {
+                    "name": group.product_name or group.name,
+                    "description": group.product_description or group.long_description or group.description,
+                    "regularPrice": f"${group.original_price:.2f}" if group.original_price else f"${group.price:.2f}",
+                    "bulkPrice": f"${group.price:.2f}",
+                    "image": group.image or "https://via.placeholder.com/300x200?text=Product",
+                    "totalStock": group.total_stock or "N/A",
+                    "specifications": group.specifications or "Supplier managed group buy",
+                    "manufacturer": group.manufacturer or "Various",
+                    "warranty": "As per product"
+                }
+            })
+
+        return result
+
+    except Exception as e:
+        print(f"Error getting pending group orders for supplier {supplier.id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch pending group orders")
+
+@router.get("/groups/ready-for-payment", response_model=List[dict])
+async def get_supplier_ready_for_payment_groups(
+    supplier: User = Depends(verify_supplier),
+    db: Session = Depends(get_db)
+):
+    """Get groups ready for payment processing created by supplier"""
+    try:
+        result = []
+        supplier_name = supplier.company_name or supplier.full_name or "Supplier"
+
+        # Get supplier-created groups that are ready for payment
+        supplier_ready_groups = db.query(AdminGroup).filter(
+            AdminGroup.is_active,
+            AdminGroup.admin_name == supplier_name,
+            AdminGroup.max_participants.isnot(None),
+            AdminGroup.participants >= AdminGroup.max_participants
+        ).all()
+
+        for group in supplier_ready_groups:
+            # Get participant count from AdminGroupJoin
+            participant_count = db.query(func.count(AdminGroupJoin.id)).filter(
+                AdminGroupJoin.admin_group_id == group.id
+            ).scalar() or 0
+
+            # Calculate total amount
+            total_amount = participant_count * group.price
+
+            result.append({
+                "id": group.id,
+                "name": group.name,
+                "creator": group.admin_name or "Admin",
+                "category": group.category,
+                "members": participant_count,
+                "targetMembers": group.max_participants or 0,
+                "totalAmount": f"${total_amount:.2f}",
+                "dueDate": group.end_date.strftime("%Y-%m-%d") if group.end_date else "No deadline",
+                "description": group.description,
+                "status": "ready_for_payment",
+                "product": {
+                    "name": group.product_name or group.name,
+                    "description": group.product_description or group.long_description or group.description,
+                    "regularPrice": f"${group.original_price:.2f}" if group.original_price else f"${group.price:.2f}",
+                    "bulkPrice": f"${group.price:.2f}",
+                    "image": group.image or "https://via.placeholder.com/300x200?text=Product",
+                    "totalStock": group.total_stock or "N/A",
+                    "specifications": group.specifications or "Supplier managed group buy",
+                    "manufacturer": group.manufacturer or "Various",
+                    "warranty": "As per product"
+                }
+            })
+
+        return result
+
+    except Exception as e:
+        print(f"Error getting ready for payment groups for supplier {supplier.id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch ready for payment groups")
+
+@router.get("/groups/moderation-stats")
+async def get_supplier_group_moderation_stats(
+    supplier: User = Depends(verify_supplier),
+    db: Session = Depends(get_db)
+):
+    """Get group moderation statistics for supplier"""
+    try:
+        supplier_name = supplier.company_name or supplier.full_name or "Supplier"
+
+        # Count groups created by this supplier
+        supplier_created_groups_count = db.query(func.count(AdminGroup.id)).filter(
+            AdminGroup.is_active,
+            AdminGroup.admin_name == supplier_name
+        ).scalar() or 0
+
+        # Calculate total members for supplier-created groups
+        supplier_created_members = db.query(func.sum(AdminGroup.participants)).filter(
+            AdminGroup.is_active,
+            AdminGroup.admin_name == supplier_name
+        ).scalar() or 0
+
+        # Count pending groups created by supplier
+        supplier_pending_groups_count = db.query(func.count(AdminGroup.id)).filter(
+            AdminGroup.is_active,
+            AdminGroup.admin_name == supplier_name,
+            or_(
+                AdminGroup.max_participants.is_(None),
+                AdminGroup.participants < AdminGroup.max_participants
+            )
+        ).scalar() or 0
+
+        # Ready for payment count (supplier-created groups that have reached target)
+        ready_for_payment_count = db.query(func.count(AdminGroup.id)).filter(
+            AdminGroup.is_active,
+            AdminGroup.admin_name == supplier_name,
+            AdminGroup.max_participants.isnot(None),
+            AdminGroup.participants >= AdminGroup.max_participants
+        ).scalar() or 0
+
+        # Required action count (supplier-created groups that have expired)
+        required_action_count = db.query(func.count(AdminGroup.id)).filter(
+            AdminGroup.is_active,
+            AdminGroup.admin_name == supplier_name,
+            AdminGroup.end_date < datetime.utcnow()
+        ).scalar() or 0
+
+        return {
+            "active_groups": supplier_created_groups_count,
+            "total_members": supplier_created_members or 0,
+            "ready_for_payment": ready_for_payment_count,
+            "required_action": required_action_count,
+            "pending_orders": supplier_pending_groups_count
+        }
+
+    except Exception as e:
+        print(f"Error getting moderation stats for supplier {supplier.id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch moderation stats")
+
+@router.get("/groups/{group_id}")
+async def get_supplier_group_details(
+    group_id: int,
+    supplier: User = Depends(verify_supplier),
+    db: Session = Depends(get_db)
+):
+    """Get detailed information about a specific group created by supplier"""
+    try:
+        # First check if it's an AdminGroup
+        group = db.query(AdminGroup).filter(AdminGroup.id == group_id).first()
+        
+        if group:
+            # Verify supplier created this group
+            supplier_name = supplier.company_name or supplier.full_name or "Supplier"
+            if group.admin_name != supplier_name:
+                raise HTTPException(status_code=403, detail="You can only access groups you created")
+
+            # Get participant count from AdminGroupJoin
+            participant_count = db.query(func.count(AdminGroupJoin.id)).filter(
+                AdminGroupJoin.admin_group_id == group.id
+            ).scalar() or 0
+
+            return {
+                "id": group.id,
+                "name": group.name,
+                "description": group.description,
+                "long_description": group.long_description,
+                "category": group.category,
+                "price": group.price,
+                "original_price": group.original_price,
+                "image": group.image,
+                "max_participants": group.max_participants,
+                "participants": participant_count,
+                "end_date": group.end_date.isoformat() if group.end_date else None,
+                "admin_name": group.admin_name,
+                "shipping_info": group.shipping_info,
+                "estimated_delivery": group.estimated_delivery,
+                "features": group.features or [],
+                "requirements": group.requirements or [],
+                "is_active": group.is_active,
+                "created": group.created.isoformat() if group.created else None,
+                "group_type": "admin_group"
+            }
+        
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error getting group {group_id} details for supplier {supplier.id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get group details")
+
+@router.post("/groups/{group_id}/process-payment")
+async def process_supplier_group_payment(
+    group_id: int,
+    supplier: User = Depends(verify_supplier),
+    db: Session = Depends(get_db)
+):
+    """Process payment for a completed group created by supplier"""
+    try:
+        # First check if it's an AdminGroup
+        group = db.query(AdminGroup).filter(AdminGroup.id == group_id).first()
+        
+        if group:
+            # Verify supplier created this group
+            supplier_name = supplier.company_name or supplier.full_name or "Supplier"
+            if group.admin_name != supplier_name:
+                raise HTTPException(status_code=403, detail="You can only process payments for groups you created")
+
+            # Check if group is ready for payment
+            participant_count = db.query(func.count(AdminGroupJoin.id)).filter(
+                AdminGroupJoin.admin_group_id == group.id
+            ).scalar() or 0
+            
+            if participant_count < (group.max_participants or 0):
+                raise HTTPException(status_code=400, detail="Group hasn't reached target participants yet")
+
+            # Calculate total amount
+            total_amount = participant_count * group.price
+            
+            # Create supplier payment record
+            payment = SupplierPayment(
+                supplier_id=supplier.id,
+                amount=total_amount,
+                payment_method="bank_transfer",
+                reference_number=f"GROUP-{group.id}-{supplier.id}",
+                status="pending"
+            )
+            
+            db.add(payment)
+            db.commit()
+            
+            return {
+                "message": "Payment processed successfully",
+                "payment_id": payment.id,
+                "amount": total_amount,
+                "status": "pending",
+                "reference": payment.reference_number
+            }
+        
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        print(f"Error processing payment for group {group_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to process payment")
+
+class UpdateSupplierGroupRequest(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    long_description: Optional[str] = None
+    category: Optional[str] = None
+    price: Optional[float] = None
+    original_price: Optional[float] = None
+    image: Optional[str] = None
+    max_participants: Optional[int] = None
+    end_date: Optional[str] = None
+    shipping_info: Optional[str] = None
+    estimated_delivery: Optional[str] = None
+    product_name: Optional[str] = None
+    product_description: Optional[str] = None
+    total_stock: Optional[int] = None
+    specifications: Optional[str] = None
+    manufacturer: Optional[str] = None
+
+@router.put("/groups/{group_id}")
+async def update_supplier_group(
+    group_id: int,
+    group_data: UpdateSupplierGroupRequest,
+    supplier: User = Depends(verify_supplier),
+    db: Session = Depends(get_db)
+):
+    """Update a supplier-managed group with comprehensive field support"""
+    try:
+        # Find the AdminGroup
+        group = db.query(AdminGroup).filter(AdminGroup.id == group_id).first()
+        if not group:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Group not found"
+            )
+
+        # Verify supplier owns this group (created by supplier)
+        supplier_name = supplier.company_name or supplier.full_name or "Supplier"
+        if group.admin_name != supplier_name:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You don't have permission to update this group"
+            )
+
+        # Update fields if provided
+        if group_data.name is not None:
+            group.name = group_data.name
+        if group_data.description is not None:
+            group.description = group_data.description
+        if group_data.long_description is not None:
+            group.long_description = group_data.long_description
+        if group_data.category is not None:
+            group.category = group_data.category
+        if group_data.price is not None:
+            group.price = group_data.price
+        if group_data.original_price is not None:
+            group.original_price = group_data.original_price
+        if group_data.image is not None:
+            group.image = group_data.image
+        if group_data.max_participants is not None:
+            group.max_participants = group_data.max_participants
+        if group_data.end_date is not None:
+            try:
+                group.end_date = datetime.fromisoformat(group_data.end_date.replace('Z', '+00:00'))
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid date format. Use ISO format (YYYY-MM-DDTHH:MM:SS)"
+                )
+        if group_data.shipping_info is not None:
+            group.shipping_info = group_data.shipping_info
+        if group_data.estimated_delivery is not None:
+            group.estimated_delivery = group_data.estimated_delivery
+        if group_data.product_name is not None:
+            group.product_name = group_data.product_name
+        if group_data.product_description is not None:
+            group.product_description = group_data.product_description
+        if group_data.total_stock is not None:
+            group.total_stock = group_data.total_stock
+        if group_data.specifications is not None:
+            group.specifications = group_data.specifications
+        if group_data.manufacturer is not None:
+            group.manufacturer = group_data.manufacturer
+
+        db.commit()
+        db.refresh(group)
+
+        return {
+            "message": "Group updated successfully",
+            "group_id": group_id,
+            "updated_fields": [field for field, value in group_data.dict().items() if value is not None]
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error updating supplier group {group_id}: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to update group")
+
+@router.put("/groups/{group_id}/image")
+async def update_supplier_group_image(
+    group_id: int,
+    image_url: str,
+    supplier: User = Depends(verify_supplier),
+    db: Session = Depends(get_db)
+):
+    """Update the image for a supplier-managed group"""
+    try:
+        # Find the AdminGroup
+        group = db.query(AdminGroup).filter(AdminGroup.id == group_id).first()
+        if not group:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Group not found"
+            )
+
+        # Verify supplier owns this group (created by supplier)
+        supplier_name = supplier.company_name or supplier.full_name or "Supplier"
+        if group.admin_name != supplier_name:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You don't have permission to update this group"
+            )
+
+        # Update the group image
+        group.image = image_url
+        db.commit()
+
+        return {
+            "message": "Group image updated successfully",
+            "group_id": group_id,
+            "image_url": image_url
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error updating supplier group image {group_id}: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to update group image")
+
+@router.delete("/groups/{group_id}")
+async def delete_supplier_group(
+    group_id: int,
+       supplier: User = Depends(verify_supplier),
+    db: Session = Depends(get_db)
+):
+    """Delete a supplier-managed group"""
+    try:
+        # Find the AdminGroup
+        group = db.query(AdminGroup).filter(AdminGroup.id == group_id).first()
+        if not group:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Group not found"
+            )
+
+        # Verify supplier owns this group
+        supplier_name = supplier.company_name or supplier.full_name or "Supplier"
+        if group.admin_name != supplier_name:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You don't have permission to delete this group"
+            )
+
+        # Check if group has participants
+        participant_count = db.query(func.count(AdminGroupJoin.id)).filter(
+            AdminGroupJoin.admin_group_id == group_id
+        ).scalar() or 0
+
+        if participant_count > 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Cannot delete group with {participant_count} active participants"
+            )
+
+        # Delete the group
+        db.delete(group)
+        db.commit()
+
+        return {
+            "message": "Group deleted successfully",
+            "group_id": group_id
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error deleting supplier group {group_id}: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to delete group")
+
+# Advanced Analytics Endpoints
+@router.get("/analytics/overview")
+async def get_supplier_analytics_overview(
+    supplier: User = Depends(verify_supplier),
+    db: Session = Depends(get_db)
+):
+    """Get comprehensive analytics overview for supplier"""
+    try:
+        # Time periods
+        today = datetime.utcnow().date()
+        week_ago = today - timedelta(days=7)
+        month_ago = today - timedelta(days=30)
+        quarter_ago = today - timedelta(days=90)
+        year_ago = today - timedelta(days=365)
+
+        supplier_name = supplier.company_name or supplier.full_name or "Supplier"
+
+        # Revenue analytics
+        revenue_data = {}
+        for period_name, start_date in [
+            ("week", week_ago), ("month", month_ago), 
+            ("quarter", quarter_ago), ("year", year_ago)
+        ]:
+            revenue = db.query(func.sum(SupplierOrder.total_value)).filter(
+                SupplierOrder.supplier_id == supplier.id,
+                SupplierOrder.status.in_(["confirmed", "shipped", "delivered"]),
+                SupplierOrder.created_at >= datetime.combine(start_date, datetime.min.time())
+            ).scalar() or 0
+            revenue_data[period_name] = float(revenue)
+
+        # Group performance analytics
+        supplier_groups = db.query(AdminGroup).filter(
+            AdminGroup.admin_name == supplier_name,
+            AdminGroup.is_active
+        ).all()
+
+        group_performance = []
+        total_participants = 0
+        total_completion_rate = 0
+
+        for group in supplier_groups:
+            participant_count = db.query(func.count(AdminGroupJoin.id)).filter(
+                AdminGroupJoin.admin_group_id == group.id
+            ).scalar() or 0
+            
+            completion_rate = 0
+            if group.max_participants and group.max_participants > 0:
+                completion_rate = (participant_count / group.max_participants) * 100
+            
+            total_participants += participant_count
+            if completion_rate > 0:
+                total_completion_rate += completion_rate
+
+            group_performance.append({
+                "group_id": group.id,
+                "name": group.name,
+                "participants": participant_count,
+                "target": group.max_participants or 0,
+                "completion_rate": round(completion_rate, 1),
+                "revenue": participant_count * group.price,
+                "created_date": group.created.isoformat() if group.created else None,
+                "category": group.category
+            })
+
+        avg_completion_rate = (total_completion_rate / len(supplier_groups)) if supplier_groups else 0
+
+        # Product performance analytics
+        product_analytics = db.query(
+            SupplierProduct.id,
+            Product.name,
+            Product.category,
+            func.count(SupplierOrderItem.id).label('orders_count'),
+            func.sum(SupplierOrderItem.quantity).label('total_quantity'),
+            func.sum(SupplierOrderItem.total_amount).label('total_revenue')
+        ).join(
+            SupplierOrder, SupplierOrderItem.supplier_order_id == SupplierOrder.id
+        ).join(
+            SupplierProduct, SupplierOrderItem.supplier_product_id == SupplierProduct.id
+        ).join(
+            Product, SupplierProduct.product_id == Product.id
+        ).filter(
+            SupplierOrder.supplier_id == supplier.id,
+            SupplierOrder.status.in_(["confirmed", "shipped", "delivered"]),
+            SupplierOrder.created_at >= datetime.combine(month_ago, datetime.min.time())
+        ).group_by(
+            SupplierProduct.id, Product.name, Product.category
+        ).order_by(
+            func.sum(SupplierOrderItem.total_amount).desc()
+        ).limit(10).all()
+
+        top_products = [
+            {
+                "name": name,
+                "category": category,
+                "orders_count": orders_count,
+                "total_quantity": total_quantity,
+                "total_revenue": float(total_revenue)
+            }
+            for _, name, category, orders_count, total_quantity, total_revenue in product_analytics
+        ]
+
+        # Customer engagement metrics
+        unique_customers = db.query(func.count(func.distinct(AdminGroupJoin.user_id))).join(
+            AdminGroup, AdminGroupJoin.admin_group_id == AdminGroup.id
+        ).filter(
+            AdminGroup.admin_name == supplier_name,
+            AdminGroupJoin.joined_at >= datetime.combine(month_ago, datetime.min.time())
+        ).scalar() or 0
+
+        repeat_customers = db.query(
+            AdminGroupJoin.user_id,
+            func.count(AdminGroupJoin.id).label('group_count')
+        ).join(
+            AdminGroup, AdminGroupJoin.admin_group_id == AdminGroup.id
+        ).filter(
+            AdminGroup.admin_name == supplier_name,
+            AdminGroupJoin.joined_at >= datetime.combine(month_ago, datetime.min.time())
+        ).group_by(AdminGroupJoin.user_id).having(
+            func.count(AdminGroupJoin.id) > 1
+        ).count()
+
+        # Market trend analytics
+        category_performance = db.query(
+            AdminGroup.category,
+            func.count(AdminGroup.id).label('group_count'),
+            func.avg(AdminGroup.participants).label('avg_participants'),
+            func.sum(AdminGroup.participants * AdminGroup.price).label('total_revenue')
+        ).filter(
+            AdminGroup.admin_name == supplier_name,
+            AdminGroup.created >= datetime.combine(quarter_ago, datetime.min.time())
+        ).group_by(AdminGroup.category).all()
+
+        category_trends = [
+            {
+                "category": category,
+                "group_count": group_count,
+                "avg_participants": round(float(avg_participants or 0), 1),
+                "total_revenue": float(total_revenue or 0)
+            }
+            for category, group_count, avg_participants, total_revenue in category_performance
+        ]
+
+        return {
+            "revenue_analytics": revenue_data,
+            "group_performance": {
+                "total_groups": len(supplier_groups),
+                "total_participants": total_participants,
+                "avg_completion_rate": round(avg_completion_rate, 1),
+                "groups": group_performance[:10]  # Top 10 groups
+            },
+            "product_performance": top_products,
+            "customer_metrics": {
+                "unique_customers_month": unique_customers,
+                "repeat_customers_month": repeat_customers,
+                "customer_retention_rate": round((repeat_customers / unique_customers * 100), 1) if unique_customers > 0 else 0
+            },
+            "category_trends": category_trends,
+            "summary_metrics": {
+                "monthly_revenue": revenue_data["month"],
+                "quarterly_growth": round(((revenue_data["quarter"] - revenue_data["month"]) / revenue_data["month"] * 100), 1) if revenue_data["month"] > 0 else 0,
+                "active_groups": len(supplier_groups),
+                "avg_group_size": round(total_participants / len(supplier_groups), 1) if supplier_groups else 0
+            }
+        }
+
+    except Exception as e:
+        print(f"Error getting supplier analytics: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve analytics data")
+
+@router.get("/analytics/revenue-trend")
+async def get_supplier_revenue_trend(
+    days: int = 30,
+    supplier: User = Depends(verify_supplier),
+    db: Session = Depends(get_db)
+):
+    """Get daily revenue trend for the specified number of days"""
+    try:
+        start_date = datetime.utcnow().date() - timedelta(days=days)
+        
+        # Get daily revenue data
+        daily_revenue = db.query(
+            func.date(SupplierOrder.created_at).label('date'),
+            func.sum(SupplierOrder.total_value).label('revenue'),
+            func.count(SupplierOrder.id).label('orders_count')
+        ).filter(
+            SupplierOrder.supplier_id == supplier.id,
+            SupplierOrder.status.in_(["confirmed", "shipped", "delivered"]),
+            SupplierOrder.created_at >= datetime.combine(start_date, datetime.min.time())
+        ).group_by(
+            func.date(SupplierOrder.created_at)
+        ).order_by(func.date(SupplierOrder.created_at)).all()
+
+        # Fill in missing days with zero revenue
+        revenue_trend = {}
+        current_date = start_date
+        while current_date <= datetime.utcnow().date():
+            revenue_trend[current_date.isoformat()] = {"revenue": 0, "orders": 0}
+            current_date += timedelta(days=1)
+
+        # Update with actual data
+        for date, revenue, orders in daily_revenue:
+            revenue_trend[date.isoformat()] = {
+                "revenue": float(revenue),
+                "orders": orders
+            }
+
+        return {
+            "period_days": days,
+            "daily_data": revenue_trend,
+            "total_revenue": sum(data["revenue"] for data in revenue_trend.values()),
+            "total_orders": sum(data["orders"] for data in revenue_trend.values()),
+            "avg_daily_revenue": sum(data["revenue"] for data in revenue_trend.values()) / days
+        }
+
+    except Exception as e:
+        print(f"Error getting revenue trend: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve revenue trend")
+
+@router.get("/analytics/group-insights")
+async def get_supplier_group_insights(
+    supplier: User = Depends(verify_supplier),
+    db: Session = Depends(get_db)
+):
+    """Get detailed insights about group performance and user behavior"""
+    try:
+        supplier_name = supplier.company_name or supplier.full_name or "Supplier"
+        
+        # Group completion insights
+        groups_data = db.query(
+            AdminGroup.id,
+            AdminGroup.name,
+            AdminGroup.max_participants,
+            AdminGroup.price,
+            AdminGroup.created,
+            AdminGroup.end_date,
+            func.count(AdminGroupJoin.id).label('current_participants')
+        ).outerjoin(
+            AdminGroupJoin, AdminGroup.id == AdminGroupJoin.admin_group_id
+        ).filter(
+            AdminGroup.admin_name == supplier_name
+        ).group_by(
+            AdminGroup.id, AdminGroup.name, AdminGroup.max_participants, 
+            AdminGroup.price, AdminGroup.created, AdminGroup.end_date
+        ).all()
+
+        group_insights = []
+        for group in groups_data:
+            completion_rate = 0
+            if group.max_participants and group.max_participants > 0:
+                completion_rate = (group.current_participants / group.max_participants) * 100
+
+            # Calculate time to reach current participation
+            time_active = (datetime.utcnow() - group.created).days if group.created else 0
+            participation_velocity = group.current_participants / max(time_active, 1)
+
+            # Estimate completion time
+            remaining_participants = max(0, (group.max_participants or 0) - group.current_participants)
+            estimated_days_to_complete = remaining_participants / max(participation_velocity, 0.1) if participation_velocity > 0 else None
+
+            group_insights.append({
+                "group_id": group.id,
+                "name": group.name,
+                "current_participants": group.current_participants,
+                "target_participants": group.max_participants or 0,
+                "completion_rate": round(completion_rate, 1),
+                "revenue_potential": group.current_participants * group.price,
+                "max_revenue_potential": (group.max_participants or 0) * group.price,
+                "time_active_days": time_active,
+                "participation_velocity": round(participation_velocity, 2),
+                "estimated_days_to_complete": round(estimated_days_to_complete, 1) if estimated_days_to_complete else None,
+                "end_date": group.end_date.isoformat() if group.end_date else None,
+                "status": "completed" if completion_rate >= 100 else "active" if group.current_participants > 0 else "low_engagement"
+            })
+
+        # Performance benchmarks
+        avg_completion_rate = sum(g["completion_rate"] for g in group_insights) / len(group_insights) if group_insights else 0
+        avg_time_to_first_participant = db.query(func.avg(
+            func.extract('epoch', AdminGroupJoin.joined_at - AdminGroup.created) / 86400
+        )).join(
+            AdminGroup, AdminGroupJoin.admin_group_id == AdminGroup.id
+        ).filter(
+            AdminGroup.admin_name == supplier_name
+        ).scalar() or 0
+
+        return {
+            "group_insights": group_insights,
+            "performance_benchmarks": {
+                "avg_completion_rate": round(avg_completion_rate, 1),
+                "avg_time_to_first_participant_days": round(float(avg_time_to_first_participant), 1),
+                "total_groups": len(group_insights),
+                "completed_groups": len([g for g in group_insights if g["status"] == "completed"]),
+                "low_engagement_groups": len([g for g in group_insights if g["status"] == "low_engagement"])
+            },
+            "recommendations": [
+                "Consider reducing target size for low-engagement groups",
+                "Promote groups nearing completion to boost participation",
+                "Analyze successful groups to replicate strategies"
+            ] if group_insights else []
+        }
+
+    except Exception as e:
+        print(f"Error getting group insights: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve group insights")
+
+# Enhanced Notification System
+class SupplierNotificationManager:
+    """Centralized notification management for suppliers"""
+    
+    @staticmethod
+    def create_notification(
+        db: Session,
+        supplier_id: int,
+        title: str,
+        message: str,
+        notification_type: str = "info",
+        priority: str = "normal",
+        action_url: str = None,
+        metadata: dict = None
+    ):
+        """Create a new notification for supplier"""
+        try:
+            notification = SupplierNotification(
+                supplier_id=supplier_id,
+                title=title,
+                message=message,
+                type=notification_type,
+                priority=priority,
+                action_url=action_url,
+                metadata=metadata or {},
+                created_at=datetime.utcnow()
+            )
+            db.add(notification)
+            db.commit()
+            logger.info(f"Created notification for supplier {supplier_id}: {title}")
+            return notification
+        except Exception as e:
+            logger.error(f"Failed to create notification for supplier {supplier_id}: {e}")
+            db.rollback()
+            return None
+    
+    @staticmethod
+    def notify_group_milestone(db: Session, supplier_id: int, group_id: int, milestone: str, participants: int, target: int):
+        """Send notification for group milestones"""
+        milestones = {
+            "first_participant": {
+                "title": "🎉 First Participant Joined!",
+                "message": "Your group has received its first participant! Keep promoting to reach your target."
+            },
+            "quarter_full": {
+                "title": "📈 25% Target Reached",
+                "message": f"Great progress! Your group now has {participants} out of {target} participants."
+            },
+            "half_full": {
+                "title": "🚀 Halfway There!",
+                "message": f"Excellent! Your group is 50% complete with {participants} participants."
+            },
+            "three_quarter_full": {
+                "title": "🔥 75% Complete!",
+                "message": f"Almost there! Your group has {participants} out of {target} participants."
+            },
+            "near_completion": {
+                "title": "⚡ Nearly Complete!",
+                "message": f"Just {target - participants} more participants needed to reach your target!"
+            },
+            "completed": {
+                "title": "🎊 Group Completed!",
+                "message": f"Congratulations! Your group has reached {participants} participants and is ready for processing."
+            }
+        }
+        
+        if milestone in milestones:
+            notification_data = milestones[milestone]
+            SupplierNotificationManager.create_notification(
+                db, supplier_id, notification_data["title"], notification_data["message"],
+                "success", "high", f"/groups/{group_id}", {"group_id": group_id, "participants": participants}
+            )
+    
+    @staticmethod
+    def notify_order_status(db: Session, supplier_id: int, order_id: int, status: str, details: dict = None):
+        """Send notification for order status changes"""
+        status_messages = {
+            "pending": {
+                "title": "📋 New Order Received",
+                "message": "You have a new order waiting for your confirmation.",
+                "type": "info",
+                "priority": "high"
+            },
+            "confirmed": {
+                "title": "✅ Order Confirmed",
+                "message": "Order has been confirmed and is being prepared for delivery.",
+                "type": "success",
+                "priority": "normal"
+            },
+            "shipped": {
+                "title": "🚚 Order Shipped",
+                "message": "Order has been shipped and is on its way to customers.",
+                "type": "info",
+                "priority": "normal"
+            },
+            "delivered": {
+                "title": "📦 Order Delivered",
+                "message": "Order has been successfully delivered to customers.",
+                "type": "success",
+                "priority": "normal"
+            },
+            "cancelled": {
+                "title": "❌ Order Cancelled",
+                "message": "Order has been cancelled. Please review the details.",
+                "type": "warning",
+                "priority": "high"
+            }
+        }
+        
+        if status in status_messages:
+            msg_data = status_messages[status]
+            SupplierNotificationManager.create_notification(
+                db, supplier_id, msg_data["title"], msg_data["message"],
+                msg_data["type"], msg_data["priority"], f"/orders/{order_id}",
+                {"order_id": order_id, "status": status, **(details or {})}
+            )
+    
+    @staticmethod
+    def notify_payment_update(db: Session, supplier_id: int, payment_id: int, amount: float, status: str):
+        """Send notification for payment updates"""
+        status_messages = {
+            "pending": {
+                "title": "⏳ Payment Processing",
+                "message": f"Your payment of ${amount:.2f} is being processed.",
+                "type": "info"
+            },
+            "completed": {
+                "title": "💰 Payment Received",
+                "message": f"Payment of ${amount:.2f} has been successfully processed.",
+                "type": "success"
+            },
+            "failed": {
+                "title": "⚠️ Payment Failed",
+                "message": f"Payment of ${amount:.2f} failed to process. Please check your account details.",
+                "type": "error"
+            }
+        }
+        
+        if status in status_messages:
+            msg_data = status_messages[status]
+            SupplierNotificationManager.create_notification(
+                db, supplier_id, msg_data["title"], msg_data["message"],
+                msg_data["type"], "high", f"/payments/{payment_id}",
+                {"payment_id": payment_id, "amount": amount, "status": status}
+            )
+
+@router.post("/notifications/bulk-create")
+async def create_bulk_notifications(
+    notifications_data: List[dict],
+    supplier: User = Depends(verify_supplier),
+    db: Session = Depends(get_db)
+):
+    """Create multiple notifications at once (for system events)"""
+    try:
+        created_notifications = []
+        for notification in notifications_data:
+            created = SupplierNotificationManager.create_notification(
+                db, supplier.id, 
+                notification.get("title", "Notification"),
+                notification.get("message", ""),
+                notification.get("type", "info"),
+                notification.get("priority", "normal"),
+                notification.get("action_url"),
+                notification.get("metadata")
+            )
+            if created:
+                created_notifications.append(created.id)
+        
+        return {
+            "message": f"Created {len(created_notifications)} notifications",
+            "notification_ids": created_notifications
+        }
+    
+    except Exception as e:
+        handle_supplier_error("create bulk notifications", e, supplier.id)
+
+@router.get("/notifications/summary")
+async def get_supplier_notifications_summary(
+    supplier: User = Depends(verify_supplier),
+    db: Session = Depends(get_db)
+):
+    """Get notification summary and counts"""
+    try:
+        # Count notifications by type and read status
+        total_notifications = db.query(func.count(SupplierNotification.id)).filter(
+            SupplierNotification.supplier_id == supplier.id
+        ).scalar() or 0
+        
+        unread_notifications = db.query(func.count(SupplierNotification.id)).filter(
+            SupplierNotification.supplier_id == supplier.id,
+            ~SupplierNotification.is_read
+        ).scalar() or 0
+        
+        high_priority_unread = db.query(func.count(SupplierNotification.id)).filter(
+            SupplierNotification.supplier_id == supplier.id,
+            ~SupplierNotification.is_read,
+            SupplierNotification.priority == "high"
+        ).scalar() or 0
+        
+        # Recent notifications (last 24 hours)
+        yesterday = datetime.utcnow() - timedelta(hours=24)
+        recent_notifications = db.query(func.count(SupplierNotification.id)).filter(
+            SupplierNotification.supplier_id == supplier.id,
+            SupplierNotification.created_at >= yesterday
+        ).scalar() or 0
+        
+        # Notification types breakdown
+        type_breakdown = db.query(
+            SupplierNotification.type,
+            func.count(SupplierNotification.id).label('count')
+        ).filter(
+            SupplierNotification.supplier_id == supplier.id,
+            ~SupplierNotification.is_read
+        ).group_by(SupplierNotification.type).all()
+        
+        type_counts = {notification_type: count for notification_type, count in type_breakdown}
+        
+        return {
+            "total_notifications": total_notifications,
+            "unread_notifications": unread_notifications,
+            "high_priority_unread": high_priority_unread,
+            "recent_notifications_24h": recent_notifications,
+            "unread_by_type": type_counts,
+            "needs_attention": high_priority_unread > 0
+        }
+    
+    except Exception as e:
+        handle_supplier_error("get notifications summary", e, supplier.id)
+
+@router.post("/notifications/test")
+async def create_test_notifications(
+    supplier: User = Depends(verify_supplier),
+    db: Session = Depends(get_db)
+):
+    """Create test notifications for demonstration (development/testing only)"""
+    try:
+        test_notifications = [
+            {
+                "title": "🎉 Welcome to Supplier Dashboard!",
+                "message": "Your supplier account is now active. Start creating group buying opportunities!",
+                "type": "success",
+                "priority": "normal"
+            },
+            {
+                "title": "📋 Action Required: Verify Account",
+                "message": "Please complete your account verification to access all features.",
+                "type": "warning",
+                "priority": "high"
+            },
+            {
+                "title": "📊 Weekly Performance Report",
+                "message": "Your weekly performance report is ready for review.",
+                "type": "info",
+                "priority": "normal"
+            },
+            {
+                "title": "🚀 Group Milestone Reached",
+                "message": "One of your groups has reached 75% of its participation target!",
+                "type": "success",
+                "priority": "high"
+            }
+        ]
+        
+        created_count = 0
+        for notification in test_notifications:
+            created = SupplierNotificationManager.create_notification(
+                db, supplier.id,
+                notification["title"],
+                notification["message"],
+                notification["type"],
+                notification["priority"]
+            )
+            if created:
+                created_count += 1
+        
+        return {
+            "message": f"Created {created_count} test notifications",
+            "created_count": created_count
+        }
+    
+    except Exception as e:
+        handle_supplier_error("create test notifications", e, supplier.id)
+
+# New endpoint for creating groups
+class CreateGroupRequest(BaseModel):
+    name: str
+    description: str
+    long_description: Optional[str] = None
+    category: str
+    price: float
+    original_price: float
+    image: str
+    max_participants: int
+    end_date: str
+    shipping_info: Optional[str] = None
+    estimated_delivery: Optional[str] = None
+    features: Optional[List[str]] = None
+    requirements: Optional[List[str]] = None
+
+@router.post("/groups/create")
+async def create_supplier_group(
+    group_data: CreateGroupRequest,
+    supplier: User = Depends(verify_supplier),
+    db: Session = Depends(get_db)
+):
+    """Create a new supplier-managed group buying opportunity"""
+    try:
+        # Debug: Log the received data
+        print(f"DEBUG: Received supplier group data: {group_data.dict()}")
+
+        # Validate required fields
+        if not group_data.name or not group_data.name.strip():
+            raise HTTPException(status_code=400, detail="Group name is required")
+        
+        # Allow description to be empty if long_description is provided
+        final_description = group_data.description.strip() if group_data.description else ""
+        if not final_description and group_data.long_description and group_data.long_description.strip():
+            final_description = group_data.long_description.strip()
+        
+        if not final_description:
+            raise HTTPException(status_code=400, detail="Group description is required")
+            
+        if not group_data.category or not group_data.category.strip():
+            raise HTTPException(status_code=400, detail="Category is required")
+        if not isinstance(group_data.price, (int, float)) or group_data.price <= 0:
+            raise HTTPException(status_code=400, detail="Price must be a positive number")
+        if not isinstance(group_data.original_price, (int, float)) or group_data.original_price <= 0:
+            raise HTTPException(status_code=400, detail="Original price must be a positive number")
+        if not group_data.image or not group_data.image.strip():
+            raise HTTPException(status_code=400, detail="Image URL is required")
+        if not isinstance(group_data.max_participants, int) or group_data.max_participants <= 0:
+            raise HTTPException(status_code=400, detail="Max participants must be a positive integer")
+        if not group_data.end_date or not group_data.end_date.strip():
+            raise HTTPException(status_code=400, detail="End date is required")
+
+        # Parse end_date from ISO string
+        try:
+            end_date_obj = datetime.fromisoformat(group_data.end_date.replace('Z', '+00:00'))
+        except (ValueError, AttributeError):
+            raise HTTPException(status_code=400, detail="Invalid end_date format")
+
+        # Use supplier's name as admin_name
+        supplier_name = supplier.company_name or supplier.full_name or "Supplier"
+
+        # Create the admin group (supplier-managed)
+        new_group = AdminGroup(
+            name=group_data.name,
+            description=final_description,
+            long_description=group_data.long_description,
+            category=group_data.category,
+            price=group_data.price,
+            original_price=group_data.original_price,
+            image=group_data.image,
+            max_participants=group_data.max_participants,
+            end_date=end_date_obj,
+            admin_name=supplier_name,
+            shipping_info=group_data.shipping_info,
+            estimated_delivery=group_data.estimated_delivery,
+            features=group_data.features,
+            requirements=group_data.requirements,
+            is_active=True,
+            participants=0  # Start with 0 participants
+        )
+
+        db.add(new_group)
+        db.commit()
+        db.refresh(new_group)
+
+        return {
+            "message": "Group created successfully",
+            "group_id": new_group.id,
+            "group": {
+                "id": new_group.id,
+                "name": new_group.name,
+                "category": new_group.category,
+                "price": new_group.price,
+                "max_participants": new_group.max_participants,
+                "end_date": new_group.end_date.isoformat(),
+                "image": new_group.image
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error creating supplier group: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to create group")

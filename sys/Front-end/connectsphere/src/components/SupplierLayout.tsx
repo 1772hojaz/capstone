@@ -23,7 +23,6 @@ const SupplierLayout = ({ children }: SupplierLayoutProps) => {
               {/* Logo */}
               <div className="flex items-center gap-2 sm:gap-3">
                 <button
-                  onClick={() => navigate('/supplier')}
                   className="flex items-center gap-2 sm:gap-3 hover:scale-105 transition-transform duration-200 flex-shrink-0"
                 >
                   <div className="relative">

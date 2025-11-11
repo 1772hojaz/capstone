@@ -13,6 +13,7 @@ class User(Base):
     full_name = Column(String)
     is_admin = Column(Boolean, default=False)
     is_supplier = Column(Boolean, default=False)
+    is_active = Column(Boolean, default=True)
     location_zone = Column(String, nullable=False)
     cluster_id = Column(Integer, nullable=True)
     
@@ -21,8 +22,19 @@ class User(Base):
     business_address = Column(Text)
     tax_id = Column(String)
     phone_number = Column(String)
+    business_type = Column(String, default="retailer")  # wholesaler, retailer, manufacturer, distributor
+    business_description = Column(Text)
+    website_url = Column(String)
     supplier_rating = Column(Float, default=0.0)
     total_orders_fulfilled = Column(Integer, default=0)
+    is_verified = Column(Boolean, default=False)
+    verification_status = Column(String, default="pending")  # pending, submitted, verified, rejected
+    
+    # Banking information
+    bank_account_name = Column(String)
+    bank_account_number = Column(String)
+    bank_name = Column(String)
+    payment_terms = Column(String, default="net_30")  # net_30, net_15, cod, prepaid
     
     # User preferences for better recommendations
     preferred_categories = Column(JSON, default=list)  # List of preferred product categories
@@ -210,6 +222,9 @@ class AdminGroup(Base):
     requirements = Column(JSON)  # List of requirement strings
     is_active = Column(Boolean, default=True)
     
+    # Link to supplier's product if provided
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=True)
+    
     # Additional product fields
     product_name = Column(String)
     product_description = Column(Text)
@@ -231,6 +246,7 @@ class AdminGroup(Base):
     # Relationships
     joins = relationship("AdminGroupJoin", back_populates="admin_group")
     supplier_orders = relationship("SupplierOrder", backref="admin_group")
+    product = relationship("Product", backref="admin_groups")
 
 class AdminGroupJoin(Base):
     __tablename__ = "admin_group_joins"
@@ -242,6 +258,8 @@ class AdminGroupJoin(Base):
     delivery_method = Column(String, nullable=False)  # "pickup" or "delivery"
     payment_method = Column(String, nullable=False)   # "cash" or "card"
     special_instructions = Column(Text, nullable=True)
+    payment_transaction_id = Column(String, nullable=True)  # For card payments
+    payment_reference = Column(String, nullable=True)       # For card payments
     joined_at = Column(DateTime, default=datetime.utcnow)
     
     # Relationships
@@ -436,6 +454,21 @@ class QRScanHistory(Base):
     scanned_user = relationship("User", foreign_keys=[scanned_user_id], backref="qr_scans")
     group_buy = relationship("GroupBuy", backref="scan_history")
     product = relationship("Product", backref="scan_history")
+
+class UserBehaviorFeatures(Base):
+    __tablename__ = "user_behavior_features"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
+    engagement_score = Column(Float, default=0.5)
+    price_sensitivity_score = Column(Float, default=0.5)
+    top_category_1 = Column(String)
+    top_category_2 = Column(String)
+    days_since_last_activity = Column(Integer, default=0)
+    last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    user = relationship("User", backref="behavior_features")
 
 
 # Pydantic models for API responses

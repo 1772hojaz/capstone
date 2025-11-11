@@ -11,7 +11,7 @@ import io
 import secrets
 from cryptography.fernet import Fernet
 from db.database import get_db
-from models.models import User, AdminGroup, Contribution, GroupBuy, AdminGroupJoin
+from models.models import User, AdminGroup, Contribution, GroupBuy, AdminGroupJoin, QRCodePickup
 from authentication.auth import verify_token
 
 router = APIRouter()
@@ -24,6 +24,7 @@ class GroupResponse(BaseModel):
     image: str
     description: str
     participants: int
+    moq: Optional[int] = None
     category: str
     created: str
     maxParticipants: Optional[int] = None
@@ -43,6 +44,13 @@ class GroupResponse(BaseModel):
     status: Optional[str] = None
     orderStatus: Optional[str] = None
     joined: bool = False
+
+class ProductInfo(BaseModel):
+    name: str
+    description: str
+    manufacturer: Optional[str] = None
+    totalStock: Optional[int] = None
+    regularPrice: Optional[float] = None
 
 class GroupDetailResponse(BaseModel):
     id: int
@@ -67,6 +75,9 @@ class GroupDetailResponse(BaseModel):
     estimatedDelivery: str
     features: List[str]
     requirements: List[str]
+    product: ProductInfo
+    progressPercentage: Optional[float] = None
+    remainingNeeded: Optional[int] = None
 
 class GroupCreateRequest(BaseModel):
     name: str
@@ -82,6 +93,8 @@ class GroupCreateRequest(BaseModel):
     requirements: List[str]
     shippingInfo: str
     estimatedDelivery: str
+    manufacturer: Optional[str] = None
+    total_stock: Optional[int] = None
 
     class Config:
         schema_extra = {
@@ -98,7 +111,9 @@ class GroupCreateRequest(BaseModel):
                 "features": ["Premium quality", "Bulk packaging", "Market ready"],
                 "requirements": ["Valid trading license", "Minimum order 10kg"],
                 "shippingInfo": "Free delivery within Harare CBD",
-                "estimatedDelivery": "2024-02-05"
+                "estimatedDelivery": "2024-02-05",
+                "manufacturer": "Premium Rice Co.",
+                "total_stock": 500
             }
         }
 
@@ -107,6 +122,8 @@ class JoinGroupRequest(BaseModel):
     delivery_method: str  # "pickup" or "delivery"
     payment_method: str   # "cash" or "card"
     special_instructions: Optional[str] = None
+    payment_transaction_id: Optional[str] = None  # For card payments
+    payment_reference: Optional[str] = None       # For card payments
 
     class Config:
         schema_extra = {
@@ -115,6 +132,20 @@ class JoinGroupRequest(BaseModel):
                 "delivery_method": "pickup",
                 "payment_method": "cash",
                 "special_instructions": "Please call before delivery"
+            }
+        }
+
+class UpdateQuantityRequest(BaseModel):
+    quantity_increase: int
+    payment_transaction_id: Optional[str] = None
+    payment_reference: Optional[str] = None
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "quantity_increase": 2,
+                "payment_transaction_id": "tx_123456789",
+                "payment_reference": "quantity_increase_123_1234567890"
             }
         }
 
@@ -203,6 +234,18 @@ def generate_qr_code_image(qr_content: str) -> str:
     # Return plain base64 (frontend will prefix with data URI as needed)
     return img_base64
 
+def get_creator_display_name(creator: User) -> str:
+    """Get the appropriate display name for a group creator"""
+    if not creator:
+        return "Admin"
+    
+    if creator.is_admin:
+        return "Admin"
+    elif creator.is_supplier and creator.company_name:
+        return creator.company_name
+    else:
+        return creator.full_name
+
 
 @router.get("/{group_id}/qr-code")
 async def get_group_qr_code(
@@ -217,8 +260,36 @@ async def get_group_qr_code(
     - qr_content: encrypted payload used for validation
     - expires_at: ISO timestamp when QR expires
     - pickup_instructions: human readable pickup instructions/location
+    - is_used: whether this QR code has been used for pickup
+    - status: ready/used status
     """
     try:
+        # First, check if user already has a QR code for this group
+        # Get the most recent valid QR code for this group
+        existing_qr = db.query(QRCodePickup).filter(
+            QRCodePickup.user_id == user.id,
+            QRCodePickup.group_buy_id == group_id,
+            QRCodePickup.expires_at > datetime.utcnow()  # Only get non-expired QR codes
+        ).order_by(QRCodePickup.generated_at.desc()).first()
+        
+        if existing_qr:
+            print(f"DEBUG: Found existing valid QR code - ID: {existing_qr.id}, Used: {existing_qr.is_used}")
+            # Return existing QR code with current status
+            qr_image_base64 = generate_qr_code_image(existing_qr.qr_code_data)
+            
+            return {
+                # "qr_code_id": existing_qr.id,  # Removed - traders don't need this
+                "qr_code": qr_image_base64,
+                "qr_id": existing_qr.qr_code_data,
+                "expires_at": existing_qr.expires_at.isoformat() + 'Z',
+                "is_used": existing_qr.is_used,
+                "used_at": existing_qr.used_at.isoformat() if existing_qr.used_at else None,
+                "pickup_location": existing_qr.pickup_location,
+                "status": "used" if existing_qr.is_used else "ready",
+                "status_text": "Yes" if existing_qr.is_used else "No"
+            }
+        
+        # If no existing QR code, create a new one
         # Try to find the group in AdminGroup or GroupBuy tables
         group = db.query(AdminGroup).filter(AdminGroup.id == group_id).first()
         pickup_location = None
@@ -250,7 +321,6 @@ async def get_group_qr_code(
         qr_id = "QR-" + secrets.token_hex(4).upper()
         
         # Store the QR data in database instead of cache
-        from models import QRCodePickup
         qr_record = QRCodePickup(
             qr_code_data=qr_id,  # Store the QR ID as the data
             user_id=user.id,
@@ -272,10 +342,15 @@ async def get_group_qr_code(
         qr_image_base64 = generate_qr_code_image(qr_id)
 
         return {
+            # "qr_code_id": qr_record.id,  # Removed - traders don't need this
             "qr_code": qr_image_base64,
             "qr_id": qr_id,
             "expires_at": expires_at,
-            "pickup_instructions": f"Show this QR code at {pickup_location} and present valid ID when requested"
+            "is_used": qr_record.is_used,
+            "used_at": qr_record.used_at.isoformat() if qr_record.used_at else None,
+            "pickup_location": pickup_location,
+            "status": "used" if qr_record.is_used else "ready",
+            "status_text": "Yes" if qr_record.is_used else "No"
         }
     except HTTPException:
         raise
@@ -290,12 +365,13 @@ async def get_my_groups(
 ):
     """Get all groups the current user has joined"""
     try:
-        # Get user's contributions and the associated group buys
+        groups_data = []
+        
+        # Get user's contributions and the associated group buys (GroupBuy groups)
         contributions = db.query(Contribution).filter(
             Contribution.user_id == user.id
         ).all()
         
-        groups_data = []
         for contrib in contributions:
             group_buy = contrib.group_buy
             if group_buy:
@@ -337,7 +413,7 @@ async def get_my_groups(
                     "description": group_buy.product.description or f"Group buy for {group_buy.product.name}",
                     "price": f"${group_buy.product.bulk_price:.2f}",
                     "originalPrice": f"${group_buy.product.unit_price:.2f}",
-                    "image": group_buy.product.image_url or "/api/placeholder/300/200",
+                    "image": group_buy.product.image_url or "https://via.placeholder.com/300x200?text=Product",
                     "status": status,
                     "progress": progress,
                     "dueDate": due_date,
@@ -350,7 +426,7 @@ async def get_my_groups(
                     "matchScore": 95,  # Default high score for joined groups
                     "reason": "You joined this group",
                     "adminCreated": True,
-                    "adminName": group_buy.creator.full_name if group_buy.creator else "Admin",
+                    "adminName": get_creator_display_name(group_buy.creator),
                     "discountPercentage": int(group_buy.product.savings_factor * 100),
                     "shippingInfo": "Free shipping when group goal is reached",
                     "estimatedDelivery": "2-3 weeks after group completion",
@@ -358,7 +434,68 @@ async def get_my_groups(
                     "requirements": [f"Minimum {group_buy.product.moq} participants required"],
                     "longDescription": group_buy.product.description or f"Join this group buy to get {group_buy.product.name} at discounted bulk pricing.",
                     "category": group_buy.product.category or "General",
-                    "endDate": group_buy.deadline.strftime("%Y-%m-%dT%H:%M:%SZ") if group_buy.deadline else None
+                    "endDate": group_buy.deadline.strftime("%Y-%m-%dT%H:%M:%SZ") if group_buy.deadline else None,
+                    "quantity": contrib.quantity  # Add user's quantity
+                }
+                groups_data.append(group_data)
+        
+        # Get user's AdminGroup joins (AdminGroup groups)
+        admin_group_joins = db.query(AdminGroupJoin).filter(
+            AdminGroupJoin.user_id == user.id
+        ).all()
+        
+        for join in admin_group_joins:
+            admin_group = join.admin_group
+            if admin_group:
+                # Get pickup location for this admin group
+                pickup_location = admin_group.shipping_info or "Downtown Market"  # Default
+                
+                # Calculate progress
+                progress = f"{admin_group.participants}/{admin_group.max_participants or 'unlimited'}"
+                
+                # Format due date
+                due_date = admin_group.end_date.strftime("%b %d, %Y") if admin_group.end_date else "No deadline"
+                
+                # Determine status based on admin group state
+                if not admin_group.is_active:
+                    status = "cancelled"
+                    order_status = "Cancelled"
+                elif admin_group.end_date and admin_group.end_date < datetime.utcnow():
+                    status = "completed"
+                    order_status = "Completed - Ready for pickup"
+                else:
+                    status = "active"
+                    order_status = "Active - Payment completed"
+                
+                group_data = {
+                    "id": admin_group.id,
+                    "name": admin_group.name,
+                    "description": admin_group.description or f"Admin group buy for {admin_group.name}",
+                    "price": f"${admin_group.price:.2f}",
+                    "originalPrice": f"${admin_group.original_price:.2f}",
+                    "image": admin_group.image or "https://via.placeholder.com/300x200?text=Product",
+                    "status": status,
+                    "progress": progress,
+                    "dueDate": due_date,
+                    "pickupLocation": pickup_location,
+                    "orderStatus": order_status,
+                    "savings": f"${admin_group.savings:.2f}",
+                    "participants": admin_group.participants,
+                    "maxParticipants": admin_group.max_participants,
+                    "created": admin_group.created.strftime("%b %d, %Y") if admin_group.created else "",
+                    "matchScore": 95,  # Default high score for joined groups
+                    "reason": "You joined this admin group",
+                    "adminCreated": True,
+                    "adminName": admin_group.admin_name or "Admin",
+                    "discountPercentage": admin_group.discount_percentage,
+                    "shippingInfo": admin_group.shipping_info or "Pickup at designated location",
+                    "estimatedDelivery": admin_group.estimated_delivery or "2-3 weeks after group completion",
+                    "features": admin_group.features or ["Bulk pricing", "Quality guaranteed", "Group savings"],
+                    "requirements": admin_group.requirements or [],
+                    "longDescription": admin_group.long_description or admin_group.description,
+                    "category": admin_group.category or "General",
+                    "endDate": admin_group.end_date.strftime("%Y-%m-%dT%H:%M:%SZ") if admin_group.end_date else None,
+                    "quantity": join.quantity  # Add user's quantity
                 }
                 groups_data.append(group_data)
         
@@ -397,7 +534,7 @@ async def get_my_groups(
                     "description": group_buy.product.description or f"Group buy for {group_buy.product.name}",
                     "price": f"${group_buy.product.bulk_price:.2f}",
                     "originalPrice": f"${group_buy.product.unit_price:.2f}",
-                    "image": group_buy.product.image_url or "/api/placeholder/300/200",
+                    "image": group_buy.product.image_url or "https://via.placeholder.com/300x200?text=Product",
                     "status": "ready_for_pickup",  # All completed groups are ready for pickup
                     "progress": progress,
                     "dueDate": due_date,
@@ -410,7 +547,7 @@ async def get_my_groups(
                     "matchScore": 95,
                     "reason": "Completed group (Testing)",
                     "adminCreated": True,
-                    "adminName": group_buy.creator.full_name if group_buy.creator else "Admin",
+                    "adminName": get_creator_display_name(group_buy.creator),
                     "discountPercentage": int(group_buy.product.savings_factor * 100),
                     "shippingInfo": "Free shipping when group goal is reached",
                     "estimatedDelivery": "2-3 weeks after group completion",
@@ -472,7 +609,6 @@ async def get_past_groups_summary(
         
         # Calculate average savings per group
         avg_savings_per_group = total_savings / completed_groups if completed_groups > 0 else 0
-        
         return {
             "completed_groups": completed_groups,
             "all_time_savings": round(total_savings, 2),
@@ -520,6 +656,7 @@ async def get_all_groups(
             image=group.image,
             description=group.description,
             participants=group.participants,
+            moq=group.max_participants,
             category=group.category,
             created=group.created.isoformat(),
             maxParticipants=group.max_participants,
@@ -542,7 +679,7 @@ async def get_all_groups(
         ))
     
     # Get active GroupBuy groups
-    group_buy_groups = db.query(GroupBuy).filter(
+    group_buy_groups = db.query(GroupBuy).join(GroupBuy.product).filter(
         GroupBuy.status == "active",
         GroupBuy.deadline > datetime.utcnow()
     ).all()
@@ -563,9 +700,10 @@ async def get_all_groups(
             id=group.id,
             name=group.product.name if group.product else f"Group Buy #{group.id}",
             price=group.product.bulk_price if group.product else 0,
-            image=group.product.image_url if group.product else None,
+            image=group.product.image_url if group.product and group.product.image_url else "https://via.placeholder.com/300x200?text=Product",
             description=group.product.description if group.product else "User-created group buy",
             participants=participants_count,
+            moq=group.product.moq if group.product else 10,
             category=group.product.category if group.product else "General",
             created=group.created_at.isoformat(),
             maxParticipants=None,  # GroupBuy doesn't have max participants
@@ -574,7 +712,7 @@ async def get_all_groups(
             matchScore=75,  # Default match score for user-created groups
             reason="User-created group buy",
             adminCreated=False,
-            adminName=group.creator.full_name if group.creator else "User",
+            adminName=get_creator_display_name(group.creator),
             savings=(group.product.unit_price - group.product.bulk_price) if group.product else 0,
             discountPercentage=round(group.product.savings_factor * 100) if group.product else 0,
             shippingInfo="Pickup at designated location",
@@ -641,35 +779,91 @@ async def get_group_detail(
     group_id: int,
     db: Session = Depends(get_db)
 ):
-    """Get detailed information about a specific admin group"""
-    group = db.query(AdminGroup).filter(AdminGroup.id == group_id).first()
-    if not group:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
+    """Get detailed information about a specific group (AdminGroup or GroupBuy)"""
     
-    return GroupDetailResponse(
-        id=group.id,
-        name=group.name,
-        price=group.price,
-        originalPrice=group.original_price,
-        image=group.image,
-        description=group.description,
-        longDescription=group.long_description or group.description,
-        participants=group.participants,
-        maxParticipants=group.max_participants,
-        category=group.category,
-        created=group.created.isoformat(),
-        endDate=group.end_date.isoformat(),
-        matchScore=85,  # Default match score
-        reason="Admin-created group buy",
-        adminCreated=True,
-        adminName=group.admin_name,
-        savings=group.savings,
-        discountPercentage=group.discount_percentage,
-        shippingInfo=group.shipping_info,
-        estimatedDelivery=group.estimated_delivery,
-        features=group.features or [],
-        requirements=group.requirements or []
-    )
+    # First try to find as AdminGroup
+    admin_group = db.query(AdminGroup).filter(AdminGroup.id == group_id).first()
+    if admin_group:
+        return GroupDetailResponse(
+            id=admin_group.id,
+            name=admin_group.name,
+            price=admin_group.price,
+            originalPrice=admin_group.original_price,
+            image=admin_group.image,
+            description=admin_group.description,
+            longDescription=admin_group.long_description or admin_group.description,
+            participants=admin_group.participants,
+            maxParticipants=admin_group.max_participants,
+            category=admin_group.category,
+            created=admin_group.created.isoformat(),
+            endDate=admin_group.end_date.isoformat(),
+            matchScore=85,  # Default match score
+            reason="Admin-created group buy",
+            adminCreated=True,
+            adminName=admin_group.admin_name,  # For AdminGroups, this is already set correctly
+            savings=admin_group.savings,
+            discountPercentage=admin_group.discount_percentage,
+            shippingInfo=admin_group.shipping_info,
+            estimatedDelivery=admin_group.estimated_delivery,
+            features=admin_group.features or [],
+            requirements=admin_group.requirements or [],
+            product=ProductInfo(
+                name=admin_group.product_name or admin_group.name,
+                description=admin_group.product_description or admin_group.description,
+                manufacturer=admin_group.manufacturer,
+                totalStock=admin_group.total_stock,
+                regularPrice=admin_group.original_price
+            )
+        )
+    
+    # If not AdminGroup, try GroupBuy
+    group_buy = db.query(GroupBuy).join(GroupBuy.product).filter(GroupBuy.id == group_id).first()
+    if group_buy:
+        # Calculate participants count
+        participants_count = db.query(Contribution).filter(
+            Contribution.group_buy_id == group_id
+        ).count()
+        
+        # Calculate progress
+        progress_percentage = group_buy.moq_progress
+        remaining_needed = max(0, group_buy.product.moq - group_buy.total_quantity) if group_buy.product else 0
+        
+        return GroupDetailResponse(
+            id=group_buy.id,
+            name=group_buy.product.name if group_buy.product else f"Group Buy #{group_buy.id}",
+            price=group_buy.product.bulk_price if group_buy.product else 0,
+            originalPrice=group_buy.product.unit_price if group_buy.product else 0,
+            image=group_buy.product.image_url if group_buy.product and group_buy.product.image_url else "https://via.placeholder.com/300x200?text=Product",
+            description=group_buy.product.description if group_buy.product else "User-created group buy",
+            longDescription=group_buy.product.description if group_buy.product else "Join this community group buy for quality products at bulk prices.",
+            participants=participants_count,
+            maxParticipants=group_buy.product.moq if group_buy.product else None,
+            category=group_buy.product.category if group_buy.product else "General",
+            created=group_buy.created_at.isoformat(),
+            endDate=group_buy.deadline.isoformat(),
+            matchScore=75,  # Default match score for user-created groups
+            reason="User-created group buy",
+            adminCreated=False,
+            adminName=get_creator_display_name(group_buy.creator),
+            savings=(group_buy.product.unit_price - group_buy.product.bulk_price) if group_buy.product else 0,
+            discountPercentage=round(group_buy.product.savings_factor * 100) if group_buy.product else 0,
+            shippingInfo="Pickup at designated location",
+            estimatedDelivery="2-3 weeks after group completion",
+            features=["Bulk pricing", "Community driven", "Flexible quantities"],
+            requirements=[f"Minimum {group_buy.product.moq if group_buy.product else 10} total units required"],
+            product=ProductInfo(
+                name=group_buy.product.name if group_buy.product else f"Group Buy #{group_buy.id}",
+                description=group_buy.product.description if group_buy.product else "User-created group buy",
+                manufacturer=None,  # GroupBuy products don't have manufacturer info
+                totalStock=None,    # GroupBuy products don't have stock info
+                regularPrice=group_buy.product.unit_price if group_buy.product else 0
+            ),
+            progressPercentage=progress_percentage,
+            remainingNeeded=remaining_needed
+        )
+    
+    # If neither found
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
 
 @router.put("/{group_id}/contribution")
 async def update_contribution(
@@ -790,6 +984,20 @@ async def join_group(
                     detail="Quantity must be greater than 0"
                 )
 
+            # Check stock availability
+            if admin_group.total_stock is not None and admin_group.total_stock <= 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="This product is out of stock"
+                )
+
+            # Check if requested quantity exceeds available stock
+            if admin_group.total_stock is not None and request.quantity > admin_group.total_stock:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Requested quantity ({request.quantity}) exceeds available stock ({admin_group.total_stock})"
+                )
+
             # Check if group has space (if max_participants is set)
             if admin_group.max_participants and admin_group.participants >= admin_group.max_participants:
                 raise HTTPException(
@@ -808,7 +1016,9 @@ async def join_group(
                 quantity=request.quantity,
                 delivery_method=request.delivery_method,
                 payment_method=request.payment_method,
-                special_instructions=request.special_instructions
+                special_instructions=request.special_instructions,
+                payment_transaction_id=request.payment_transaction_id,
+                payment_reference=request.payment_reference
             )
 
             db.add(join_record)
@@ -816,19 +1026,20 @@ async def join_group(
             # Update group participant count
             admin_group.participants += 1
 
-            # Create initial transaction record
-            from models import Transaction
-            transaction = Transaction(
-                user_id=user.id,
-                group_buy_id=None,  # Admin groups don't have group_buy_id
-                product_id=None,  # Will be set when group completes
-                quantity=request.quantity,
-                amount=upfront_amount,
-                transaction_type="upfront",
-                location_zone=user.location_zone or "Unknown"
-            )
+            # Create initial transaction record only if admin group has a linked product
+            if admin_group.product_id:
+                from models import Transaction
+                transaction = Transaction(
+                    user_id=user.id,
+                    group_buy_id=None,  # Admin groups don't have group_buy_id
+                    product_id=admin_group.product_id,
+                    quantity=request.quantity,
+                    amount=upfront_amount,
+                    transaction_type="upfront",
+                    location_zone=user.location_zone or "Unknown"
+                )
+                db.add(transaction)
 
-            db.add(transaction)
             db.commit()
 
             return {
@@ -842,14 +1053,13 @@ async def join_group(
             }
 
         # If not an AdminGroup, try GroupBuy
-        group_buy = db.query(GroupBuy).filter(
+        group_buy = db.query(GroupBuy).join(GroupBuy.product).filter(
             GroupBuy.id == group_id,
             GroupBuy.status == "active",
             GroupBuy.deadline > datetime.utcnow()
         ).first()
 
         if group_buy:
-            # Handle GroupBuy join
             # Check if user has already joined this group
             existing_contribution = db.query(Contribution).filter(
                 Contribution.user_id == user.id,
@@ -888,6 +1098,13 @@ async def join_group(
             group_buy.total_quantity += request.quantity
             group_buy.total_contributions += contribution_amount
 
+            # Check if group should be completed (reached MOQ)
+            if group_buy.moq_progress >= 100 and group_buy.status == "active":
+                group_buy.status = "completed"
+                # Create order automatically when group completes
+                from routers.supplier_orders import create_order_from_completed_group
+                create_order_from_completed_group(db, group_id)
+
             # Create transaction record for the contribution
             from models import Transaction
             transaction = Transaction(
@@ -925,6 +1142,177 @@ async def join_group(
         db.rollback()
         raise HTTPException(status_code=500, detail="Failed to join group")
 
+@router.post("/{group_id}/update-quantity")
+async def update_group_quantity(
+    group_id: int,
+    request: UpdateQuantityRequest,
+    user: User = Depends(verify_token),
+    db: Session = Depends(get_db)
+):
+    """Update the user's quantity commitment for a group-buy by increasing it.
+
+    Allows users to increase their quantity commitment to a group they're already part of.
+    Requires payment for the additional quantity.
+    """
+    try:
+        # First, try to find the group as an AdminGroup
+        admin_group = db.query(AdminGroup).filter(
+            AdminGroup.id == group_id,
+            AdminGroup.is_active
+        ).first()
+
+        if admin_group:
+            # Handle AdminGroup quantity update
+            # Check if user has already joined this group
+            existing_join = db.query(AdminGroupJoin).filter(
+                AdminGroupJoin.user_id == user.id,
+                AdminGroupJoin.admin_group_id == group_id
+            ).first()
+
+            if not existing_join:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="You haven't joined this group yet"
+                )
+
+            # Validate quantity increase
+            if request.quantity_increase <= 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Quantity increase must be greater than 0"
+                )
+
+            # Check stock availability
+            if admin_group.total_stock is not None and admin_group.total_stock <= 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="This product is out of stock"
+                )
+
+            # Check if requested quantity increase exceeds available stock
+            if admin_group.total_stock is not None and request.quantity_increase > admin_group.total_stock:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Requested quantity increase ({request.quantity_increase}) exceeds available stock ({admin_group.total_stock})"
+                )
+
+            # Update the join record
+            old_quantity = existing_join.quantity
+            existing_join.quantity += request.quantity_increase
+
+            # Update payment info if provided
+            if request.payment_transaction_id:
+                existing_join.payment_transaction_id = request.payment_transaction_id
+            if request.payment_reference:
+                existing_join.payment_reference = request.payment_reference
+
+            # Calculate additional amount needed
+            unit_price = admin_group.price
+            additional_amount = request.quantity_increase * unit_price
+
+            # Create transaction record for the additional quantity
+            if admin_group.product_id:
+                from models import Transaction
+                transaction = Transaction(
+                    user_id=user.id,
+                    group_buy_id=None,  # Admin groups don't have group_buy_id
+                    product_id=admin_group.product_id,
+                    quantity=request.quantity_increase,
+                    amount=additional_amount,
+                    transaction_type="quantity_increase",
+                    location_zone=user.location_zone or "Unknown"
+                )
+                db.add(transaction)
+
+            db.commit()
+
+            return {
+                "message": "Quantity updated successfully",
+                "old_quantity": old_quantity,
+                "new_quantity": existing_join.quantity,
+                "quantity_increase": request.quantity_increase,
+                "additional_amount": round(additional_amount, 2),
+                "group_progress": f"{admin_group.participants}/{admin_group.max_participants or 'unlimited'}"
+            }
+
+        # If not an AdminGroup, try GroupBuy
+        group_buy = db.query(GroupBuy).join(GroupBuy.product).filter(
+            GroupBuy.id == group_id,
+            GroupBuy.status == "active",
+            GroupBuy.deadline > datetime.utcnow()
+        ).first()
+
+        if group_buy:
+            # Handle GroupBuy quantity update
+            # Check if user has already joined this group
+            existing_contribution = db.query(Contribution).filter(
+                Contribution.user_id == user.id,
+                Contribution.group_buy_id == group_id
+            ).first()
+
+            if not existing_contribution:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="You haven't joined this group yet"
+                )
+
+            # Validate quantity increase
+            if request.quantity_increase <= 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Quantity increase must be greater than 0"
+                )
+
+            # Calculate additional amount needed
+            unit_price = group_buy.product.bulk_price
+            additional_amount = request.quantity_increase * unit_price
+
+            # Update contribution
+            old_quantity = existing_contribution.quantity
+            existing_contribution.quantity += request.quantity_increase
+            existing_contribution.contribution_amount += additional_amount
+
+            # Update group totals
+            group_buy.total_quantity += request.quantity_increase
+            group_buy.total_contributions += additional_amount
+
+            # Create transaction record for the additional quantity
+            from models import Transaction
+            transaction = Transaction(
+                user_id=user.id,
+                group_buy_id=group_id,
+                product_id=group_buy.product_id,
+                quantity=request.quantity_increase,
+                amount=additional_amount,
+                transaction_type="quantity_increase",
+                location_zone=user.location_zone or "Unknown"
+            )
+            db.add(transaction)
+
+            db.commit()
+
+            return {
+                "message": "Quantity updated successfully",
+                "old_quantity": old_quantity,
+                "new_quantity": existing_contribution.quantity,
+                "quantity_increase": request.quantity_increase,
+                "additional_amount": round(additional_amount, 2),
+                "group_progress": f"{group_buy.total_quantity}/{group_buy.product.moq} ({group_buy.moq_progress:.1f}%)"
+            }
+
+        # If neither AdminGroup nor GroupBuy found
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Group not found or no longer active"
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error updating quantity for group {group_id}: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to update quantity")
+
 @router.post("/", response_model=GroupResponse)
 async def create_admin_group(
     request: GroupCreateRequest,
@@ -959,11 +1347,13 @@ async def create_admin_group(
             image=request.image,
             max_participants=request.maxParticipants,
             end_date=end_date,
-            admin_name=user.full_name or "Admin",
+            admin_name=get_creator_display_name(user),
             shipping_info=request.shippingInfo,
             estimated_delivery=request.estimatedDelivery,
             features=request.features,
             requirements=request.requirements,
+            manufacturer=request.manufacturer,
+            total_stock=request.total_stock,
             is_active=True
         )
 
@@ -986,7 +1376,7 @@ async def create_admin_group(
             matchScore=85,  # Default match score for admin groups
             reason="Admin-created group buy",
             adminCreated=True,
-            adminName=admin_group.admin_name,
+            adminName=get_creator_display_name(user),
             savings=admin_group.savings,
             discountPercentage=admin_group.discount_percentage,
             shippingInfo=admin_group.shipping_info,
@@ -1002,3 +1392,446 @@ async def create_admin_group(
         print(f"Error creating admin group: {e}")
         db.rollback()
         raise HTTPException(status_code=500, detail="Failed to create admin group")
+
+
+# Supplier Group Management Endpoints
+
+@router.get("/supplier/groups/active")
+async def get_supplier_active_groups(
+    user: User = Depends(verify_token),
+    db: Session = Depends(get_db)
+):
+    """Get all active groups created by the authenticated supplier"""
+    try:
+        # Verify user is a supplier
+        if not user.is_supplier:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only suppliers can access this endpoint"
+            )
+
+        # Get active GroupBuy groups created by this supplier
+        active_groups = db.query(GroupBuy).join(GroupBuy.product).filter(
+            GroupBuy.creator_id == user.id,
+            GroupBuy.status == "active",
+            GroupBuy.deadline > datetime.utcnow()
+        ).all()
+
+        result = []
+        for group in active_groups:
+            # Calculate participants count
+            participants_count = db.query(Contribution).filter(
+                Contribution.group_buy_id == group.id
+            ).count()
+
+            result.append({
+                "id": group.id,
+                "name": group.product.name if group.product else f"Group Buy #{group.id}",
+                "description": group.product.description if group.product else "User-created group buy",
+                "category": group.product.category if group.product else "General",
+                "members": participants_count,
+                "targetMembers": group.product.moq if group.product else 10,
+                "dueDate": group.deadline.strftime("%Y-%m-%d") if group.deadline else None,
+                "totalAmount": round(group.total_contributions, 2),
+                "product": {
+                    "name": group.product.name if group.product else f"Group Buy #{group.id}",
+                    "image": group.product.image_url if group.product and group.product.image_url else "/api/placeholder/150/100",
+                    "bulkPrice": group.product.bulk_price if group.product else 0,
+                    "regularPrice": group.product.unit_price if group.product else 0
+                },
+                "status": "active",
+                "progress": f"{participants_count}/{group.product.moq if group.product else 10}",
+                "progressPercentage": group.moq_progress,
+                "created_at": group.created_at.isoformat() if group.created_at else None
+            })
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error getting supplier active groups: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve active groups")
+
+
+@router.get("/supplier/groups/ready-for-payment")
+async def get_supplier_completed_group_orders(
+    user: User = Depends(verify_token),
+    db: Session = Depends(get_db)
+):
+    """Get all completed groups created by the authenticated supplier that are ready for payment processing"""
+    try:
+        # Verify user is a supplier
+        if not user.is_supplier:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only suppliers can access this endpoint"
+            )
+
+        # Get completed GroupBuy groups created by this supplier
+        completed_groups = db.query(GroupBuy).join(GroupBuy.product).filter(
+            GroupBuy.creator_id == user.id,
+            GroupBuy.status == "completed"
+        ).all()
+
+        result = []
+        for group in completed_groups:
+            # Calculate participants count
+            participants_count = db.query(Contribution).filter(
+                Contribution.group_buy_id == group.id
+            ).count()
+
+            result.append({
+                "id": group.id,
+                "name": group.product.name if group.product else f"Group Buy #{group.id}",
+                "description": group.product.description if group.product else "User-created group buy",
+                "category": group.product.category if group.product else "General",
+                "members": participants_count,
+                "targetMembers": group.product.moq if group.product else 10,
+                "dueDate": group.deadline.strftime("%Y-%m-%d") if group.deadline else None,
+                "total_value": round(group.total_contributions, 2),
+                "total_savings": round(group.total_contributions * (group.product.savings_factor if group.product else 0), 2),
+                "product": {
+                    "name": group.product.name if group.product else f"Group Buy #{group.id}",
+                    "image": group.product.image_url if group.product and group.product.image_url else "/api/placeholder/150/100",
+                    "bulkPrice": group.product.bulk_price if group.product else 0,
+                    "regularPrice": group.product.unit_price if group.product else 0,
+                    "manufacturer": None  # GroupBuy products don't have manufacturer info
+                },
+                "status": "completed",
+                "progress": f"{participants_count}/{group.product.moq if group.product else 10}",
+                "progressPercentage": 100.0,  # Completed groups are at 100%
+                "created_at": group.created_at.isoformat() if group.created_at else None,
+                "completed_at": group.deadline.isoformat() if group.deadline else None
+            })
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error getting supplier completed groups: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve completed groups")
+
+
+@router.get("/supplier/groups/moderation-stats")
+async def get_supplier_group_moderation_stats(
+    user: User = Depends(verify_token),
+    db: Session = Depends(get_db)
+):
+    """Get moderation statistics for groups created by the authenticated supplier"""
+    try:
+        # Verify user is a supplier
+        if not user.is_supplier:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only suppliers can access this endpoint"
+            )
+
+        # Get active groups count
+        active_groups = db.query(GroupBuy).filter(
+            GroupBuy.creator_id == user.id,
+            GroupBuy.status == "active",
+            GroupBuy.deadline > datetime.utcnow()
+        ).count()
+
+        # Get completed groups count
+        completed_groups = db.query(GroupBuy).filter(
+            GroupBuy.creator_id == user.id,
+            GroupBuy.status == "completed"
+        ).count()
+
+        # Get total members across all supplier's groups
+        total_members = 0
+        supplier_groups = db.query(GroupBuy).filter(GroupBuy.creator_id == user.id).all()
+        for group in supplier_groups:
+            members_count = db.query(Contribution).filter(
+                Contribution.group_buy_id == group.id
+            ).count()
+            total_members += members_count
+
+        # Calculate pending orders (groups that need action)
+        # For suppliers, this could be groups that are completed but not yet processed
+        pending_orders = completed_groups  # All completed groups need payment processing
+
+        return {
+            "active_groups": active_groups,
+            "ready_for_payment": completed_groups,
+            "total_members": total_members,
+            "pending_orders": pending_orders,
+            "required_action": pending_orders  # Groups requiring payment processing
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error getting supplier group moderation stats: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve moderation stats")
+
+
+@router.post("/supplier/groups/create")
+async def create_supplier_group(
+    request: GroupCreateRequest,
+    user: User = Depends(verify_token),
+    db: Session = Depends(get_db)
+):
+    """Create a new group-buy opportunity for suppliers.
+
+    Suppliers can create GroupBuy groups using their own products.
+    This creates a new group-buy that traders can join.
+    """
+    # Check if user is a supplier
+    if not user.is_supplier:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only suppliers can create groups"
+        )
+
+    try:
+        # Parse end_date
+        from datetime import datetime
+        end_date = datetime.fromisoformat(request.endDate.replace('Z', '+00:00'))
+
+        # For supplier groups, we need to create both a Product and a GroupBuy
+        # First, create or find the product
+        from models.models import Product
+
+        # Check if product already exists (by name), or create new one
+        product = db.query(Product).filter(
+            Product.name == request.product_name or request.name,
+            Product.supplier_id == user.id
+        ).first()
+
+        if not product:
+            # Create new product
+            product = Product(
+                name=request.product_name or request.name,
+                description=request.product_description or request.description,
+                category=request.category,
+                unit_price=request.originalPrice,
+                bulk_price=request.price,
+                moq=request.maxParticipants,
+                image_url=request.image,
+                supplier_id=user.id,
+                total_stock=request.total_stock,
+                manufacturer=request.manufacturer,
+                savings_factor=(request.originalPrice - request.price) / request.originalPrice if request.originalPrice > 0 else 0
+            )
+            db.add(product)
+            db.flush()  # Get the product ID
+
+        # Create the GroupBuy
+        group_buy = GroupBuy(
+            product_id=product.id,
+            creator_id=user.id,
+            deadline=end_date,
+            status="active",
+            total_quantity=0,
+            total_contributions=0.0,
+            location_zone=user.location_zone or "Default"
+        )
+
+        db.add(group_buy)
+        db.commit()
+        db.refresh(group_buy)
+
+        return GroupResponse(
+            id=group_buy.id,
+            name=product.name,
+            price=product.bulk_price,
+            image=product.image_url,
+            description=product.description,
+            participants=0,  # New group has no participants yet
+            moq=product.moq,
+            category=product.category,
+            created=group_buy.created_at.isoformat(),
+            maxParticipants=None,  # GroupBuy doesn't have max participants
+            originalPrice=product.unit_price,
+            endDate=group_buy.deadline.isoformat(),
+            matchScore=75,  # Default match score for supplier-created groups
+            reason="Supplier-created group buy",
+            adminCreated=False,
+            adminName=get_creator_display_name(user),
+            savings=product.unit_price - product.bulk_price,
+            discountPercentage=round(product.savings_factor * 100),
+            shippingInfo="Pickup at designated location",
+            estimatedDelivery="2-3 weeks after group completion",
+            features=["Bulk pricing", "Supplier verified", "Quality guaranteed"],
+            requirements=[f"Minimum {product.moq} total units required"],
+            longDescription=product.description,
+            status="active",
+            orderStatus="Open for joining"
+        )
+
+    except Exception as e:
+        print(f"Error creating supplier group: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to create supplier group")
+
+
+@router.get("/supplier/groups/{group_id}")
+async def get_supplier_group_details(
+    group_id: int,
+    user: User = Depends(verify_token),
+    db: Session = Depends(get_db)
+):
+    """Get detailed information about a specific group created by the supplier"""
+    try:
+        # Verify user is a supplier
+        if not user.is_supplier:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only suppliers can access this endpoint"
+            )
+
+        # Get the group and verify ownership
+        group_buy = db.query(GroupBuy).filter(
+            GroupBuy.id == group_id,
+            GroupBuy.creator_id == user.id
+        ).first()
+
+        if not group_buy:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Group not found or you don't have permission to view it"
+            )
+
+        # Calculate participants count
+        participants_count = db.query(Contribution).filter(
+            Contribution.group_buy_id == group_id
+        ).count()
+
+        return {
+            "id": group_buy.id,
+            "name": group_buy.product.name,
+            "description": group_buy.product.description,
+            "long_description": group_buy.product.description,
+            "category": group_buy.product.category,
+            "price": group_buy.product.bulk_price,
+            "original_price": group_buy.product.unit_price,
+            "image": group_buy.product.image_url,
+            "participants": participants_count,
+            "max_participants": group_buy.product.moq,
+            "end_date": group_buy.deadline.isoformat() if group_buy.deadline else None,
+            "status": group_buy.status,
+            "total_quantity": group_buy.total_quantity,
+            "total_contributions": group_buy.total_contributions,
+            "moq_progress": group_buy.moq_progress,
+            "created_at": group_buy.created_at.isoformat() if group_buy.created_at else None,
+            "product": {
+                "name": group_buy.product.name,
+                "description": group_buy.product.description,
+                "manufacturer": group_buy.product.manufacturer,
+                "total_stock": group_buy.product.total_stock,
+                "regular_price": group_buy.product.unit_price
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error getting supplier group details: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve group details")
+
+
+@router.post("/supplier/groups/{group_id}/process-payment")
+async def process_supplier_group_payment(
+    group_id: int,
+    user: User = Depends(verify_token),
+    db: Session = Depends(get_db)
+):
+    """Process payment for a completed supplier group"""
+    try:
+        # Verify user is a supplier
+        if not user.is_supplier:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only suppliers can access this endpoint"
+            )
+
+        # Get the group and verify ownership
+        group_buy = db.query(GroupBuy).filter(
+            GroupBuy.id == group_id,
+            GroupBuy.creator_id == user.id,
+            GroupBuy.status == "completed"
+        ).first()
+
+        if not group_buy:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Completed group not found or you don't have permission to process payment"
+            )
+
+        # Create order from the completed group
+        from routers.supplier_orders import create_order_from_completed_group
+        order = create_order_from_completed_group(db, group_id)
+
+        if not order:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create order from completed group"
+            )
+
+        # Here you would integrate with payment processing
+        # For now, just mark as paid
+        # In a real implementation, this would:
+        # 1. Calculate supplier earnings (after platform fees)
+        # 2. Process payment to supplier
+        # 3. Update payment status
+
+        return {
+            "message": "Payment processed successfully and order created",
+            "group_id": group_id,
+            "order_id": order.id,
+            "order_number": order.order_number,
+            "amount": round(group_buy.total_contributions, 2),
+            "status": "completed"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error processing supplier group payment: {e}")
+        raise HTTPException(status_code=500, detail="Failed to process payment")
+
+
+@router.post("/supplier/groups/{group_id}/qr/generate")
+async def generate_supplier_group_qr(
+    group_id: int,
+    user: User = Depends(verify_token),
+    db: Session = Depends(get_db)
+):
+    """Generate QR code for supplier group pickup"""
+    try:
+        # Verify user is a supplier
+        if not user.is_supplier:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only suppliers can access this endpoint"
+            )
+
+        # Get the group and verify ownership
+        group_buy = db.query(GroupBuy).filter(
+            GroupBuy.id == group_id,
+            GroupBuy.creator_id == user.id
+        ).first()
+
+        if not group_buy:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Group not found or you don't have permission"
+            )
+
+        # Generate QR code data (similar to existing QR generation)
+        # This would be similar to the existing QR code generation logic
+        # For now, return a placeholder
+        return {
+            "qr_code_data": f"SUPPLIER-GROUP-{group_id}",
+            "message": "QR code generated for supplier group"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error generating supplier group QR: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate QR code")

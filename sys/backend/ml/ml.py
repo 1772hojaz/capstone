@@ -16,16 +16,44 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.decomposition import NMF
 # import shap  # Temporarily disabled due to llvmlite compatibility issue
 from db.database import get_db
-from models.models import User, GroupBuy, Transaction, Product, MLModel, Contribution, AdminGroup, AdminGroupJoin
+from models.models import User, GroupBuy, Transaction, Product, MLModel, Contribution, AdminGroup, AdminGroupJoin, UserBehaviorFeatures
 from authentication.auth import verify_token, get_current_user
 from websocket.websocket_manager import manager
 from .explainability import explain_recommendation, explain_cluster_assignment, generate_counterfactual_explanation
 from .lime_explainer import explain_with_lime
 import logging
+from .ml_dashboard import router as dashboard_router
+
+# ======================
+# BEHAVIORAL ANALYTICS INTEGRATION
+# ======================
+def category_boost(product_category: str, preferred_categories: list) -> float:
+    """Boost score for preferred categories (1.0=neutral, 1.5=preferred)"""
+    if not product_category or not preferred_categories:
+        return 1.0
+    return 1.5 if product_category.lower() in \
+        [c.lower() for c in preferred_categories if c] else 1.0
+
+def get_behavior_factors(user_id: int, db: Session) -> dict:
+    """Fetch and normalize behavioral metrics"""
+    behavior = db.query(UserBehaviorFeatures).filter(
+        UserBehaviorFeatures.user_id == user_id
+    ).first()
+    
+    return {
+        'engagement': behavior.engagement_score if behavior else 0.5,
+        'price_sensitivity': behavior.price_sensitivity_score if behavior else 0.5,
+        'top_categories': [
+            behavior.top_category_1, 
+            behavior.top_category_2
+        ] if behavior else [],
+        'days_inactive': behavior.days_since_last_activity if behavior else 0
+    }
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+router.include_router(dashboard_router, prefix="/analytics")
 
 # Configuration - ML model directory (support env var and absolute paths)
 # Priority:
@@ -50,6 +78,14 @@ else:
 # Normalize to absolute path and ensure directory exists
 MODEL_DIR = os.path.abspath(MODEL_DIR)
 os.makedirs(MODEL_DIR, exist_ok=True)
+
+# Performance monitoring thresholds
+EXPECTED_IMPACTS = {
+    'category_match_boost': 1.5,  # 50% increase for preferred categories
+    'engagement_weight_range': (0.3, 1.0),  # Min-max effect
+    'price_sensitivity_effect': 0.6,  # 60% reduction for sensitive users
+    'inactivity_decay_rate': 0.0055  # ~5% decay per week of inactivity
+}
 
 # Global model cache - Hybrid Recommender Components
 clustering_model = None
@@ -94,7 +130,7 @@ class RecommendationResponse(BaseModel):
     category: Optional[str] = None
     created_at: Optional[datetime] = None
     admin_created: bool = True
-    admin_name: Optional[str] = "ConnectSphere Admin"
+    admin_name: Optional[str] = "Admin"
     discount_percentage: float = 0.0
     shipping_info: Optional[str] = "Free shipping when group goal is reached"
     estimated_delivery: Optional[str] = "2-3 weeks after group completion"
@@ -511,8 +547,21 @@ current_training_status = {
 }
 
 def get_recommendations_for_user(user: User, db: Session) -> List[dict]:
-    """Generate recommendations using Hybrid Recommender (NMF + TF-IDF + Clustering)"""
+    """Generate recommendations using Hybrid Recommender with Analytics"""
     global nmf_model, tfidf_model, clustering_model, scaler, feature_store
+    
+    # Load behavioral features
+    user_behavior = db.query(UserBehaviorFeatures).filter(
+        UserBehaviorFeatures.user_id == user.id
+    ).first()
+    
+    # Default weights if no analytics available
+    behavior_factors = {
+        'engagement_weight': user_behavior.engagement_score if user_behavior else 1.0,
+        'price_sensitivity': user_behavior.price_sensitivity_score if user_behavior else 0.5,
+        'top_categories': [user_behavior.top_category_1, user_behavior.top_category_2] 
+                         if user_behavior else []
+    }
     
     # Get active group-buys in Mbare zone for category matching
     active_groups = db.query(GroupBuy).filter(
@@ -619,27 +668,20 @@ def get_recommendations_for_user(user: User, db: Session) -> List[dict]:
         else:
             pop_norm = product_popularity * 0
         
-        # 4. Hybrid Fusion
-        hybrid_scores = ALPHA * cf_scores + BETA * cbf_scores + GAMMA * pop_norm
+        # Enhanced hybrid scoring with behavioral factors
+        cf_weight = ALPHA * (0.5 + (behavior_factors['engagement_weight'] * 0.5))
+        cbf_weight = BETA * category_boost(available_groups[0].product.category, behavior_factors['top_categories'])
+        pop_weight = GAMMA * (1 - (behavior_factors['price_sensitivity'] * 0.5))
+        
+        enhanced_score = cf_weight * cf_scores + cbf_weight * cbf_scores + pop_weight * pop_norm
+        
+        # Time decay for inactive users
+        if user_behavior and user_behavior.days_since_last_activity > 30:
+            enhanced_score *= max(0.7, 1 - (user_behavior.days_since_last_activity/100))
         
         # Normalize hybrid scores to 0-1 range
-        if hybrid_scores.max() > hybrid_scores.min():
-            hybrid_scores_norm = (hybrid_scores - hybrid_scores.min()) / (hybrid_scores.max() - hybrid_scores.min())
-        else:
-            hybrid_scores_norm = hybrid_scores * 0
-        
-        # Normalize individual component scores for display
-        cf_min, cf_max = cf_scores.min(), cf_scores.max()
-        if cf_max > cf_min:
-            cf_scores_norm = (cf_scores - cf_min) / (cf_max - cf_min)
-        else:
-            cf_scores_norm = cf_scores * 0
-        
-        cbf_min, cbf_max = cbf_scores.min(), cbf_scores.max()
-        if cbf_max > cbf_min:
-            cbf_scores_norm = (cbf_scores - cbf_min) / (cbf_max - cbf_min)
-        else:
-            cbf_scores_norm = cbf_scores * 0
+        if enhanced_score.max() > enhanced_score.min():
+            enhanced_score = (enhanced_score - enhanced_score.min()) / (enhanced_score.max() - enhanced_score.min())
         
         # Get user's purchased products for personalization
         seen_products = set(tx.product_id for tx in transactions)
@@ -699,13 +741,13 @@ def get_recommendations_for_user(user: User, db: Session) -> List[dict]:
                     "popularity": 0.3,
                     "hybrid": score
                 },
-                # Additional detailed fields for GroupDetail page
+                # Additional fields for detailed view
                 "description": gb.product.description if gb.product else "High-quality product available at bulk pricing",
                 "long_description": gb.product.description if gb.product else f"Join this group buy to get quality products at discounted prices. Minimum order quantity: {gb.product.moq if gb.product else 10} units.",
                 "category": gb.product.category if gb.product else "General",
                 "created_at": gb.created_at,
                 "admin_created": True,
-                "admin_name": "ConnectSphere Admin",
+                "admin_name": "Admin",
                 "discount_percentage": (gb.product.savings_factor * 100) if gb.product else 10,
                 "shipping_info": "Free shipping when group goal is reached",
                 "estimated_delivery": "2-3 weeks after group completion",
@@ -804,7 +846,7 @@ def get_simple_recommendations(user: User, db: Session, active_groups) -> List[d
                 "category": gb.product.category or "General",
                 "created_at": gb.created_at,
                 "admin_created": True,
-                "admin_name": "ConnectSphere Admin",
+                "admin_name": "Admin",
                 "discount_percentage": savings,
                 "shipping_info": "Free shipping when group goal is reached",
                 "estimated_delivery": "2-3 weeks after group completion",
@@ -950,7 +992,7 @@ def get_similarity_based_recommendations(user: User, db: Session, active_groups:
                     "category": group_buy.product.category or "General",
                     "created_at": group_buy.created_at,
                     "admin_created": True,
-                    "admin_name": "ConnectSphere Admin",
+                    "admin_name": "Admin",
                     "discount_percentage": savings,
                     "shipping_info": "Free shipping when group goal is reached",
                     "estimated_delivery": "2-3 weeks after group completion",
@@ -1494,6 +1536,25 @@ async def get_model_performance_metrics(
             "error": str(e)
         }
 
+@router.get("/dashboard-data", response_model=dict)
+async def get_dashboard_data(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get analytics data for frontend dashboard"""
+    from .ml_dashboard import get_performance_data, get_segmentation_data, check_alerts
+    
+    perf_data = get_performance_data(db)
+    seg_data = get_segmentation_data(db)
+    alerts = check_alerts(seg_data, perf_data)
+    
+    return {
+        "performance": perf_data,
+        "segmentation": seg_data,
+        "alerts": alerts,
+        "last_updated": datetime.utcnow().isoformat()
+    }
+
 # Load models on startup
 load_models()
 
@@ -1662,7 +1723,7 @@ def get_user_similarity_based_recommendations(user_id: int, db: Session, limit: 
             'category': rec['group'].product.category if rec['group'].product else 'General',
             'created_at': rec['group'].created_at,
             'admin_created': True,
-            'admin_name': "ConnectSphere Admin",
+            'admin_name': "Admin",
             'discount_percentage': (rec['group'].product.savings_factor * 100) if rec['group'].product else 10,
             'shipping_info': "Free shipping when group goal is reached",
             'estimated_delivery': "2-3 weeks after group completion",

@@ -1,4 +1,4 @@
-import { Zap, Users, Eye, ShoppingBag, TrendingUp, DollarSign, RefreshCw, Clock } from 'lucide-react';
+import { Users, Eye, ShoppingBag, TrendingUp, DollarSign, RefreshCw, Clock } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useState, useEffect, useRef } from 'react';
 import { ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Bar, PieChart, Pie, Cell } from 'recharts';
@@ -79,6 +79,7 @@ const AdminDashboard = () => {
     setErrorMessage('');
 
     try {
+      // Always fetch fresh data from the server to avoid cache issues
       const result = await apiService.scanQRCode(qrCodeData);
       setScanResult(result);
       setLastScannedCode(qrCodeData);
@@ -109,8 +110,25 @@ const AdminDashboard = () => {
         // Keep the local update if API refresh fails
       }
     } catch (error: any) {
-      setErrorMessage(error.message || 'Failed to scan QR code');
+      console.error('QR Scan Error Details:', error);
+      
+      // Extract detailed error message
+      let errorDetail = error.message || 'Failed to scan QR code';
+      
+      // Add timestamp for admin reference
+      const timestamp = new Date().toLocaleString();
+      const fullErrorMessage = `${errorDetail}\n\nTime: ${timestamp}\nQR Code: ${qrCodeData?.substring(0, 20)}...`;
+      
+      setErrorMessage(fullErrorMessage);
       setScanResult(null);
+    }
+  };
+
+  // Function to refresh the current scan result with fresh data from database
+  const refreshScanResult = async () => {
+    if (lastScannedCode) {
+      console.log('Refreshing scan result with fresh data...');
+      await handleQRScan(lastScannedCode);
     }
   };
 
@@ -251,7 +269,7 @@ const AdminDashboard = () => {
     loadDashboardData();
   }, []);
 
-  // Load QR scan history on mount
+  // Load QR scan history on mount and clear any stale scan results
   useEffect(() => {
     const loadScanHistory = async () => {
       try {
@@ -271,8 +289,15 @@ const AdminDashboard = () => {
       }
     };
 
+    // Clear any stale scan results when switching to QR verification tab
+    if (activeTab === 'qr-verify') {
+      setScanResult(null);
+      setErrorMessage('');
+      setLastScannedCode(null);
+    }
+
     loadScanHistory();
-  }, []);
+  }, [activeTab]);
 
   // Save active tab to localStorage whenever it changes
   useEffect(() => {
@@ -823,10 +848,36 @@ const AdminDashboard = () => {
                     )}
                   </div>
 
-                  {/* Right Side - Instructions or Results */}
+                  {/* Right Side - Instructions, Errors, or Results */}
                   <div className="space-y-4">
-                    {/* Instructions - Show before scan */}
-                    {!scanResult ? (
+                    {/* Error Message - Show whenever there's an error */}
+                    {errorMessage && (
+                      <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                        <div className="flex items-center gap-2 mb-3">
+                          <div className="text-red-500">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                          </div>
+                          <p className="text-red-800 font-semibold text-base">QR Scan Error</p>
+                        </div>
+                        <div className="text-red-700 bg-red-100 px-3 py-2 rounded-md border border-red-200 whitespace-pre-line">
+                          {errorMessage}
+                        </div>
+                        <div className="mt-3 flex items-center justify-between">
+                          <p className="text-sm text-red-600">Try scanning again or ask the customer for a new QR code.</p>
+                          <button
+                            onClick={() => setErrorMessage('')}
+                            className="text-red-600 hover:text-red-800 text-sm font-medium px-3 py-1 rounded-md hover:bg-red-100 transition-colors"
+                          >
+                            Clear Error
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Instructions - Show when no scan result and no error */}
+                    {!scanResult && !errorMessage && (
                       <div className="bg-gray-50 rounded-lg p-4">
                         <h3 className="text-base font-semibold text-gray-900 mb-3">How it works:</h3>
                         <ul className="text-xs text-gray-600 space-y-2">
@@ -852,24 +903,11 @@ const AdminDashboard = () => {
                           </li>
                         </ul>
                       </div>
-                    ) : (
-                      <div className="space-y-3">
-                        {/* Error Message */}
-                        {errorMessage && (
-                          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                            <div className="flex items-center gap-2 mb-3">
-                              <div className="text-red-500">
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
-                              </div>
-                              <p className="text-red-800 font-semibold text-base">Scan Error</p>
-                            </div>
-                            <p className="text-red-700 bg-red-100 px-3 py-2 rounded-md border border-red-200">{errorMessage}</p>
-                          </div>
-                        )}
+                    )}
 
-                        {/* Scan Results */}
+                    {/* Scan Results - Show when there's a successful scan result */}
+                    {scanResult && (
+                      <div className="space-y-3">
                         <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                           <div className="flex items-center gap-2 mb-3">
                             <div className="text-green-500">
@@ -936,6 +974,48 @@ const AdminDashboard = () => {
                                 <p><span className="font-medium text-gray-600">Used:</span> <span className={`font-medium ${scanResult.qr_status?.is_used ? 'text-red-600' : 'text-green-600'}`}>{scanResult.qr_status?.is_used ? 'Yes' : 'No'}</span></p>
                                 <p><span className="font-medium text-gray-600">Generated:</span> <span className="text-gray-900">{scanResult.qr_status?.generated_at ? new Date(scanResult.qr_status.generated_at).toLocaleDateString() : 'N/A'}</span></p>
                                 <p><span className="font-medium text-gray-600">Expires:</span> <span className="text-gray-900">{scanResult.qr_status?.expires_at ? new Date(scanResult.qr_status.expires_at).toLocaleDateString() : 'N/A'}</span></p>
+                              </div>
+                              <div className="flex gap-2 mt-3">
+                                <button
+                                  onClick={refreshScanResult}
+                                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs py-2 px-3 rounded-md font-medium transition-colors flex items-center justify-center gap-1"
+                                >
+                                  <RefreshCw className="w-3 h-3" />
+                                  Refresh Status
+                                </button>
+                                {!scanResult.qr_status?.is_used && (
+                                  <button
+                                    onClick={async () => {
+                                      try {
+                                        console.log('QR Status:', scanResult.qr_status);
+                                        console.log('QR ID:', scanResult.qr_status?.id);
+                                        
+                                        if (!scanResult.qr_status?.id) {
+                                          throw new Error('QR Code ID is missing from scan result');
+                                        }
+                                        
+                                        await apiService.markQRCodeAsUsed(scanResult.qr_status.id);
+                                        // Refresh the scan result to show updated status
+                                        await refreshScanResult();
+                                        // Refresh scan history
+                                        const history = await apiService.getQRScanHistory(50, 0);
+                                        const transformedHistory = history.scans.map((scan: any) => ({
+                                          qrCode: scan.qr_code,
+                                          timestamp: new Date(scan.scanned_at),
+                                          userInfo: scan.user_info,
+                                          productInfo: scan.product_info,
+                                          purchaseInfo: scan.purchase_info
+                                        }));
+                                        setScanHistory(transformedHistory);
+                                      } catch (error: any) {
+                                        setErrorMessage(error.message || 'Failed to mark QR code as used');
+                                      }
+                                    }}
+                                    className="flex-1 bg-red-600 hover:bg-red-700 text-white text-xs py-2 px-3 rounded-md font-medium transition-colors"
+                                  >
+                                    Mark as Used
+                                  </button>
+                                )}
                               </div>
                             </div>
                           </div>

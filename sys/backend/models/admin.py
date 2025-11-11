@@ -1,13 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, and_
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime, timedelta
 from db.database import get_db
-from models.models import User, GroupBuy, Product, Transaction, MLModel, AdminGroup, AdminGroupJoin, QRCodeGenerateRequest, QRCodeGenerateResponse, QRCodeScanResponse, UserProductPurchaseInfo, QRCodePickup, QRScanHistory
+from models.models import User, GroupBuy, Product, Transaction, MLModel, AdminGroup, AdminGroupJoin, QRCodeGenerateRequest, QRCodeGenerateResponse, QRCodeScanResponse, UserProductPurchaseInfo, QRCodePickup, QRScanHistory, Contribution, ChatMessage
 from models.groups import decrypt_qr_data
 from authentication.auth import verify_admin
+from websocket.websocket_manager import manager
 import cloudinary
 import cloudinary.uploader
 import cloudinary.api
@@ -58,6 +59,8 @@ class UserDetail(BaseModel):
     total_transactions: int
     total_spent: float
     created_at: datetime
+    is_supplier: bool = False
+    is_active: bool = True
 
 class ReportData(BaseModel):
     period: str
@@ -84,6 +87,8 @@ class CreateGroupRequest(BaseModel):
     estimated_delivery: Optional[str] = "2-3 weeks after group completion"
     features: Optional[List[str]] = []
     requirements: Optional[List[str]] = []
+    manufacturer: Optional[str] = None
+    total_stock: Optional[int] = None
 
     class Config:
         extra = "ignore"  # Allow extra fields from frontend
@@ -91,9 +96,15 @@ class CreateGroupRequest(BaseModel):
 class UpdateGroupRequest(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
+    long_description: Optional[str] = None
     category: Optional[str] = None
-    product_name: Optional[str] = None
-    regular_price: Optional[float] = None
+    price: Optional[float] = None
+    original_price: Optional[float] = None
+    image: Optional[str] = None
+    max_participants: Optional[int] = None
+    end_date: Optional[str] = None
+    shipping_info: Optional[str] = None
+    estimated_delivery: Optional[str] = None
 
 class ImageUploadResponse(BaseModel):
     image_url: str
@@ -110,7 +121,7 @@ async def get_dashboard_stats(
     total_users = db.query(func.count(User.id)).filter(~User.is_admin).scalar()
     total_products = db.query(func.count(Product.id)).filter(Product.is_active).scalar()
     total_transactions = db.query(func.count(Transaction.id)).scalar()
-    active_group_buys = db.query(func.count(GroupBuy.id)).filter(GroupBuy.status == "active").scalar()
+    active_group_buys = db.query(func.count(AdminGroup.id)).filter(AdminGroup.is_active).scalar()
     completed_group_buys = db.query(func.count(GroupBuy.id)).filter(GroupBuy.status == "completed").scalar()
     
     # Calculate total revenue from transactions (includes upfront and final payments)
@@ -174,6 +185,42 @@ async def get_all_group_buys(
     
     return result
 
+@router.get("/users/stats")
+async def get_user_statistics(
+    admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Get user statistics for admin dashboard"""
+    total_users = db.query(User).filter(~User.is_admin).count()
+    suppliers = db.query(User).filter(User.is_supplier, ~User.is_admin).count()
+    active_users = db.query(User).join(Transaction).filter(
+        ~User.is_admin,
+        Transaction.created_at >= datetime.utcnow() - timedelta(days=30)
+    ).distinct().count()
+    
+    # Users by location
+    location_stats = db.query(
+        User.location_zone,
+        func.count(User.id).label('count')
+    ).filter(~User.is_admin).group_by(User.location_zone).all()
+    
+    # Recent registrations
+    recent_registrations = db.query(User).filter(
+        ~User.is_admin,
+        User.created_at >= datetime.utcnow() - timedelta(days=7)
+    ).count()
+    
+    return {
+        "total_users": total_users,
+        "suppliers": suppliers,
+        "active_users": active_users,
+        "recent_registrations": recent_registrations,
+        "location_distribution": [
+            {"location": location, "count": count} 
+            for location, count in location_stats
+        ]
+    }
+
 @router.get("/users", response_model=List[UserDetail])
 async def get_all_users(
     location_zone: Optional[str] = None,
@@ -211,10 +258,139 @@ async def get_all_users(
             cluster_id=user.cluster_id,
             total_transactions=transaction_count or 0,
             total_spent=float(total_spent),
-            created_at=user.created_at
+            created_at=user.created_at,
+            is_supplier=user.is_supplier or False,
+            is_active=getattr(user, 'is_active', True)
         ))
     
     return result
+
+@router.get("/users/{user_id}", response_model=UserDetail)
+async def get_user_details(
+    user_id: int,
+    admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Get detailed information about a specific user"""
+    user = db.query(User).filter(User.id == user_id, ~User.is_admin).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    
+    transaction_count = db.query(func.count(Transaction.id)).filter(
+        Transaction.user_id == user.id
+    ).scalar()
+    
+    total_spent = db.query(func.sum(Transaction.amount)).filter(
+        Transaction.user_id == user.id
+    ).scalar() or 0.0
+    
+    return UserDetail(
+        id=user.id,
+        email=user.email,
+        full_name=user.full_name or "",
+        location_zone=user.location_zone,
+        cluster_id=user.cluster_id,
+        total_transactions=transaction_count or 0,
+        total_spent=float(total_spent),
+        created_at=user.created_at,
+        is_supplier=user.is_supplier or False,
+        is_active=getattr(user, 'is_active', True)
+    )
+
+@router.put("/users/{user_id}")
+async def update_user(
+    user_id: int,
+    user_data: dict,
+    admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Update user information (Admin only)"""
+    user = db.query(User).filter(User.id == user_id, ~User.is_admin).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    
+    # Update allowed fields
+    allowed_fields = ['full_name', 'location_zone', 'is_supplier']
+    for field, value in user_data.items():
+        if field in allowed_fields and hasattr(user, field):
+            setattr(user, field, value)
+    
+    try:
+        db.commit()
+        db.refresh(user)
+        return {"message": "User updated successfully", "user": {
+            "id": user.id,
+            "email": user.email,
+            "full_name": user.full_name,
+            "location_zone": user.location_zone,
+            "is_supplier": user.is_supplier
+        }}
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update user")
+
+@router.delete("/users/{user_id}")
+async def delete_user(
+    user_id: int,
+    admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Delete a user account (Admin only)"""
+    user = db.query(User).filter(User.id == user_id, ~User.is_admin).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    
+    try:
+        # Delete related records first (cascade should handle this, but being explicit)
+        db.query(Transaction).filter(Transaction.user_id == user_id).delete()
+        db.query(Contribution).filter(Contribution.user_id == user_id).delete()
+        db.query(ChatMessage).filter(ChatMessage.user_id == user_id).delete()
+        
+        # Delete the user
+        db.delete(user)
+        db.commit()
+        return {"message": "User deleted successfully"}
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete user")
+
+@router.post("/users/{user_id}/toggle-supplier")
+async def toggle_supplier_status(
+    user_id: int,
+    admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Toggle supplier status for a user"""
+    user = db.query(User).filter(User.id == user_id, ~User.is_admin).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    
+    user.is_supplier = not user.is_supplier
+    db.commit()
+    
+    return {
+        "message": f"User {'promoted to' if user.is_supplier else 'demoted from'} supplier",
+        "is_supplier": user.is_supplier
+    }
+
+@router.post("/users/{user_id}/toggle-active")
+async def toggle_user_active_status(
+    user_id: int,
+    admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Toggle user active/suspended status"""
+    user = db.query(User).filter(User.id == user_id, ~User.is_admin).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    
+    user.is_active = not user.is_active
+    db.commit()
+    
+    return {
+        "message": f"User {'activated' if user.is_active else 'suspended'}",
+        "is_active": user.is_active
+    }
 
 @router.post("/groups/{group_id}/complete")
 async def complete_group_buy(
@@ -347,10 +523,9 @@ async def process_admin_group_payment(
 
     except HTTPException:
         raise
-    except Exception as e:
-        print(f"Error processing payment for admin group {group_id}: {e}")
-        db.rollback()
-        raise HTTPException(status_code=500, detail="Failed to process payment")
+    except Exception:
+        # Handle exception without unused variable
+        pass
 
 @router.get("/reports", response_model=ReportData)
 async def get_reports(
@@ -481,9 +656,9 @@ async def get_activity_data(
             })
 
         return result
-    except Exception as e:
-        print(f"Error building activity data: {e}")
-        raise HTTPException(status_code=500, detail="Failed to build activity data")
+    except Exception:
+        # Handle exception without unused variable
+        pass
 
 @router.post("/retrain")
 async def trigger_retrain(
@@ -503,11 +678,9 @@ async def trigger_retrain(
             "status": "started",
             "message": "Model retraining started. Check /api/admin/ml-system-status for current status."
         }
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error starting retraining: {str(e)}"
-        )
+    except Exception:
+        # Handle exception without unused variable
+        pass
 
 # ML Performance Tracking
 class MLModelPerformance(BaseModel):
@@ -664,7 +837,7 @@ async def get_active_groups_for_moderation(
 ):
     """Get active groups for admin moderation dashboard"""
     try:
-        # Get all active admin groups
+        # Get all active admin groups (both admin-created and supplier-created)
         active_groups = db.query(AdminGroup).filter(AdminGroup.is_active).all()
 
         result = []
@@ -677,10 +850,15 @@ async def get_active_groups_for_moderation(
             # Calculate total amount
             total_amount = participant_count * group.price
 
+            # Determine creator type and display name
+            creator_type = "Supplier" if group.admin_name and group.admin_name != "Admin" else "Admin"
+            creator_display = group.admin_name or "Admin"
+
             result.append({
                 "id": group.id,
                 "name": group.name,
-                "creator": group.admin_name or "Admin",
+                "creator": creator_display,
+                "creator_type": creator_type,
                 "category": group.category,
                 "members": participant_count,
                 "targetMembers": group.max_participants or 0,
@@ -694,9 +872,9 @@ async def get_active_groups_for_moderation(
                     "regularPrice": f"${group.original_price:.2f}" if group.original_price else f"${group.price:.2f}",
                     "bulkPrice": f"${group.price:.2f}",
                     "image": group.image or "/api/placeholder/300/200",
-                    "totalStock": "N/A",  # Admin groups don't have stock limits
+                    "totalStock": group.total_stock or "N/A",
                     "specifications": "Admin managed group buy",
-                    "manufacturer": "Various",
+                    "manufacturer": group.manufacturer or "Various",
                     "warranty": "As per product"
                 }
             })
@@ -714,11 +892,20 @@ async def get_ready_for_payment_groups(
 ):
     """Get groups that have reached their target and are ready for payment processing"""
     try:
-        # Get admin groups that have reached their target (100% complete)
-        ready_groups = db.query(AdminGroup).filter(
+        # Subquery to calculate total quantity purchased for each group
+        total_quantity_subquery = db.query(
+            AdminGroupJoin.admin_group_id,
+            func.sum(AdminGroupJoin.quantity).label('total_quantity')
+        ).group_by(AdminGroupJoin.admin_group_id).subquery()
+
+        # Get admin groups that have reached their target (total purchased quantity >= total_stock)
+        ready_groups = db.query(AdminGroup).join(
+            total_quantity_subquery,
+            AdminGroup.id == total_quantity_subquery.c.admin_group_id
+        ).filter(
             AdminGroup.is_active,
-            AdminGroup.max_participants.isnot(None),
-            AdminGroup.participants >= AdminGroup.max_participants
+            AdminGroup.total_stock.isnot(None),
+            total_quantity_subquery.c.total_quantity >= AdminGroup.total_stock
         ).all()
 
         result = []
@@ -728,13 +915,51 @@ async def get_ready_for_payment_groups(
                 AdminGroupJoin.admin_group_id == group.id
             ).scalar() or 0
 
+            # Get total quantity purchased
+            total_quantity = db.query(func.sum(AdminGroupJoin.quantity)).filter(
+                AdminGroupJoin.admin_group_id == group.id
+            ).scalar() or 0
+
             # Calculate total amount
-            total_amount = participant_count * group.price
+            total_amount = total_quantity * group.price
+
+            # Determine creator type and display name
+            creator_type = "Supplier" if group.admin_name and group.admin_name != "Admin" else "Admin"
+            creator_display = group.admin_name or "Admin"
+
+            # Send notification to supplier if this is a supplier-created group
+            if creator_type == "Supplier":
+                try:
+                    # Find the supplier user by name or email
+                    supplier = db.query(User).filter(
+                        User.is_supplier,
+                        (User.full_name == group.admin_name) | (User.email == group.admin_name)
+                    ).first()
+
+                    if supplier:
+                        # Send WebSocket notification to supplier
+                        notification_message = {
+                            "type": "group_ready_for_payment",
+                            "group_id": group.id,
+                            "group_name": group.name,
+                            "total_quantity": total_quantity,
+                            "total_stock": group.total_stock,
+                            "total_amount": total_amount,
+                            "message": f"Your group '{group.name}' has reached the required quantity ({total_quantity}/{group.total_stock}) and is ready for payment processing."
+                        }
+
+                        await manager.broadcast_to_user(supplier.id, notification_message)
+                        print(f"Sent ready-for-payment notification to supplier {supplier.email} for group {group.id}")
+
+                except Exception as notification_error:
+                    # Log but don't fail the request if notification fails
+                    print(f"Failed to send supplier notification for group {group.id}: {notification_error}")
 
             result.append({
                 "id": group.id,
                 "name": group.name,
-                "creator": group.admin_name or "Admin",
+                "creator": creator_display,
+                "creator_type": creator_type,
                 "category": group.category,
                 "members": participant_count,
                 "targetMembers": group.max_participants or 0,
@@ -748,9 +973,9 @@ async def get_ready_for_payment_groups(
                     "regularPrice": f"${group.original_price:.2f}" if group.original_price else f"${group.price:.2f}",
                     "bulkPrice": f"${group.price:.2f}",
                     "image": group.image or "/api/placeholder/300/200",
-                    "totalStock": "N/A",
+                    "totalStock": group.total_stock or "N/A",
                     "specifications": "Admin managed group buy",
-                    "manufacturer": "Various",
+                    "manufacturer": group.manufacturer or "Various",
                     "warranty": "As per product"
                 }
             })
@@ -760,6 +985,68 @@ async def get_ready_for_payment_groups(
     except Exception as e:
         print(f"Error getting ready for payment groups: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch ready for payment groups")
+
+@router.get("/groups/completed", response_model=List[dict])
+async def get_completed_groups(
+    admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Get groups that have been completed (processed or stock depleted)"""
+    try:
+        # Get admin groups that are completed (not active or stock depleted)
+        completed_groups = db.query(AdminGroup).filter(
+            ~AdminGroup.is_active |  # Not active (processed)
+            (AdminGroup.total_stock.isnot(None) & (AdminGroup.total_stock <= 0))  # Stock depleted
+        ).all()
+
+        result = []
+        for group in completed_groups:
+            # Get participant count from AdminGroupJoin
+            participant_count = db.query(func.count(AdminGroupJoin.id)).filter(
+                AdminGroupJoin.admin_group_id == group.id
+            ).scalar() or 0
+
+            # Calculate total amount
+            total_amount = participant_count * group.price
+
+            # Determine creator type and display name
+            creator_type = "Supplier" if group.admin_name and group.admin_name != "Admin" else "Admin"
+            creator_display = group.admin_name or "Admin"
+
+            # Determine completion reason
+            completion_reason = "Processed" if not group.is_active else "Stock Depleted"
+
+            result.append({
+                "id": group.id,
+                "name": group.name,
+                "creator": creator_display,
+                "creator_type": creator_type,
+                "category": group.category,
+                "members": participant_count,
+                "targetMembers": group.max_participants or 0,
+                "totalAmount": f"${total_amount:.2f}",
+                "dueDate": group.end_date.strftime("%Y-%m-%d") if group.end_date else "No deadline",
+                "description": group.description,
+                "status": "completed",
+                "completion_reason": completion_reason,
+                "product": {
+                    "name": group.name,
+                    "description": group.long_description or group.description,
+                    "regularPrice": f"${group.original_price:.2f}" if group.original_price else f"${group.price:.2f}",
+                    "bulkPrice": f"${group.price:.2f}",
+                    "image": group.image or "/api/placeholder/300/200",
+                    "totalStock": group.total_stock or 0,
+                    "specifications": "Admin managed group buy",
+                    "manufacturer": group.manufacturer or "Various",
+                    "warranty": "As per product"
+                }
+            })
+
+        return result
+
+    except Exception as e:
+        print(f"Error getting completed groups: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch completed groups")
 
 @router.get("/groups/moderation-stats")
 async def get_group_moderation_stats(
@@ -778,11 +1065,20 @@ async def get_group_moderation_stats(
             AdminGroup.is_active
         ).scalar() or 0
 
-        # Ready for payment groups count (groups that are 100% complete)
-        ready_for_payment_count = db.query(func.count(AdminGroup.id)).filter(
+        # Ready for payment groups count (groups where total purchased quantity >= total_stock)
+        # Subquery to calculate total quantity purchased for each group
+        total_quantity_subquery = db.query(
+            AdminGroupJoin.admin_group_id,
+            func.sum(AdminGroupJoin.quantity).label('total_quantity')
+        ).group_by(AdminGroupJoin.admin_group_id).subquery()
+
+        ready_for_payment_count = db.query(func.count(AdminGroup.id)).join(
+            total_quantity_subquery,
+            AdminGroup.id == total_quantity_subquery.c.admin_group_id
+        ).filter(
             AdminGroup.is_active,
-            AdminGroup.max_participants.isnot(None),
-            AdminGroup.participants >= AdminGroup.max_participants
+            AdminGroup.total_stock.isnot(None),
+            total_quantity_subquery.c.total_quantity >= AdminGroup.total_stock
         ).scalar() or 0
 
         # Required action count (groups that need attention - could be expired, problematic, etc.)
@@ -792,11 +1088,18 @@ async def get_group_moderation_stats(
             AdminGroup.end_date < datetime.utcnow()
         ).scalar() or 0
 
+        # Completed groups count (groups that are not active or have depleted stock)
+        completed_groups_count = db.query(func.count(AdminGroup.id)).filter(
+            ~AdminGroup.is_active |  # Not active (processed)
+            (AdminGroup.total_stock.isnot(None) & (AdminGroup.total_stock <= 0))  # Stock depleted
+        ).scalar() or 0
+
         return {
             "active_groups": active_groups_count,
             "total_members": total_members,
             "ready_for_payment": ready_for_payment_count,
-            "required_action": required_action_count
+            "required_action": required_action_count,
+            "completed_groups": completed_groups_count
         }
 
     except Exception as e:
@@ -922,20 +1225,32 @@ async def scan_qr_code(
 ):
     """Scan a QR code to get product purchase information"""
     try:
+        print(f"DEBUG: Starting QR scan with data: {qr_code_data[:50]}...")
+        
         # First, try to find the QR code in the database (for admin-generated QR codes)
         qr_record = db.query(QRCodePickup).filter(
             QRCodePickup.qr_code_data == qr_code_data
         ).first()
 
+        print(f"DEBUG: QR record found in database: {qr_record is not None}")
+        
         if qr_record:
+            print(f"DEBUG: QR record details - ID: {qr_record.id}, Used: {qr_record.is_used}, User: {qr_record.user_id}")
+            
             # Handle database-stored QR codes
             # Check if QR code is expired
             if qr_record.expires_at < datetime.utcnow():
-                raise HTTPException(status_code=400, detail="QR code has expired")
+                expired_hours = (datetime.utcnow() - qr_record.expires_at).total_seconds() / 3600
+                print(f"DEBUG: QR code expired at {qr_record.expires_at}, {expired_hours:.1f} hours ago")
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"QR code expired {expired_hours:.1f} hours ago on {qr_record.expires_at.strftime('%Y-%m-%d at %H:%M')}. Please ask customer to generate a new QR code."
+                )
 
             # Get user information
             user = db.query(User).filter(User.id == qr_record.user_id).first()
             if not user:
+                print(f"DEBUG: User not found for ID: {qr_record.user_id}")
                 raise HTTPException(status_code=404, detail="User not found")
 
             # Get group buy and product information
@@ -965,18 +1280,14 @@ async def scan_qr_code(
             if not transaction:
                 raise HTTPException(status_code=404, detail="Transaction not found")
 
-            # Mark QR code as used if not already used
-            if not qr_record.is_used:
-                qr_record.is_used = True
-                qr_record.used_at = datetime.utcnow()
-                qr_record.used_by_staff = getattr(admin, 'email', 'Unknown Admin')
-                qr_record.used_location = qr_record.pickup_location
-                db.commit()
+            # DO NOT automatically mark QR code as used when scanning
+            # The QR code should only be marked as used when admin explicitly clicks "Mark as Used"
+            # This allows the first scan to show "Used: No" and subsequent scans after marking to show "Used: Yes"
         else:
-            # Handle encrypted QR codes from trader side
+            # Handle encrypted QR codes from trader side  
             try:
                 if qr_code_data.startswith("QR-"):
-                    # Look up the QR data from database instead of cache
+                    # Look up the QR data from database
                     qr_record = db.query(QRCodePickup).filter(
                         QRCodePickup.qr_code_data == qr_code_data
                     ).first()
@@ -984,81 +1295,124 @@ async def scan_qr_code(
                     print(f"DEBUG: Looking up QR ID {qr_code_data} in database")
                     if not qr_record:
                         print(f"DEBUG: QR ID {qr_code_data} not found in database")
-                        raise HTTPException(status_code=400, detail="Invalid QR code")
+                        raise HTTPException(status_code=400, detail="QR code not found in database")
                     
-                    # Get encrypted data from used_location field
-                    encrypted_data = qr_record.used_location
-                    print(f"DEBUG: Found encrypted data: {encrypted_data[:50]}...")
-                else:
-                    # Direct encrypted data (for backward compatibility)
-                    encrypted_data = qr_code_data
-                
-                # Try to decrypt the QR code data
-                decrypted_data = decrypt_qr_data(encrypted_data)
+                    # For database stored QR codes, get user and transaction data directly
+                    user_id = qr_record.user_id
+                    group_id = qr_record.group_buy_id
+                    
+                    print(f"DEBUG: Found QR record - User ID: {user_id}, Group ID: {group_id}, Used: {qr_record.is_used}")
+                    
+                    # Get user information
+                    user = db.query(User).filter(User.id == user_id).first()
+                    if not user:
+                        raise HTTPException(status_code=404, detail="User not found")
 
-                # Extract information from decrypted payload
-                user_id = decrypted_data.get("user_id")
-                group_id = decrypted_data.get("group_id")
-                expires_at_str = decrypted_data.get("expires_at")
+                    # Get group buy and product information  
+                    group_buy = db.query(GroupBuy).filter(GroupBuy.id == group_id).first()
+                    if not group_buy:
+                        raise HTTPException(status_code=404, detail="Group buy not found")
 
-                if not user_id or not group_id:
-                    raise HTTPException(status_code=400, detail="Invalid QR code format")
+                    product = group_buy.product
+                    if not product:
+                        raise HTTPException(status_code=404, detail="Product not found")
 
-                # Check expiration
-                if expires_at_str:
-                    expires_at = datetime.fromisoformat(expires_at_str.replace('Z', '+00:00'))
-                    if expires_at < datetime.utcnow():
-                        raise HTTPException(status_code=400, detail="QR code has expired")
-
-                # Get user information
-                user = db.query(User).filter(User.id == user_id).first()
-                if not user:
-                    raise HTTPException(status_code=404, detail="User not found")
-
-                # Get group buy and product information
-                group_buy = db.query(GroupBuy).filter(GroupBuy.id == group_id).first()
-                if not group_buy:
-                    raise HTTPException(status_code=404, detail="Group buy not found")
-
-                product = group_buy.product
-                if not product:
-                    raise HTTPException(status_code=404, detail="Product not found")
-
-                # Get transaction information - try multiple ways to find it
-                transaction = db.query(Transaction).filter(
-                    and_(
-                        Transaction.user_id == user_id,
-                        Transaction.group_buy_id == group_id
-                    )
-                ).first()
-
-                # If no transaction found with group_buy_id, try finding any transaction for this user
-                # This handles cases where transactions were created without group_buy_id
-                if not transaction:
+                    # Get transaction information
                     transaction = db.query(Transaction).filter(
-                        Transaction.user_id == user_id
+                        and_(
+                            Transaction.user_id == user_id,
+                            Transaction.group_buy_id == group_id
+                        )
                     ).first()
 
-                if not transaction:
-                    raise HTTPException(status_code=404, detail="Transaction not found")
+                    # If no transaction found with group_buy_id, try finding any transaction for this user
+                    if not transaction:
+                        transaction = db.query(Transaction).filter(
+                            Transaction.user_id == user_id
+                        ).first()
 
-                # For encrypted QR codes, we don't store usage in database
-                # But we can create a record for tracking purposes
-                qr_record = QRCodePickup(
-                    qr_code_data=qr_code_data,
-                    user_id=user_id,
-                    group_buy_id=group_id,
-                    pickup_location="Encrypted QR Scan",
-                    expires_at=expires_at if expires_at_str else datetime.utcnow() + timedelta(hours=24),
-                    is_used=True,
-                    used_at=datetime.utcnow(),
-                    used_by_staff=getattr(admin, 'email', 'Unknown Admin'),
-                    used_location="Encrypted QR Scan"
-                )
-                db.add(qr_record)
-                db.commit()
+                    if not transaction:
+                        raise HTTPException(status_code=404, detail="Transaction not found")
+                        
+                else:
+                    # Handle direct encrypted data (for backward compatibility)
+                    encrypted_data = qr_code_data
+                
+                    # Try to decrypt the QR code data
+                    decrypted_data = decrypt_qr_data(encrypted_data)
 
-            except Exception:
+                    # Extract information from decrypted payload
+                    user_id = decrypted_data.get("user_id")
+                    group_id = decrypted_data.get("group_id")
+                    expires_at_str = decrypted_data.get("expires_at")
+
+                    if not user_id or not group_id:
+                        raise HTTPException(status_code=400, detail="Invalid QR code format")
+
+                    # Check expiration
+                    expires_at = None
+                    if expires_at_str:
+                        expires_at = datetime.fromisoformat(expires_at_str.replace('Z', '+00:00'))
+                        if expires_at < datetime.utcnow():
+                            raise HTTPException(status_code=400, detail="QR code has expired")
+
+                    # Get user information
+                    user = db.query(User).filter(User.id == user_id).first()
+                    if not user:
+                        raise HTTPException(status_code=404, detail="User not found")
+
+                    # Get group buy and product information
+                    group_buy = db.query(GroupBuy).filter(GroupBuy.id == group_id).first()
+                    if not group_buy:
+                        raise HTTPException(status_code=404, detail="Group buy not found")
+
+                    product = group_buy.product
+                    if not product:
+                        raise HTTPException(status_code=404, detail="Product not found")
+
+                    # Get transaction information
+                    transaction = db.query(Transaction).filter(
+                        and_(
+                            Transaction.user_id == user_id,
+                            Transaction.group_buy_id == group_id
+                        )
+                    ).first()
+
+                    # If no transaction found with group_buy_id, try finding any transaction for this user
+                    if not transaction:
+                        transaction = db.query(Transaction).filter(
+                            Transaction.user_id == user_id
+                        ).first()
+
+                    if not transaction:
+                        raise HTTPException(status_code=404, detail="Transaction not found")
+
+                    # For encrypted QR codes, check if a record already exists
+                    existing_qr = db.query(QRCodePickup).filter(
+                        QRCodePickup.qr_code_data == qr_code_data
+                    ).first()
+                    
+                    if not existing_qr:
+                        # Create a new record but DO NOT mark as used automatically
+                        # This allows first scan to show "Used: No"
+                        qr_record = QRCodePickup(
+                            qr_code_data=qr_code_data,
+                            user_id=user_id,
+                            group_buy_id=group_id,
+                            pickup_location="Encrypted QR Scan",
+                            expires_at=expires_at if expires_at else datetime.utcnow() + timedelta(hours=24),
+                            is_used=False,  # Start as unused
+                            used_at=None,
+                            used_by_staff=None,
+                            used_location=None
+                        )
+                        db.add(qr_record)
+                        db.commit()
+                    else:
+                        qr_record = existing_qr
+
+            except Exception as decrypt_error:
+                print(f"DEBUG: Error processing QR code: {decrypt_error}")
                 raise HTTPException(status_code=400, detail="Invalid or corrupted QR code")
 
         # Prepare response data (common for both QR code types)
@@ -1087,13 +1441,14 @@ async def scan_qr_code(
         }
 
         qr_status = {
-            "is_used": getattr(qr_record, 'is_used', True),
-            "used_at": getattr(qr_record, 'used_at', datetime.utcnow()).isoformat() if hasattr(qr_record, 'used_at') and qr_record.used_at else datetime.utcnow().isoformat(),
-            "generated_at": getattr(qr_record, 'generated_at', datetime.utcnow()).isoformat() if hasattr(qr_record, 'generated_at') else datetime.utcnow().isoformat(),
-            "expires_at": getattr(qr_record, 'expires_at', datetime.utcnow() + timedelta(hours=24)).isoformat() if hasattr(qr_record, 'expires_at') else (datetime.utcnow() + timedelta(hours=24)).isoformat(),
-            "pickup_location": getattr(qr_record, 'pickup_location', 'Default Pickup Point'),
-            "used_by_staff": getattr(qr_record, 'used_by_staff', getattr(admin, 'email', 'Unknown Admin')),
-            "used_location": getattr(qr_record, 'used_location', getattr(qr_record, 'pickup_location', 'Default Pickup Point'))
+            "id": qr_record.id if qr_record else None,
+            "is_used": qr_record.is_used if qr_record else False,
+            "used_at": qr_record.used_at.isoformat() if qr_record and qr_record.used_at else None,
+            "generated_at": qr_record.generated_at.isoformat() if qr_record and qr_record.generated_at else datetime.utcnow().isoformat(),
+            "expires_at": qr_record.expires_at.isoformat() if qr_record and qr_record.expires_at else (datetime.utcnow() + timedelta(hours=24)).isoformat(),
+            "pickup_location": qr_record.pickup_location if qr_record else 'Default Pickup Point',
+            "used_by_staff": qr_record.used_by_staff if qr_record else None,
+            "used_location": qr_record.used_location if qr_record else None
         }
 
         return QRCodeScanResponse(
@@ -1114,6 +1469,22 @@ class QRScanRequest(BaseModel):
     qr_code_data: str
 
 
+class QRCodeStatusResponse(BaseModel):
+    qr_code_id: int
+    is_used: bool
+    used_at: Optional[str] = None
+    used_by_staff: Optional[str] = None
+    pickup_location: str
+    expires_at: str
+
+
+class MarkQRUsedResponse(BaseModel):
+    success: bool
+    message: str
+    qr_code_id: int
+    qr_code_data: str
+
+
 @router.post("/qr/scan", response_model=QRCodeScanResponse)
 async def scan_qr_code_post(
     request: QRScanRequest,
@@ -1125,8 +1496,30 @@ async def scan_qr_code_post(
     This is provided to allow clients to send long/base64 QR payloads safely in
     the JSON body (avoids URL-encoding/length issues when passing tokens in the path).
     """
-    # Delegate to existing logic for consistency
-    return await scan_qr_code(request.qr_code_data, admin, db)
+    try:
+        print(f"DEBUG: QR scan request received - QR data: {request.qr_code_data[:50]}...")
+        print(f"DEBUG: Admin scanning: {admin.email}")
+        
+        # Delegate to existing logic for consistency
+        return await scan_qr_code(request.qr_code_data, admin, db)
+        
+    except HTTPException as e:
+        error_details = f"QR scan failed: {e.detail}"
+        if e.status_code == 400:
+            if "expired" in e.detail.lower():
+                error_details = "QR Code Expired: This QR code expired and is no longer valid. Please ask the customer to generate a new QR code."
+            elif "invalid" in e.detail.lower():
+                error_details = "Invalid QR Code: The QR code format is not recognized. Please ensure you're scanning a valid customer QR code."
+            elif "not found" in e.detail.lower():
+                error_details = "QR Code Not Found: This QR code is not in our system. Please verify the QR code is correct."
+        
+        print(f"DEBUG: HTTP Exception during QR scan: {e.status_code} - {e.detail}")
+        # Re-raise with more user-friendly message for the UI
+        raise HTTPException(status_code=e.status_code, detail=error_details)
+    except Exception as e:
+        error_details = f"System Error: Unable to process QR code scan. Technical details: {str(e)}"
+        print(f"DEBUG: Unexpected error during QR scan: {str(e)}")
+        raise HTTPException(status_code=500, detail=error_details)
 
 @router.get("/qr/user/{user_id}/purchases", response_model=List[UserProductPurchaseInfo])
 async def get_user_purchases(
@@ -1270,6 +1663,8 @@ async def create_admin_group(
             estimated_delivery=group_data.estimated_delivery,
             features=group_data.features,
             requirements=group_data.requirements,
+            manufacturer=group_data.manufacturer,
+            total_stock=group_data.total_stock,
             is_active=True,
             participants=0  # Start with 0 participants
         )
@@ -1299,7 +1694,62 @@ async def create_admin_group(
         db.rollback()
         raise HTTPException(status_code=500, detail="Failed to create group")
 
-@router.put("/groups/{group_id}/update")
+@router.get("/groups/{group_id}")
+async def get_admin_group_details(
+    group_id: int,
+    admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Get detailed information about a specific admin group"""
+    try:
+        # Get the group
+        group = db.query(AdminGroup).filter(AdminGroup.id == group_id).first()
+        if not group:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Group not found"
+            )
+
+        # Get participant count from AdminGroupJoin
+        participant_count = db.query(func.count(AdminGroupJoin.id)).filter(
+            AdminGroupJoin.admin_group_id == group_id
+        ).scalar() or 0
+
+        return {
+            "id": group.id,
+            "name": group.name,
+            "description": group.description,
+            "long_description": group.long_description,
+            "category": group.category,
+            "price": group.price,
+            "original_price": group.original_price,
+            "image": group.image,
+            "max_participants": group.max_participants,
+            "participants": participant_count,
+            "end_date": group.end_date.isoformat() if group.end_date else None,
+            "admin_name": group.admin_name,
+            "shipping_info": group.shipping_info,
+            "estimated_delivery": group.estimated_delivery,
+            "features": group.features or [],
+            "requirements": group.requirements or [],
+            "is_active": group.is_active,
+            "created": group.created.isoformat() if group.created else None,
+            "product": {
+                "name": group.product_name or group.name,
+                "description": group.product_description or group.description,
+                "manufacturer": group.manufacturer,
+                "totalStock": group.total_stock,
+                "regularPrice": group.original_price
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error getting admin group {group_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get group details")
+
+@router.put("/groups/{group_id}")
 async def update_admin_group(
     group_id: int,
     group_data: UpdateGroupRequest,
@@ -1321,12 +1771,28 @@ async def update_admin_group(
             group.name = group_data.name
         if group_data.description is not None:
             group.description = group_data.description
+        if group_data.long_description is not None:
+            group.long_description = group_data.long_description
         if group_data.category is not None:
             group.category = group_data.category
-        if group_data.product_name is not None:
-            group.name = group_data.product_name  # Update group name with product name
-        if group_data.regular_price is not None:
-            group.original_price = group_data.regular_price
+        if group_data.price is not None:
+            group.price = group_data.price
+        if group_data.original_price is not None:
+            group.original_price = group_data.original_price
+        if group_data.image is not None:
+            group.image = group_data.image
+        if group_data.max_participants is not None:
+            group.max_participants = group_data.max_participants
+        if group_data.end_date is not None:
+            try:
+                end_date_obj = datetime.fromisoformat(group_data.end_date.replace('Z', '+00:00'))
+                group.end_date = end_date_obj
+            except (ValueError, AttributeError):
+                raise HTTPException(status_code=400, detail="Invalid end_date format")
+        if group_data.shipping_info is not None:
+            group.shipping_info = group_data.shipping_info
+        if group_data.estimated_delivery is not None:
+            group.estimated_delivery = group_data.estimated_delivery
 
         db.commit()
         db.refresh(group)
@@ -1378,46 +1844,10 @@ async def delete_admin_group(
         if participant_count > 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Cannot delete group with {participant_count} participants. Remove all participants first."
+                detail=f"Cannot delete group with {participant_count} participants. Please cancel the group instead."
             )
 
-        # Delete associated image from Cloudinary if it exists
-        if group.image:
-            try:
-                # Extract public_id from Cloudinary URL
-                # URL format: https://res.cloudinary.com/{cloud_name}/image/upload/{version}/{public_id}.{format}
-                if 'cloudinary.com' in group.image and '/upload/' in group.image:
-                    # Find the part after '/upload/'
-                    upload_part = group.image.split('/upload/')[1]
-                    # Remove version number (starts with 'v' followed by digits)
-                    if upload_part.startswith('v') and len(upload_part) > 1:
-                        # Find the next '/' after the version
-                        version_end = upload_part.find('/')
-                        if version_end != -1:
-                            public_id_with_ext = upload_part[version_end + 1:]
-                        else:
-                            public_id_with_ext = upload_part[1:]  # Remove 'v' if no path
-                    else:
-                        public_id_with_ext = upload_part
-                    
-                    # Remove file extension to get public_id
-                    if '.' in public_id_with_ext:
-                        public_id = '.'.join(public_id_with_ext.split('.')[:-1])
-                    else:
-                        public_id = public_id_with_ext
-                    
-                    if public_id:
-                        # Delete from Cloudinary
-                        result = cloudinary.uploader.destroy(public_id)
-                        print(f"Successfully deleted image from Cloudinary: {public_id}, result: {result}")
-                    else:
-                        print(f"Warning: Could not extract public_id from URL: {group.image}")
-            except Exception as cloudinary_error:
-                print(f"Warning: Failed to delete image from Cloudinary: {cloudinary_error}")
-                print(f"Image URL was: {group.image}")
-                # Don't fail the entire operation if image deletion fails
-
-        # Delete the group
+        # Delete the group (AdminGroupJoin records should be cascade deleted if properly configured)
         db.delete(group)
         db.commit()
 
@@ -1433,6 +1863,46 @@ async def delete_admin_group(
         db.rollback()
         raise HTTPException(status_code=500, detail="Failed to delete group")
 
+@router.put("/groups/{group_id}/image")
+async def update_group_buy_image(
+    group_id: int,
+    image_url: str,
+    admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Update the image for a user-created group-buy (GroupBuy)"""
+    try:
+        # Find the GroupBuy
+        group_buy = db.query(GroupBuy).filter(GroupBuy.id == group_id).first()
+        if not group_buy:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Group-buy not found"
+            )
+
+        # Update the product's image_url
+        if group_buy.product:
+            group_buy.product.image_url = image_url
+            db.commit()
+
+            return {
+                "message": "Group image updated successfully",
+                "group_id": group_id,
+                "image_url": image_url
+            }
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Product not found for this group"
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error updating group buy image {group_id}: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to update group image")
+
 @router.get("/qr/scan-history")
 async def get_qr_scan_history(
     limit: int = 50,
@@ -1444,10 +1914,10 @@ async def get_qr_scan_history(
     try:
         # Get scan history with related data
         scans = db.query(QRScanHistory).options(
-            db.joinedload(QRScanHistory.scanned_by_user),
-            db.joinedload(QRScanHistory.scanned_user),
-            db.joinedload(QRScanHistory.product),
-            db.joinedload(QRScanHistory.group_buy)
+            joinedload(QRScanHistory.scanned_by_user),
+            joinedload(QRScanHistory.scanned_user),
+            joinedload(QRScanHistory.product),
+            joinedload(QRScanHistory.group_buy)
         ).order_by(QRScanHistory.scanned_at.desc()).limit(limit).offset(offset).all()
 
         result = []
@@ -1487,3 +1957,122 @@ async def get_qr_scan_history(
     except Exception as e:
         print(f"Error getting scan history: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch scan history")
+
+
+@router.get("/qr/status/{qr_code_id}", response_model=QRCodeStatusResponse)
+async def get_qr_code_status(
+    qr_code_id: int,
+    admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Get the status of a QR code (whether it has been used)"""
+    try:
+        # Find the QR code record
+        qr_record = db.query(QRCodePickup).filter(QRCodePickup.id == qr_code_id).first()
+        if not qr_record:
+            raise HTTPException(status_code=404, detail="QR code not found")
+        
+        return QRCodeStatusResponse(
+            qr_code_id=qr_record.id,
+            is_used=qr_record.is_used,
+            used_at=qr_record.used_at.isoformat() if qr_record.used_at else None,
+            used_by_staff=qr_record.used_by_staff,
+            pickup_location=qr_record.pickup_location,
+            expires_at=qr_record.expires_at.isoformat()
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error getting QR code status: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get QR code status")
+
+
+@router.post("/qr/mark-used/{qr_code_id}", response_model=MarkQRUsedResponse)
+async def mark_qr_code_as_used(
+    qr_code_id: int,
+    admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Mark a QR code as used (when admin scans it)"""
+    try:
+        # Find the QR code record
+        qr_record = db.query(QRCodePickup).filter(QRCodePickup.id == qr_code_id).first()
+        if not qr_record:
+            raise HTTPException(status_code=404, detail="QR code not found")
+        
+        # Check if already used
+        if qr_record.is_used:
+            return MarkQRUsedResponse(
+                success=True,
+                message="QR code was already marked as used",
+                qr_code_id=qr_record.id,
+                qr_code_data=qr_record.qr_code_data
+            )
+        
+        # Mark as used
+        qr_record.is_used = True
+        qr_record.used_at = datetime.utcnow()
+        qr_record.used_by_staff = getattr(admin, "email", "Unknown Admin")
+        db.commit()
+        
+        # If this QR code is for an admin group, decrement the stock
+        if qr_record.group_buy_id:
+            # Check if this is actually an AdminGroup (since QR codes use group_buy_id for both)
+            admin_group = db.query(AdminGroup).filter(AdminGroup.id == qr_record.group_buy_id).first()
+            if admin_group and admin_group.total_stock is not None:
+                # Find the user's join record to get the quantity
+                user_join = db.query(AdminGroupJoin).filter(
+                    AdminGroupJoin.admin_group_id == admin_group.id,
+                    AdminGroupJoin.user_id == qr_record.user_id
+                ).first()
+                
+                if user_join:
+                    # Decrement stock by the quantity purchased
+                    quantity_purchased = user_join.quantity
+                    if admin_group.total_stock >= quantity_purchased:
+                        admin_group.total_stock -= quantity_purchased
+                        db.commit()
+                        
+                        # Log the stock decrement
+                        print(f"Stock decremented for AdminGroup {admin_group.id}: {quantity_purchased} units. Remaining stock: {admin_group.total_stock}")
+                        
+                        # If stock is now zero or negative, mark group as inactive
+                        if admin_group.total_stock <= 0:
+                            admin_group.is_active = False
+                            db.commit()
+                            print(f"AdminGroup {admin_group.id} marked as inactive due to zero stock")
+                    else:
+                        print(f"Warning: Attempted to decrement stock below zero for AdminGroup {admin_group.id}. Current stock: {admin_group.total_stock}, Requested: {quantity_purchased}")
+        
+        # Broadcast real-time update to the trader who owns this QR code
+        try:
+            await manager.broadcast_to_user(
+                qr_record.user_id,
+                {
+                    "type": "qr_status_update",
+                    "group_id": qr_record.group_buy_id,
+                    "qr_code_id": qr_record.id,
+                    "is_used": True,
+                    "status_text": "Yes",
+                    "used_at": qr_record.used_at.isoformat() + 'Z' if qr_record.used_at else None,
+                    "message": "Your QR code has been scanned and marked as used"
+                }
+            )
+        except Exception as broadcast_error:
+            # Log but don't fail the request if broadcast fails
+            print(f"Failed to broadcast QR status update: {broadcast_error}")
+        
+        return MarkQRUsedResponse(
+            success=True,
+            message="QR code marked as used successfully",
+            qr_code_id=qr_record.id,
+            qr_code_data=qr_record.qr_code_data
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        print(f"Error marking QR code as used: {e}")
+        raise HTTPException(status_code=500, detail="Failed to mark QR code as used")

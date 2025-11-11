@@ -1,17 +1,40 @@
 import type { ReactNode } from 'react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Search, Bell, Menu, X, LogOut } from 'lucide-react';
+import { 
+  Search, Bell, Menu, X, LogOut, Home, Users, Shield, 
+  Settings, ChevronRight, Activity, TrendingUp, Sparkles,
+  Moon, Sun
+} from 'lucide-react';
 
 interface LayoutProps {
   children: ReactNode;
   title?: string;
+  subtitle?: string;
 }
 
-const Layout = ({ children, title = 'Dashboard' }: LayoutProps) => {
+const Layout = ({ children, title = 'Dashboard', subtitle }: LayoutProps) => {
   const navigate = useNavigate();
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [darkMode, setDarkMode] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+  const [notifications] = useState(3);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setScrolled(window.scrollY > 10);
+    };
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const navItems = [
+    { path: '/admin', label: 'Dashboard', icon: Home },
+    { path: '/users', label: 'Users', icon: Users },
+    { path: '/moderation', label: 'Moderation', icon: Shield },
+    { path: '/settings', label: 'Settings', icon: Settings },
+  ];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex flex-col" role="application">

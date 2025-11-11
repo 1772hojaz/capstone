@@ -152,8 +152,17 @@ class ApiService {
     });
   }
 
+  async updateGroupQuantity(groupId, updateData) {
+    return this.request(`/api/groups/${groupId}/update-quantity`, {
+      method: 'POST',
+      body: JSON.stringify(updateData),
+    });
+  }
+
   async getGroupQRCode(groupId) {
-    return this.request(`/api/groups/${groupId}/qr-code`);
+    // Add timestamp to prevent caching of QR status
+    const timestamp = Date.now();
+    return this.request(`/api/groups/${groupId}/qr-code?t=${timestamp}`);
   }
 
   async getAllGroups(params = {}) {
@@ -258,6 +267,10 @@ class ApiService {
     return this.request('/api/admin/groups/ready-for-payment');
   }
 
+  async getCompletedGroups() {
+    return this.request('/api/admin/groups/completed');
+  }
+
   async processGroupPayment(groupId) {
     return this.request(`/api/admin/groups/${groupId}/process-payment`, {
       method: 'POST',
@@ -304,6 +317,38 @@ class ApiService {
     }
 
     const url = `${this.baseURL}/api/admin/upload-image`;
+    const response = await fetch(url, config);
+
+    if (response.status === 401) {
+      localStorage.removeItem('token');
+      window.location.href = '/login';
+      throw new Error('Unauthorized - redirecting to login');
+    }
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || `API Error: ${response.status}`);
+    }
+
+    return response.json();
+  }
+
+  async uploadSupplierImage(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const token = this.getAuthToken();
+    const config = {
+      method: 'POST',
+      headers: {},
+      body: formData,
+    };
+
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+
+    const url = `${this.baseURL}/api/supplier/upload-image`;
     const response = await fetch(url, config);
 
     if (response.status === 401) {
@@ -432,6 +477,17 @@ class ApiService {
     });
   }
 
+  // Admin-only function - should not be called by traders
+  async getQRCodeStatusAdmin(qrCodeId) {
+    return this.request(`/api/admin/qr/status/${qrCodeId}`);
+  }
+
+  async markQRCodeAsUsed(qrCodeId) {
+    return this.request(`/api/admin/qr/mark-used/${qrCodeId}`, {
+      method: 'POST',
+    });
+  }
+
   // Supplier Invoices
   async getSupplierInvoices(status = null) {
     const url = status ? `/api/supplier/invoices?status=${status}` : '/api/supplier/invoices';
@@ -486,6 +542,63 @@ class ApiService {
     });
   }
 
+  // Supplier Group Moderation Methods
+  async getSupplierActiveGroups() {
+    return this.request("/api/supplier/groups/active");
+  }
+
+  async getSupplierReadyForPaymentGroups() {
+    return this.request("/api/supplier/groups/ready-for-payment");
+  }
+
+  async getSupplierGroupModerationStats() {
+    return this.request("/api/supplier/groups/moderation-stats");
+  }
+
+  async getSupplierGroupDetails(groupId) {
+    return this.request(`/api/supplier/groups/${groupId}`);
+  }
+
+  async processSupplierGroupPayment(groupId) {
+    return this.request(`/api/supplier/groups/${groupId}/process-payment`, {
+      method: 'POST'
+    });
+  }
+
+  async generateSupplierGroupQR(groupId) {
+    return this.request(`/api/supplier/groups/${groupId}/qr/generate`, {
+      method: 'POST'
+    });
+  }
+
+  // Supplier Group Creation
+  async createSupplierGroup(groupData) {
+    return this.request('/api/supplier/groups/create', {
+      method: 'POST',
+      body: JSON.stringify(groupData),
+    });
+  }
+
+  // Payment methods
+  async initializePayment(paymentData) {
+    return this.request('/api/payment/initialize', {
+      method: 'POST',
+      body: JSON.stringify(paymentData),
+    });
+  }
+
+  async verifyPayment(transactionId) {
+    return this.request('/api/payment/verify', {
+      method: 'POST',
+      body: JSON.stringify({ transaction_id: transactionId }),
+    });
+  }
+
+  async getTransactionFee(amount, currency = 'USD') {
+    const params = new URLSearchParams({ amount: amount.toString(), currency });
+    return this.request(`/api/payment/fee?${params}`);
+  }
+
   // Utility methods
   isAuthenticated() {
     return !!this.getAuthToken();
@@ -498,6 +611,73 @@ class ApiService {
       return response.ok;
     } catch {
       return false;
+    }
+  }
+
+  // WebSocket connection for real-time updates
+  connectWebSocket(token) {
+    if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
+      return; // Already connected
+    }
+
+    // Connect to backend WebSocket endpoint (port 8000)
+    const backendUrl = this.baseURL.replace('http://', 'ws://').replace('https://', 'wss://');
+    const wsUrl = `${backendUrl}/ws/qr-updates?token=${token}`;
+    console.log('🔗 Connecting to WebSocket:', wsUrl);
+    this.websocket = new WebSocket(wsUrl);
+
+    this.websocket.onopen = () => {
+      console.log('🔗 WebSocket connected for real-time QR updates');
+      this.websocketConnected = true;
+    };
+
+    this.websocket.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        console.log('📨 WebSocket message received:', data);
+        console.log('🔍 Message type:', data.type);
+        console.log('🎯 Full message data:', JSON.stringify(data, null, 2));
+
+        // Handle QR status updates
+        if (data.type === 'qr_status_update') {
+          console.log('🎯 QR status update received:', data);
+          console.log('🔄 Dispatching qrStatusUpdate event with data:', data);
+          // Dispatch custom event that components can listen to
+          window.dispatchEvent(new CustomEvent('qrStatusUpdate', {
+            detail: data
+          }));
+          console.log('✅ qrStatusUpdate event dispatched');
+        } else {
+          console.log('⚠️ Unknown message type:', data.type);
+        }
+      } catch (error) {
+        console.error('❌ Error parsing WebSocket message:', error);
+        console.error('❌ Raw message:', event.data);
+      }
+    };
+
+    this.websocket.onclose = () => {
+      console.log('🔌 WebSocket disconnected');
+      this.websocketConnected = false;
+      // Auto-reconnect after 5 seconds
+      setTimeout(() => {
+        if (this.websocketConnected === false) {
+          console.log('🔄 Attempting to reconnect WebSocket...');
+          this.connectWebSocket(token);
+        }
+      }, 5000);
+    };
+
+    this.websocket.onerror = (error) => {
+      console.error('❌ WebSocket error:', error);
+    };
+  }
+
+  disconnectWebSocket() {
+    if (this.websocket) {
+      this.websocket.close();
+      this.websocket = null;
+      this.websocketConnected = false;
     }
   }
 }

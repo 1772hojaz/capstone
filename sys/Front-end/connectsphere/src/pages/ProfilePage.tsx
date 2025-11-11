@@ -22,11 +22,25 @@ export default function ProfilePage() {
     location_zone: '',
     bio: '',
     joinDate: '',
+    // Trader fields
     preferred_categories: [],
     budget_range: 'medium',
     experience_level: 'beginner',
     preferred_group_sizes: [],
     participation_frequency: 'occasional',
+    // Supplier fields
+    company_name: '',
+    business_address: '',
+    tax_id: '',
+    phone_number: '',
+    business_type: 'retailer',
+    business_description: '',
+    website_url: '',
+    bank_account_name: '',
+    bank_account_number: '',
+    bank_name: '',
+    payment_terms: 'net_30',
+    is_supplier: false,
     // Additional preferences
     show_recommendations: true,
     auto_join_groups: true,
@@ -93,23 +107,40 @@ export default function ProfilePage() {
       setError(null);
 
       // Prepare data for backend (only send fields that can be updated)
-      const updateData = {
+      const updateData: any = {
         full_name: profileData.full_name,
         location_zone: profileData.location_zone,
-        preferred_categories: profileData.preferred_categories,
-        budget_range: profileData.budget_range,
-        experience_level: profileData.experience_level,
-        preferred_group_sizes: profileData.preferred_group_sizes,
-        participation_frequency: profileData.participation_frequency,
-        show_recommendations: profileData.show_recommendations,
-        auto_join_groups: profileData.auto_join_groups,
-        price_alerts: profileData.price_alerts,
         email_notifications: profileData.email_notifications,
         push_notifications: profileData.push_notifications,
         sms_notifications: profileData.sms_notifications,
         weekly_summary: profileData.weekly_summary,
         price_alerts_enabled: profileData.price_alerts_enabled
       };
+
+      // Add supplier-specific fields if user is a supplier
+      if (profileData.is_supplier) {
+        updateData.company_name = profileData.company_name;
+        updateData.business_address = profileData.business_address;
+        updateData.tax_id = profileData.tax_id;
+        updateData.phone_number = profileData.phone_number;
+        updateData.business_type = profileData.business_type;
+        updateData.business_description = profileData.business_description;
+        updateData.website_url = profileData.website_url;
+        updateData.bank_account_name = profileData.bank_account_name;
+        updateData.bank_account_number = profileData.bank_account_number;
+        updateData.bank_name = profileData.bank_name;
+        updateData.payment_terms = profileData.payment_terms;
+      } else {
+        // Add trader-specific fields
+        updateData.preferred_categories = profileData.preferred_categories;
+        updateData.budget_range = profileData.budget_range;
+        updateData.experience_level = profileData.experience_level;
+        updateData.preferred_group_sizes = profileData.preferred_group_sizes;
+        updateData.participation_frequency = profileData.participation_frequency;
+        updateData.show_recommendations = profileData.show_recommendations;
+        updateData.auto_join_groups = profileData.auto_join_groups;
+        updateData.price_alerts = profileData.price_alerts;
+      }
 
       await apiService.updateProfile(updateData);
       setIsEditing(false);
@@ -175,27 +206,39 @@ export default function ProfilePage() {
       const userStats = await apiService.getPastGroupsSummary();
       const userGroups = await apiService.getMyGroups();
 
-      // Update profile data
-      setProfileData({
-        ...userProfile,
-        joinDate: 'January 2024', // This would come from backend if available
-        bio: `Experienced ${userProfile.experience_level} trader specializing in ${userProfile.preferred_categories.join(', ')}.`, // Generate bio from profile data
-        // Initialize additional preferences with defaults if not set
-        show_recommendations: userProfile.show_recommendations !== undefined ? userProfile.show_recommendations : true,
-        auto_join_groups: userProfile.auto_join_groups !== undefined ? userProfile.auto_join_groups : true,
-        price_alerts: userProfile.price_alerts !== undefined ? userProfile.price_alerts : false
-      });
+        // Update profile data
+        setProfileData({
+          ...userProfile,
+          joinDate: 'January 2024', // This would come from backend if available
+          bio: userProfile.is_supplier 
+            ? `${userProfile.company_name || 'Business'} - ${userProfile.business_type || 'Supplier'} specializing in quality products.`
+            : `Experienced ${userProfile.experience_level} trader specializing in ${userProfile.preferred_categories.join(', ')}.`,
+          // Initialize additional preferences with defaults if not set
+          show_recommendations: userProfile.show_recommendations !== undefined ? userProfile.show_recommendations : true,
+          auto_join_groups: userProfile.auto_join_groups !== undefined ? userProfile.auto_join_groups : true,
+          price_alerts: userProfile.price_alerts !== undefined ? userProfile.price_alerts : false
+        });
 
-      // Update stats
-      const activeGroups = userGroups.filter((group: any) => group.status === 'active').length;
-      setStats([
-        { label: 'Groups Joined', value: userStats.completed_groups?.toString() || '0' },
-        { label: 'Active Deals', value: activeGroups.toString() },
-        { label: 'Total Savings', value: `$${userStats.all_time_savings?.toString() || '0'}` },
-        { label: 'Success Rate', value: `${userStats.success_rate?.toString() || '0'}%` },
-      ]);
-
-    } catch (err) {
+        // Update stats based on user type
+        if (userProfile.is_supplier) {
+          // Supplier stats
+          const supplierStats = await apiService.getSupplierStats?.() || {};
+          setStats([
+            { label: 'Orders Fulfilled', value: userProfile.total_orders_fulfilled?.toString() || '0' },
+            { label: 'Active Groups', value: supplierStats.active_groups?.toString() || '0' },
+            { label: 'Total Revenue', value: `$${supplierStats.total_revenue?.toString() || '0'}` },
+            { label: 'Supplier Rating', value: `${userProfile.supplier_rating?.toString() || '0'}/5` },
+          ]);
+        } else {
+          // Trader stats
+          const activeGroups = userGroups.filter((group: any) => group.status === 'active').length;
+          setStats([
+            { label: 'Groups Joined', value: userStats.completed_groups?.toString() || '0' },
+            { label: 'Active Deals', value: activeGroups.toString() },
+            { label: 'Total Savings', value: `$${userStats.all_time_savings?.toString() || '0'}` },
+            { label: 'Success Rate', value: `${userStats.success_rate?.toString() || '0'}%` },
+          ]);
+        }    } catch (err) {
       console.error('Failed to load user data:', err);
       setError(err instanceof Error ? err.message : 'Failed to load profile data');
     } finally {
@@ -424,6 +467,18 @@ export default function ProfilePage() {
                 >
                   Security
                 </button>
+                {profileData.is_supplier && (
+                  <button
+                    onClick={() => setActiveTab('banking')}
+                    className={`py-4 px-4 text-sm font-medium border-b-2 transition ${
+                      activeTab === 'banking'
+                        ? 'border-blue-600 text-blue-600'
+                        : 'border-transparent text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    Banking
+                  </button>
+                )}
               </nav>
             </div>
 
@@ -438,22 +493,77 @@ export default function ProfilePage() {
                     </p>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Display Name</label>
-                      <input
-                        type="text"
-                        defaultValue="Sarah P."
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Username</label>
-                      <input
-                        type="text"
-                        defaultValue="@sarahp"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      />
-                    </div>
+                    {profileData.is_supplier ? (
+                      <>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Company Name</label>
+                          <input
+                            type="text"
+                            value={profileData.company_name}
+                            onChange={(e) => setProfileData({ ...profileData, company_name: e.target.value })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Business Type</label>
+                          <select
+                            value={profileData.business_type}
+                            onChange={(e) => setProfileData({ ...profileData, business_type: e.target.value })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          >
+                            <option value="retailer">Retailer</option>
+                            <option value="wholesaler">Wholesaler</option>
+                            <option value="manufacturer">Manufacturer</option>
+                            <option value="distributor">Distributor</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number</label>
+                          <input
+                            type="tel"
+                            value={profileData.phone_number}
+                            onChange={(e) => setProfileData({ ...profileData, phone_number: e.target.value })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Website</label>
+                          <input
+                            type="url"
+                            value={profileData.website_url}
+                            onChange={(e) => setProfileData({ ...profileData, website_url: e.target.value })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Experience Level</label>
+                          <select
+                            value={profileData.experience_level}
+                            onChange={(e) => setProfileData({ ...profileData, experience_level: e.target.value })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          >
+                            <option value="beginner">Beginner</option>
+                            <option value="intermediate">Intermediate</option>
+                            <option value="advanced">Advanced</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Budget Range</label>
+                          <select
+                            value={profileData.budget_range}
+                            onChange={(e) => setProfileData({ ...profileData, budget_range: e.target.value })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          >
+                            <option value="low">Low ($0-500)</option>
+                            <option value="medium">Medium ($500-2000)</option>
+                            <option value="high">High ($2000+)</option>
+                          </select>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
               )}
@@ -461,24 +571,96 @@ export default function ProfilePage() {
               {activeTab === 'preferences' && (
                 <div className="space-y-6">
                   <div>
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Shopping Preferences</h3>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                      {profileData.is_supplier ? 'Business Preferences' : 'Shopping Preferences'}
+                    </h3>
                     <p className="text-sm text-gray-600 mb-4">
-                      Customize your group buying experience and product recommendations.
+                      {profileData.is_supplier 
+                        ? 'Customize your business settings and preferences.'
+                        : 'Customize your group buying experience and product recommendations.'
+                      }
                     </p>
                   </div>
                   <div className="space-y-4">
-                    <label className="flex items-center gap-3">
-                      <input type="checkbox" defaultChecked className="w-4 h-4 text-blue-600 rounded" />
-                      <span className="text-sm text-gray-700">Show ML-powered recommendations</span>
-                    </label>
-                    <label className="flex items-center gap-3">
-                      <input type="checkbox" defaultChecked className="w-4 h-4 text-blue-600 rounded" />
-                      <span className="text-sm text-gray-700">Auto-join groups based on preferences</span>
-                    </label>
-                    <label className="flex items-center gap-3">
-                      <input type="checkbox" className="w-4 h-4 text-blue-600 rounded" />
-                      <span className="text-sm text-gray-700">Enable price alerts</span>
-                    </label>
+                    {profileData.is_supplier ? (
+                      <>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Business Description</label>
+                          <textarea
+                            value={profileData.business_description}
+                            onChange={(e) => setProfileData({ ...profileData, business_description: e.target.value })}
+                            rows={3}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            placeholder="Describe your business..."
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Business Address</label>
+                          <textarea
+                            value={profileData.business_address}
+                            onChange={(e) => setProfileData({ ...profileData, business_address: e.target.value })}
+                            rows={2}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            placeholder="Enter your business address..."
+                          />
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Tax ID</label>
+                            <input
+                              type="text"
+                              value={profileData.tax_id}
+                              onChange={(e) => setProfileData({ ...profileData, tax_id: e.target.value })}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              placeholder="Tax identification number"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Payment Terms</label>
+                            <select
+                              value={profileData.payment_terms}
+                              onChange={(e) => setProfileData({ ...profileData, payment_terms: e.target.value })}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            >
+                              <option value="net_30">Net 30 days</option>
+                              <option value="net_15">Net 15 days</option>
+                              <option value="cod">Cash on Delivery</option>
+                              <option value="prepaid">Prepaid</option>
+                            </select>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <label className="flex items-center gap-3">
+                          <input 
+                            type="checkbox" 
+                            checked={profileData.show_recommendations}
+                            onChange={(e) => setProfileData({ ...profileData, show_recommendations: e.target.checked })}
+                            className="w-4 h-4 text-blue-600 rounded" 
+                          />
+                          <span className="text-sm text-gray-700">Show ML-powered recommendations</span>
+                        </label>
+                        <label className="flex items-center gap-3">
+                          <input 
+                            type="checkbox" 
+                            checked={profileData.auto_join_groups}
+                            onChange={(e) => setProfileData({ ...profileData, auto_join_groups: e.target.checked })}
+                            className="w-4 h-4 text-blue-600 rounded" 
+                          />
+                          <span className="text-sm text-gray-700">Auto-join groups based on preferences</span>
+                        </label>
+                        <label className="flex items-center gap-3">
+                          <input 
+                            type="checkbox" 
+                            checked={profileData.price_alerts}
+                            onChange={(e) => setProfileData({ ...profileData, price_alerts: e.target.checked })}
+                            className="w-4 h-4 text-blue-600 rounded" 
+                          />
+                          <span className="text-sm text-gray-700">Enable price alerts</span>
+                        </label>
+                      </>
+                    )}
                   </div>
                 </div>
               )}
@@ -622,6 +804,64 @@ export default function ProfilePage() {
                       </button>
                       <p className="text-xs text-gray-500 mt-1">See recent login activity on your account</p>
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {profileData.is_supplier && activeTab === 'banking' && (
+                <div className="space-y-6">
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Banking Information</h3>
+                    <p className="text-sm text-gray-600 mb-4">
+                      Manage your banking details for payments and transactions.
+                    </p>
+                  </div>
+                  
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <h4 className="text-md font-semibold text-gray-900 mb-3">Bank Account Details</h4>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Account Holder Name</label>
+                        <input
+                          type="text"
+                          value={profileData.bank_account_name}
+                          onChange={(e) => setProfileData({ ...profileData, bank_account_name: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          placeholder="Enter account holder name"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Account Number</label>
+                        <input
+                          type="text"
+                          value={profileData.bank_account_number}
+                          onChange={(e) => setProfileData({ ...profileData, bank_account_number: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          placeholder="Enter account number"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Bank Name</label>
+                        <input
+                          type="text"
+                          value={profileData.bank_name}
+                          onChange={(e) => setProfileData({ ...profileData, bank_name: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          placeholder="Enter bank name"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Save Button for Banking */}
+                  <div className="pt-4 border-t border-gray-200">
+                    <button
+                      onClick={handleSave}
+                      disabled={saving}
+                      className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {saving ? 'Saving...' : 'Save Banking Information'}
+                    </button>
                   </div>
                 </div>
               )}

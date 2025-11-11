@@ -28,6 +28,7 @@ share/python-wheels/
 *.egg
 MANIFEST
 .env
+flutterwave.txt
 # PyInstaller
 #  Usually these files are written by a python script from a template
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
@@ -207,7 +208,7 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
-
+futterwave.txt
 # Local cleanup directory (created by automated cleanup actions)
 trash/
 
