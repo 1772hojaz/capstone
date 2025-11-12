@@ -16,15 +16,22 @@ POOL_RECYCLE = int(os.getenv("DB_POOL_RECYCLE", "1800"))  # 30 minutes
 
 is_sqlite = "sqlite" in DATABASE_URL
 
-engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False} if is_sqlite else {},
-    pool_pre_ping=True,
-    pool_size=None if is_sqlite else POOL_SIZE,
-    max_overflow=None if is_sqlite else MAX_OVERFLOW,
-    pool_timeout=None if is_sqlite else POOL_TIMEOUT,
-    pool_recycle=None if is_sqlite else POOL_RECYCLE,
-)
+# SQLite doesn't support connection pooling parameters, so we exclude them
+if is_sqlite:
+    engine = create_engine(
+        DATABASE_URL,
+        connect_args={"check_same_thread": False},
+        pool_pre_ping=True
+    )
+else:
+    engine = create_engine(
+        DATABASE_URL,
+        pool_pre_ping=True,
+        pool_size=POOL_SIZE,
+        max_overflow=MAX_OVERFLOW,
+        pool_timeout=POOL_TIMEOUT,
+        pool_recycle=POOL_RECYCLE
+    )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -40,15 +47,22 @@ READ_REPLICA_URL = os.getenv("READ_REPLICA_URL")
 read_engine = None
 ReadSessionLocal = None
 if READ_REPLICA_URL:
-    read_engine = create_engine(
-        READ_REPLICA_URL,
-        pool_pre_ping=True,
-        pool_size=None if "sqlite" in READ_REPLICA_URL else POOL_SIZE,
-        max_overflow=None if "sqlite" in READ_REPLICA_URL else MAX_OVERFLOW,
-        pool_timeout=None if "sqlite" in READ_REPLICA_URL else POOL_TIMEOUT,
-        pool_recycle=None if "sqlite" in READ_REPLICA_URL else POOL_RECYCLE,
-        connect_args={"check_same_thread": False} if "sqlite" in READ_REPLICA_URL else {},
-    )
+    is_replica_sqlite = "sqlite" in READ_REPLICA_URL
+    if is_replica_sqlite:
+        read_engine = create_engine(
+            READ_REPLICA_URL,
+            connect_args={"check_same_thread": False},
+            pool_pre_ping=True
+        )
+    else:
+        read_engine = create_engine(
+            READ_REPLICA_URL,
+            pool_pre_ping=True,
+            pool_size=POOL_SIZE,
+            max_overflow=MAX_OVERFLOW,
+            pool_timeout=POOL_TIMEOUT,
+            pool_recycle=POOL_RECYCLE
+        )
     ReadSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=read_engine)
 
 def get_read_db():
