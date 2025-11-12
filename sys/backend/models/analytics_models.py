@@ -7,7 +7,7 @@ python backend/migrate_db.py analytics
 ```
 """
 
-from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey, Text, Index, ARRAY
+from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey, Text, Index, ARRAY, func
 from sqlalchemy.dialects.postgresql import JSONB as PG_JSONB  # type: ignore
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID  # type: ignore
 from sqlalchemy.dialects.postgresql import ARRAY as PG_ARRAY  # type: ignore
@@ -63,7 +63,7 @@ class EventsRaw(Base):
     connection_type = Column(String(20))
     
     # Processing metadata
-    created_at = Column(DateTime(timezone=True), server_default='now()')
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     processed_at = Column(DateTime(timezone=True), nullable=True)
     
     # Relationships
@@ -162,8 +162,8 @@ class UserBehaviorFeatures(Base):
     propensity_to_buy_score = Column(Float, default=0.5)
     
     # Metadata
-    last_computed = Column(DateTime(timezone=True), server_default='now()')
-    created_at = Column(DateTime(timezone=True), server_default='now()')
+    last_computed = Column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     
     # Relationships
     user = relationship("User", backref="behavior_features")
@@ -228,8 +228,8 @@ class GroupPerformanceMetrics(Base):
     dominant_budget_range = Column(String(50))
     
     # Metadata
-    last_updated = Column(DateTime(timezone=True), server_default='now()', onupdate=datetime.utcnow)
-    created_at = Column(DateTime(timezone=True), server_default='now()')
+    last_updated = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     
     # Relationships
     admin_group = relationship("AdminGroup", backref="performance_metrics")
@@ -295,8 +295,8 @@ class UserGroupInteractionMatrix(Base):
     time_to_payment_seconds = Column(Float)  # From join
     
     # Metadata
-    created_at = Column(DateTime(timezone=True), server_default='now()')
-    updated_at = Column(DateTime(timezone=True), server_default='now()', onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Relationships
     user = relationship("User", backref="group_interactions")
@@ -337,7 +337,7 @@ class UserSimilarity(Base):
     common_categories = Column(ARRAYString)
     
     # Metadata
-    computed_at = Column(DateTime(timezone=True), server_default='now()')
+    computed_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     
     # Relationships
     user = relationship("User", foreign_keys=[user_id], backref="similar_users")
@@ -366,11 +366,11 @@ class FeatureStore(Base):
     
     # Versioning and expiration
     version = Column(Integer, default=1)
-    computed_at = Column(DateTime(timezone=True), server_default='now()')
+    computed_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     expires_at = Column(DateTime(timezone=True), index=True)
     
     # Metadata
-    created_at = Column(DateTime(timezone=True), server_default='now()')
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     
     # Indexes
     __table_args__ = (
@@ -422,7 +422,7 @@ class SessionMetrics(Base):
     country = Column(String(100))
     
     # Metadata
-    created_at = Column(DateTime(timezone=True), server_default='now()')
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     
     # Relationships
     user = relationship("User", backref="sessions")
@@ -457,7 +457,7 @@ class SearchQuery(Base):
     clicked_result_positions = Column(ARRAYString)  # Positions of clicked results (JSON array for SQLite)
     
     # Timing
-    searched_at = Column(DateTime(timezone=True), nullable=False, server_default='now()', index=True)
+    searched_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow, index=True)
     time_to_first_click_seconds = Column(Float)
     
     # Success metrics
