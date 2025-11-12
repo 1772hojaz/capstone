@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+
 import uvicorn
 import asyncio
 import logging
@@ -263,36 +263,36 @@ async def startup_event():
         from models.models import MLModel, Transaction, User, Product
         from ml.ml import train_clustering_model_with_progress, load_models
         
-        print("\n" + "="*60)
-        print("🚀 Hybrid Recommender System Initialization")
-        print("="*60)
+        logger.info("\n" + "="*60)
+        logger.info(">> Hybrid Recommender System Initialization")
+        logger.info("="*60)
         
         # Check if we have products
         product_count = db.query(Product).count()
-        print(f"\n📦 Products in database: {product_count}")
+        logger.info(f"\n[Products] Products in database: {product_count}")
         
         if product_count < 5:
-            print("⚠️  Not enough products! Please seed Mbare products first.")
-            print("   Run: python backend/update_mbare_prices.py")
+            logger.warning("  Not enough products! Please seed Mbare products first.")
+            logger.info("   Run: python backend/update_mbare_prices.py")
             return
         
         # Check if we have traders
         trader_count = db.query(User).filter(~User.is_admin).count()
         transaction_count = db.query(Transaction).count()
         
-        print(f"👥 Traders in database: {trader_count}")
-        print(f"💳 Transactions in database: {transaction_count}")
+        logger.info(f"[Traders] Traders in database: {trader_count}")
+        logger.info(f"[Transactions] Transactions in database: {transaction_count}")
         
         # Auto-seed if database is empty
         if trader_count < 10 or transaction_count < 20:
-            print("\n🌾 Database needs seeding for hybrid recommender...")
-            print("   Run: python backend/seed_mbare_data.py")
-            print("   This will create 100 realistic Mbare traders with 12 weeks of transaction history")
+            logger.info("\n[Seeding] Database needs seeding for hybrid recommender...")
+            logger.info("   Run: python backend/seed_mbare_data.py")
+            logger.info("   This will create 100 realistic Mbare traders with 12 weeks of transaction history")
         
         # Load hybrid recommender models
-        print("\n📦 Loading Hybrid Recommender Models...")
+        logger.info("\n[Loading] Loading Hybrid Recommender Models...")
         load_models()
-        print("✅ Models loaded successfully")
+        logger.info("[Success] Models loaded successfully")
         
         # Check if we have a trained hybrid model
         latest_model = db.query(MLModel).filter(
@@ -301,50 +301,50 @@ async def startup_event():
         
         # Auto-train if needed
         if not latest_model and transaction_count >= 10 and trader_count >= 4:
-            print("\n🤖 No trained hybrid model found. Auto-training with database data...")
+            logger.info("\n[Training] No trained hybrid model found. Auto-training with database data...")
             try:
                 # train_clustering_model_with_progress is an async coroutine; await it in the startup event
                 training_results = await train_clustering_model_with_progress(db)
-                print("✅ Hybrid models trained successfully on startup!")
-                print(f"   - Silhouette Score: {training_results['silhouette_score']:.3f}")
-                print(f"   - Clusters: {training_results['n_clusters']}")
-                print(f"   - NMF Rank: {training_results.get('nmf_rank', 'N/A')}")
-                print(f"   - TF-IDF Vocabulary: {training_results.get('tfidf_vocab_size', 'N/A')}")
+                logger.info("[Success] Hybrid models trained successfully on startup!")
+                logger.info(f"   - Silhouette Score: {training_results['silhouette_score']:.3f}")
+                logger.info(f"   - Clusters: {training_results['n_clusters']}")
+                logger.info(f"   - NMF Rank: {training_results.get('nmf_rank', 'N/A')}")
+                logger.info(f"   - TF-IDF Vocabulary: {training_results.get('tfidf_vocab_size', 'N/A')}")
 
                 # Reload models
                 load_models()
             except Exception as e:
-                print(f"⚠️  Warning: Auto-training failed: {e}")
-                print("   Models can be trained manually via: POST /api/ml/retrain")
+                logger.warning(f"  Warning: Auto-training failed: {e}")
+                logger.info("   Models can be trained manually via: POST /api/ml/retrain")
         elif latest_model:
             score = latest_model.metrics.get('silhouette_score', 0)
-            print("\n✅ Loaded existing hybrid model")
-            print(f"   - Trained at: {latest_model.trained_at}")
-            print(f"   - Silhouette Score: {score:.3f}")
-            print(f"   - Clusters: {latest_model.metrics.get('n_clusters', 'N/A')}")
-            print(f"   - NMF Rank: {latest_model.metrics.get('nmf_rank', 'N/A')}")
-            print(f"   - Model Type: {latest_model.model_type}")
+            logger.info("\n[Success] Loaded existing hybrid model")
+            logger.info(f"   - Trained at: {latest_model.trained_at}")
+            logger.info(f"   - Silhouette Score: {score:.3f}")
+            logger.info(f"   - Clusters: {latest_model.metrics.get('n_clusters', 'N/A')}")
+            logger.info(f"   - NMF Rank: {latest_model.metrics.get('nmf_rank', 'N/A')}")
+            logger.info(f"   - Model Type: {latest_model.model_type}")
         else:
-            print("\n⚠️  Not enough data for hybrid training yet")
-            print("   Need: ≥10 transactions, ≥4 traders, ≥5 products")
-            print(f"   Have: {transaction_count} transactions, {trader_count} traders, {product_count} products")
+            logger.warning("\n  Not enough data for hybrid training yet")
+            logger.info("   Need: >=10 transactions, >=4 traders, >=5 products")
+            logger.info(f"   Have: {transaction_count} transactions, {trader_count} traders, {product_count} products")
         
         # Start the daily retraining scheduler
-        print("\n🔄 Starting Hybrid Recommender Auto-Retraining Scheduler...")
-        print("   - Frequency: Every 24 hours")
-        print("   - Strategy: Keep only best performing models")
-        print("   - Minimum new data: 5 transactions")
-        print("   - Data source: Live database (no synthetic data)")
+        logger.info("\n[Scheduler] Starting Hybrid Recommender Auto-Retraining Scheduler...")
+        logger.info("   - Frequency: Every 24 hours")
+        logger.info("   - Strategy: Keep only best performing models")
+        logger.info("   - Minimum new data: 5 transactions")
+        logger.info("   - Data source: Live database (no synthetic data)")
         asyncio.create_task(start_scheduler())
-        print("✅ Scheduler started successfully")
+        logger.info("[Success] Scheduler started successfully")
 
         # Start analytics ETL scheduler
         asyncio.create_task(run_daily_analytics_scheduler())
-        print("✅ Analytics ETL scheduler started")
-        print("="*60 + "\n")
+        logger.info("[Success] Analytics ETL scheduler started")
+        logger.info("="*60 + "\n")
         
     except Exception as e:
-        print(f"⚠️  Startup ML check failed: {e}")
+        logger.error(f"  Startup ML check failed: {e}")
         import traceback
         traceback.print_exc()
     finally:
@@ -353,7 +353,7 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     """Stop the scheduler on shutdown"""
-    print("\n🛑 Stopping ML scheduler...")
+    logger.info("\n[Shutdown] Stopping ML scheduler...")
     await scheduler.stop()
 
 # WebSocket endpoint for ML training progress

@@ -134,5 +134,3 @@ async def run_daily_analytics_scheduler(interval_hours: int = 24):
         except Exception as e:
             logger.exception(f"Analytics ETL cycle failed: {e}")
         await asyncio.sleep(interval_hours * 3600)
-*** End Patch*** }>>()[0m assistant to=functions.apply_patchurados պաշտ! ***!
-

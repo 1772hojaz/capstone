@@ -64,5 +64,4 @@ def get_session(token: str) -> Optional[dict]:
 def revoke_session(token: str) -> None:
     r = get_redis()
     r.delete(SESSION_PREFIX + token)
-*** End Patch```} ***!
 

@@ -57,6 +57,4 @@ try:
 except Exception:
     schema = None
     app = None
-*** End Patch
-```} ***!
 

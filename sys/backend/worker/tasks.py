@@ -10,5 +10,4 @@ def analytics_run_daily_jobs() -> str:
     import asyncio
     asyncio.run(run_daily_analytics_jobs_once())
     return "ok"
-*** End Patch
 

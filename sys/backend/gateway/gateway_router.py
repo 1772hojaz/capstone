@@ -38,5 +38,4 @@ async def proxy_analytics(request: Request, path: str):
     if not ANALYTICS_SERVICE_URL:
         raise HTTPException(status_code=501, detail="Analytics gateway not configured")
     return await _proxy(request, ANALYTICS_SERVICE_URL, path)
-*** End Patch```  ***!
 

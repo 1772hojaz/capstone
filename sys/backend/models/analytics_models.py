@@ -7,7 +7,7 @@ python backend/migrate_db.py analytics
 ```
 """
 
-from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey, Text, Index
+from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey, Text, Index, ARRAY
 from sqlalchemy.dialects.postgresql import JSONB as PG_JSONB  # type: ignore
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID  # type: ignore
 from sqlalchemy.dialects.postgresql import ARRAY as PG_ARRAY  # type: ignore
@@ -21,7 +21,8 @@ import os
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./groupbuy.db").lower()
 IS_POSTGRES = DATABASE_URL.startswith("postgresql")
 
-JSONType = PG_JSONB if IS_POSTGRES else dict  # SQLAlchemy will map Python dict to JSON for SQLite/others
+from sqlalchemy import JSON
+JSONType = PG_JSONB if IS_POSTGRES else JSON  # Use SQLAlchemy's JSON type for SQLite
 UUIDType = PG_UUID(as_uuid=True) if IS_POSTGRES else String(36)
 ARRAYString = PG_ARRAY(String) if IS_POSTGRES else Text  # fallback to Text-encoded JSON array
 
