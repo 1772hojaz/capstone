@@ -120,7 +120,7 @@ def _parse_csv_env(name: str, default: str) -> list[str]:
 
 ALLOWED_ORIGINS = _parse_csv_env(
     "CORS_ALLOW_ORIGINS",
-    "http://localhost:5173,http://localhost:3000,http://localhost:3001"
+    "http://localhost:5173,http://localhost:3000,http://localhost:3001, https://connectsphere-p5t9.onrender.com"
 )
 ALLOW_METHODS = _parse_csv_env("CORS_ALLOW_METHODS", "*")
 ALLOW_HEADERS = _parse_csv_env("CORS_ALLOW_HEADERS", "*")
@@ -160,7 +160,9 @@ async def security_logging_middleware(request: Request, call_next):
 
     # Sanitize JSON body (only if small enough to buffer)
     body_bytes = b""
-    content_type = request.headers.get("content-type", "")
+    contError uploading image: Must supply api_key
+2025-11-12 17:36:41,325 INFO [uvicorn.access] 127.0.0.1:49854 - "POST /api/supplier/upload-image HTTP/1.1" 500
+ent_type = request.headers.get("content-type", "")
     if "application/json" in content_type:
         try:
             body_bytes = await request.body()
