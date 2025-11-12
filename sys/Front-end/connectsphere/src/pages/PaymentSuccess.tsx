@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import apiService from '../services/api';
+import analyticsService from '../services/analytics';
 
 const PaymentSuccess = () => {
   const navigate = useNavigate();
@@ -108,6 +109,19 @@ const PaymentSuccess = () => {
           console.log('Processing quantity increase payment:', finalPaymentData);
           console.log('txRef:', txRef, 'transactionId:', transactionId);
 
+          // Analytics: track payment success
+          try {
+            analyticsService.trackPaymentSuccess({
+              tx_ref: txRef,
+              transaction_id: transactionId,
+              amount: finalPaymentData?.amount,
+              group_id: finalPaymentData?.groupId,
+              action: 'quantity_increase'
+            });
+          } catch (e) {
+            console.warn('Analytics trackPaymentSuccess failed:', e);
+          }
+
           // Extract group ID from tx_ref (format: quantity_increase_{groupId}_{timestamp})
           const groupIdMatch = txRef.match(/^quantity_increase_(\d+)_/);
           console.log('Group ID match result:', groupIdMatch);
@@ -154,6 +168,19 @@ const PaymentSuccess = () => {
 
           const groupId = parseInt(groupIdMatch[1]);
           console.log('Extracted group ID:', groupId, 'from tx_ref:', txRef);
+
+          // Analytics: track payment success
+          try {
+            analyticsService.trackPaymentSuccess({
+              tx_ref: txRef,
+              transaction_id: transactionId,
+              amount: finalPaymentData?.amount,
+              group_id: groupId,
+              action: 'join'
+            });
+          } catch (e) {
+            console.warn('Analytics trackPaymentSuccess failed:', e);
+          }
 
           // Get pending join data saved before redirect. Accept both snake_case (server) and camelCase (older clients)
           let stored: any = {};

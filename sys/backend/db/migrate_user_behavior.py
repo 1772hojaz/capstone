@@ -2,7 +2,7 @@
 Migration script to add UserBehaviorFeatures table
 """
 from db.database import engine
-from models.models import UserBehaviorFeatures
+from models.analytics_models import UserBehaviorFeatures
 from sqlalchemy import text
 
 def migrate_user_behavior_features():

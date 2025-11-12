@@ -2,6 +2,9 @@ import { Search, MapPin, User, Users, Filter, SortAsc, Grid, List, X, Eye, Chevr
 import { useNavigate } from 'react-router-dom';
 import { useState, useMemo, useEffect } from 'react';
 import apiService from '../services/api';
+import analyticsService from '../services/analytics';
+import type { Group } from '../types/api';
+import { useAppStore } from '../store/useAppStore';
 
 export default function AllGroups() {
   const navigate = useNavigate();
@@ -10,7 +13,7 @@ export default function AllGroups() {
   const [sortBy, setSortBy] = useState<'participants' | 'price-low' | 'price-high' | 'newest'>('participants');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [joinSuccess, setJoinSuccess] = useState<string | null>(null);
-  const [groups, setGroups] = useState<any[]>([]);
+  const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [userLocation, setUserLocation] = useState<string>('Harare');
@@ -53,6 +56,10 @@ export default function AllGroups() {
         // Fetch user data to get location
         const userData = await apiService.getCurrentUser();
         setUserLocation(userData.location_zone || 'Harare');
+        useAppStore.getState().setCurrentUser(userData);
+        if (userData.location_zone) {
+          useAppStore.getState().setUserLocation(userData.location_zone);
+        }
 
         const groupsData = await apiService.getAllGroups();
         console.log('AllGroups API response:', groupsData);
@@ -74,6 +81,24 @@ export default function AllGroups() {
     fetchGroups();
   }, []);
 
+  // Analytics: page view + changes to filters/sorting/view mode
+  useEffect(() => {
+    analyticsService.trackPageView('all_groups', {
+      filter_category: selectedCategory,
+      sort_by: sortBy,
+      view_mode: viewMode
+    });
+  }, [selectedCategory, sortBy, viewMode]);
+
+  // Analytics: search tracking
+  useEffect(() => {
+    if (searchQuery.trim().length === 0) return;
+    analyticsService.trackSearch(searchQuery, {
+      category: selectedCategory,
+      sort_by: sortBy
+    }, filteredAndSortedGroups.length);
+  }, [searchQuery, selectedCategory, sortBy, filteredAndSortedGroups.length]);
+
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -88,23 +113,32 @@ export default function AllGroups() {
 
   // View group handler - pass the full group data with view mode
   const handleViewGroup = (group: any) => {
+    analyticsService.trackGroupView(group.id, {
+      ...group,
+      source: 'browse'
+    });
     navigate(`/group/${group.id}`, { state: { group, mode: 'view' } });
   };
 
   // Join group handler - pass the full group data with join mode
   const handleJoinGroup = async (group: any) => {
     try {
-      // For now, just navigate to group details and show success message
-      // TODO: Implement actual join API call when backend endpoint is available
-      setJoinSuccess(`Successfully joined group! Redirecting to group details...`);
+      analyticsService.trackGroupJoinClick(group.id, group);
+      // Optimistic UI: attempt server-side join first
+      setJoinSuccess(`Joining ${group.name || 'group'}...`);
+      await apiService.joinGroup(group.id, {
+        quantity: 1,
+        delivery_method: 'pickup',
+        payment_method: 'cash'
+      });
+      setJoinSuccess(`Successfully joined ${group.name || 'group'}! Redirecting...`);
       setTimeout(() => {
         navigate(`/group/${group.id}`, { state: { group, mode: 'join' } });
-      }, 1500);
+      }, 1000);
     } catch (err) {
       console.error('Failed to join group:', err);
       setJoinSuccess(null);
-      // For now, still navigate on error
-      navigate(`/group/${group.id}`, { state: { group, mode: 'join' } });
+      alert((err as Error)?.message || 'Failed to join group');
     }
   };
 

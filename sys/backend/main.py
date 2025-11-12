@@ -4,14 +4,18 @@ import asyncio
 import logging
 import logging.config
 import os
+import time
+import json
+import re
 from logging.config import dictConfig
 from dotenv import load_dotenv
 
 # Load environment variables FIRST, before any other imports
 load_dotenv()
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from db.database import engine, Base, SessionLocal
 from authentication.auth import router as auth_router
 from models.products import router as products_router
@@ -24,6 +28,10 @@ from models.supplier import router as supplier_router
 from payment.payment_router import router as payment_router
 from ml.ml_scheduler import scheduler, start_scheduler
 from websocket.websocket_manager import manager
+from analytics.analytics_router import router as analytics_router
+from analytics.etl_pipeline import run_daily_analytics_scheduler
+from gateway.gateway_router import router as gateway_router
+from graphql.schema import app as graphql_app, ENABLE_GRAPHQL
 
 # Centralized logging configuration
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -67,9 +75,6 @@ LOGGING_CONFIG = {
 dictConfig(LOGGING_CONFIG)
 logger = logging.getLogger(__name__)
 
-# Create database tables
-Base.metadata.create_all(bind=engine)
-
 # Initialize FastAPI app
 app = FastAPI(
     title="Group-Buy System API",
@@ -108,14 +113,137 @@ app = FastAPI(
     },
 )
 
-# CORS middleware
+# ===== Security & CORS Configuration =====
+def _parse_csv_env(name: str, default: str) -> list[str]:
+    value = os.getenv(name, default)
+    return [v.strip() for v in value.split(",") if v.strip()]
+
+ALLOWED_ORIGINS = _parse_csv_env(
+    "CORS_ALLOW_ORIGINS",
+    "http://localhost:5173,http://localhost:3000,http://localhost:3001"
+)
+ALLOW_METHODS = _parse_csv_env("CORS_ALLOW_METHODS", "*")
+ALLOW_HEADERS = _parse_csv_env("CORS_ALLOW_HEADERS", "*")
+ALLOW_CREDENTIALS = os.getenv("CORS_ALLOW_CREDENTIALS", "true").lower() == "true"
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://localhost:5173", "https://connectsphere-p5t9.onrender.com"],  # React dev server (Vite default)
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=ALLOW_CREDENTIALS,
+    allow_methods=ALLOW_METHODS,
+    allow_headers=ALLOW_HEADERS,
 )
+
+# ===== Input Sanitization & Logging Middleware =====
+SCRIPT_TAG_REGEX = re.compile(r"<\s*script[^>]*>(.*?)<\s*/\s*script\s*>", re.IGNORECASE | re.DOTALL)
+EVENT_HANDLER_ATTR_REGEX = re.compile(r"on\w+\s*=\s*(['\"]).*?\1", re.IGNORECASE | re.DOTALL)
+
+def sanitize_value(value):
+    if isinstance(value, str):
+        v = value.strip()
+        # Remove script tags and inline event handlers
+        v = SCRIPT_TAG_REGEX.sub("", v)
+        v = EVENT_HANDLER_ATTR_REGEX.sub("", v)
+        # Collapse overly long strings
+        if len(v) > 10000:
+            v = v[:10000]
+        return v
+    if isinstance(value, list):
+        return [sanitize_value(x) for x in value]
+    if isinstance(value, dict):
+        return {sanitize_value(k): sanitize_value(v) for k, v in value.items()}
+    return value
+
+@app.middleware("http")
+async def security_logging_middleware(request: Request, call_next):
+    start_time = time.time()
+
+    # Sanitize JSON body (only if small enough to buffer)
+    body_bytes = b""
+    content_type = request.headers.get("content-type", "")
+    if "application/json" in content_type:
+        try:
+            body_bytes = await request.body()
+            if 0 < len(body_bytes) <= 1024 * 1024:
+                raw = json.loads(body_bytes.decode("utf-8"))
+                cleaned = sanitize_value(raw)
+                body_bytes = json.dumps(cleaned).encode("utf-8")
+                async def receive():
+                    return {"type": "http.request", "body": body_bytes, "more_body": False}
+                request._receive = receive  # FastAPI/Starlette internal contract
+        except Exception:
+            # If parsing fails, proceed without modification
+            pass
+
+    # Request logging (skip health)
+    path = request.url.path
+    method = request.method
+    client = request.client.host if request.client else "unknown"
+
+    try:
+        response = await call_next(request)
+    except HTTPException as http_exc:
+        process_ms = int((time.time() - start_time) * 1000)
+        logger.warning(f"{client} {method} {path} -> {http_exc.status_code} ({process_ms}ms)")
+        raise
+    except Exception as exc:
+        process_ms = int((time.time() - start_time) * 1000)
+        logger.exception(f"{client} {method} {path} -> 500 ({process_ms}ms)")
+        return JSONResponse(status_code=500, content={"detail": "Internal Server Error"})
+
+    process_ms = int((time.time() - start_time) * 1000)
+    if path != "/health":
+        logger.info(f"{client} {method} {path} -> {response.status_code} ({process_ms}ms)")
+
+    # Add secure headers
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    # CSP kept minimal to avoid breaking UI; consider tightening in prod
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+
+    return response
+
+# ===== Consistent Error Responses =====
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "detail": exc.detail if isinstance(exc.detail, str) else "Request failed",
+            "path": request.url.path
+        },
+    )
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    logger.exception(f"Unhandled error on {request.method} {request.url.path}: {exc}")
+    return JSONResponse(status_code=500, content={"detail": "Internal Server Error"})
+
+# ===== Simple Rate Limiting (per IP) =====
+RATE_LIMIT_PER_MIN = int(os.getenv("RATE_LIMIT_PER_MIN", "60"))
+RATE_LIMIT_BURST = int(os.getenv("RATE_LIMIT_BURST", "120"))
+_rate_buckets: dict[str, list[float]] = {}
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    # Allow websockets and health, and internal scheduler
+    if request.url.path.startswith("/ws") or request.url.path == "/health":
+        return await call_next(request)
+
+    client_ip = request.client.host if request.client else "unknown"
+    now = time.time()
+    window_start = now - 60.0
+
+    bucket = _rate_buckets.get(client_ip, [])
+    # Drop requests older than 60s window
+    bucket = [t for t in bucket if t >= window_start]
+
+    if len(bucket) >= max(RATE_LIMIT_PER_MIN, RATE_LIMIT_BURST):
+        return JSONResponse(status_code=429, content={"detail": "Too Many Requests"})
+
+    bucket.append(now)
+    _rate_buckets[client_ip] = bucket
+    return await call_next(request)
 
 # Startup event - auto-train models if needed and start scheduler
 @app.on_event("startup")
@@ -123,6 +251,15 @@ async def startup_event():
     """Initialize HYBRID models on startup and start daily retraining scheduler"""
     db = SessionLocal()
     try:
+        # Basic environment sanity checks
+        required_env = ["SECRET_KEY"]
+        missing = [k for k in required_env if not os.getenv(k)]
+        if missing:
+            logger.warning(f"Missing required env vars: {', '.join(missing)}")
+        for k in ["FLUTTERWAVE_PUBLIC_KEY", "FLUTTERWAVE_SECRET_KEY", "FLUTTERWAVE_ENCRYPTION_KEY"]:
+            if not os.getenv(k):
+                logger.info(f"Payment env {k} not set; payment features may be limited in this environment")
+
         from models.models import MLModel, Transaction, User, Product
         from ml.ml import train_clustering_model_with_progress, load_models
         
@@ -200,6 +337,10 @@ async def startup_event():
         print("   - Data source: Live database (no synthetic data)")
         asyncio.create_task(start_scheduler())
         print("✅ Scheduler started successfully")
+
+        # Start analytics ETL scheduler
+        asyncio.create_task(run_daily_analytics_scheduler())
+        print("✅ Analytics ETL scheduler started")
         print("="*60 + "\n")
         
     except Exception as e:
@@ -273,7 +414,38 @@ app.include_router(admin_router, prefix="/api/admin", tags=["Admin"])
 app.include_router(settings_router, prefix="/api/settings", tags=["Settings"])
 app.include_router(supplier_router, prefix="/api/supplier", tags=["Supplier"])
 app.include_router(payment_router, prefix="/api/payment", tags=["Payment"])
+app.include_router(analytics_router)
+app.include_router(gateway_router)
+
+# Basic metrics endpoint for lightweight monitoring
+@app.get("/metrics")
+async def metrics():
+    try:
+        db = SessionLocal()
+        from sqlalchemy import func
+        from models.models import User, GroupBuy, Transaction
+        users = db.query(func.count(User.id)).scalar()
+        groups = db.query(func.count(GroupBuy.id)).scalar()
+        txs = db.query(func.count(Transaction.id)).scalar()
+        return {
+            "users_total": users or 0,
+            "groups_total": groups or 0,
+            "transactions_total": txs or 0
+        }
+    except Exception:
+        return {"users_total": 0, "groups_total": 0, "transactions_total": 0}
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
 
 if __name__ == "__main__":
     print("DEBUG: Starting server with updated code...")
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
+# Conditionally mount GraphQL
+if ENABLE_GRAPHQL and graphql_app:
+    from fastapi import APIRouter
+    gql_router = APIRouter()
+    app.mount("/graphql", graphql_app)

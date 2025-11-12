@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey, Text, JSON
+from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey, Text, JSON, Index
 from sqlalchemy.orm import relationship
 from db.database import Base
 from datetime import datetime
@@ -123,6 +123,13 @@ class GroupBuy(Base):
     def participants_count(self):
         """Count number of participants"""
         return len(self.contributions)
+    
+    __table_args__ = (
+        Index("idx_group_buys_status_deadline", "status", "deadline"),
+        Index("idx_group_buys_location_status", "location_zone", "status"),
+        Index("idx_group_buys_product", "product_id"),
+        Index("idx_group_buys_creator", "creator_id"),
+    )
 
 class Contribution(Base):
     __tablename__ = "contributions"
@@ -139,6 +146,11 @@ class Contribution(Base):
     # Relationships
     group_buy = relationship("GroupBuy", back_populates="contributions")
     user = relationship("User", back_populates="contributions")
+    
+    __table_args__ = (
+        Index("idx_contributions_user_group", "user_id", "group_buy_id"),
+        Index("idx_contributions_group_joined", "group_buy_id", "joined_at"),
+    )
 
 class Transaction(Base):
     __tablename__ = "transactions"
@@ -158,6 +170,12 @@ class Transaction(Base):
     # Store for ML retraining
     location_zone = Column(String)
     cluster_id = Column(Integer)
+    
+    __table_args__ = (
+        Index("idx_transactions_user_created", "user_id", "created_at"),
+        Index("idx_transactions_product_created", "product_id", "created_at"),
+        Index("idx_transactions_group_created", "group_buy_id", "created_at"),
+    )
 
 class ChatMessage(Base):
     __tablename__ = "chat_messages"
@@ -455,20 +473,8 @@ class QRScanHistory(Base):
     group_buy = relationship("GroupBuy", backref="scan_history")
     product = relationship("Product", backref="scan_history")
 
-class UserBehaviorFeatures(Base):
-    __tablename__ = "user_behavior_features"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
-    engagement_score = Column(Float, default=0.5)
-    price_sensitivity_score = Column(Float, default=0.5)
-    top_category_1 = Column(String)
-    top_category_2 = Column(String)
-    days_since_last_activity = Column(Integer, default=0)
-    last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
-    # Relationships
-    user = relationship("User", backref="behavior_features")
+# UserBehaviorFeatures moved to analytics_models.py to avoid duplication
+# Import from there if needed: from models.analytics_models import UserBehaviorFeatures
 
 
 # Pydantic models for API responses

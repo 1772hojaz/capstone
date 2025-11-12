@@ -6,6 +6,9 @@ from payment.flutterwave_service import flutterwave_service
 from authentication.auth import get_current_user
 from models.models import User
 import logging
+import os
+from fastapi import Request
+from db.redis_client import get_redis
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +103,104 @@ async def payment_callback(
         redirect_url = f"{frontend_url}/payment/failure?tx_ref={tx_ref}&transaction_id={transaction_id}&status=error"
         return RedirectResponse(url=redirect_url, status_code=302)
 
+@router.post("/webhook")
+async def flutterwave_webhook(request: Request):
+    """
+    Flutterwave webhook handler with signature verification.
+    Uses 'verif-hash' header that must match FLUTTERWAVE_WEBHOOK_HASH.
+    Idempotent: stores tx_ref in Redis to avoid double-processing.
+    """
+    body = await request.json()
+    verif_hash = request.headers.get("verif-hash") or request.headers.get("Verif-Hash")
+    expected = os.getenv("FLUTTERWAVE_WEBHOOK_HASH") or os.getenv("FLUTTERWAVE_SECRET_KEY")
+    if not expected or verif_hash != expected:
+        logger.warning("Invalid webhook signature")
+        return {"status": "ignored"}
+
+    data = body.get("data", {})
+    tx_ref = data.get("tx_ref") or body.get("txRef")
+    transaction_id = str(data.get("id") or body.get("id") or "")
+    status = data.get("status") or body.get("status") or "unknown"
+
+    if not tx_ref:
+        logger.warning("Webhook missing tx_ref")
+        return {"status": "ignored"}
+
+    r = get_redis()
+    idem_key = f"payment:finalized:{tx_ref}"
+    if r.get(idem_key):
+        logger.info(f"Webhook duplicate for {tx_ref}, ignoring")
+        return {"status": "ok", "idempotent": True}
+
+    # Verify with Flutterwave for safety
+    try:
+        verify = flutterwave_service.verify_payment(transaction_id) if transaction_id else None
+        if verify and verify.get("data", {}).get("status") == "successful":
+            status = "success"
+    except Exception as e:
+        logger.warning(f"Verify on webhook failed: {e}")
+
+    # Finalize server-side (idempotent)
+    await finalize_payment_internal(tx_ref, transaction_id, status)
+    r.setex(idem_key, 60 * 60 * 24, "1")  # 24h idempotency window
+    return {"status": "ok"}
+
+class FinalizeRequest(BaseModel):
+    tx_ref: str
+    transaction_id: Optional[str] = None
+    status: str
+
+@router.post("/finalize")
+async def finalize_payment(payload: FinalizeRequest, current_user: User = Depends(get_current_user)):
+    """
+    Idempotent finalize endpoint to apply business effects for a paid transaction.
+    Accepts tx_ref patterns:
+      - group_{groupId}_... → treat as group join payment (if used)
+      - quantity_increase_{groupId}_... → treat as quantity increase
+    """
+    await finalize_payment_internal(payload.tx_ref, payload.transaction_id or "", payload.status)
+    return {"status": "ok"}
+
+async def finalize_payment_internal(tx_ref: str, transaction_id: str, status: str):
+    """
+    Best-effort idempotent finalization:
+    - For quantity_increase_{groupId}_*, increases contribution or join quantity.
+    - For group_{groupId}_*, this can be extended to mark joins as paid.
+    """
+    from sqlalchemy.orm import Session
+    from db.database import SessionLocal
+    from models.models import Contribution, GroupBuy, AdminGroupJoin
+    import re
+
+    if status != "success" and status != "successful":
+        logger.info(f"Finalize skipped for tx_ref={tx_ref} with status={status}")
+        return
+
+    m_inc = re.match(r"^quantity_increase_(\d+)_", tx_ref or "")
+    m_join = re.match(r"^group_(\d+)_", tx_ref or "")
+    db: Session = SessionLocal()
+    try:
+        if m_inc:
+            group_id = int(m_inc.group(1))
+            contrib = db.query(Contribution).filter(Contribution.group_buy_id == group_id).order_by(Contribution.joined_at.desc()).first()
+            if contrib:
+                # Mark as paid increment via existing API semantics: already handled on FE path,
+                # here we just ensure the contribution is marked fully paid if desired.
+                contrib.paid_amount = max(contrib.paid_amount or 0.0, contrib.contribution_amount or 0.0)
+                contrib.is_fully_paid = True
+                db.commit()
+                logger.info(f"Quantity increase finalized for group {group_id}")
+        elif m_join:
+            group_id = int(m_join.group(1))
+            # For admin join, mark as paid if a join exists
+            join = db.query(AdminGroupJoin).filter(AdminGroupJoin.admin_group_id == group_id).order_by(AdminGroupJoin.joined_at.desc()).first()
+            if join:
+                # No explicit paid flags on join model; nothing to update persistently here
+                logger.info(f"Join payment finalized for admin group {group_id}")
+        else:
+            logger.info(f"Finalize tx_ref pattern not recognized: {tx_ref}")
+    finally:
+        db.close()
 @router.get("/fee", response_model=dict)
 async def get_transaction_fee(
     amount: float,

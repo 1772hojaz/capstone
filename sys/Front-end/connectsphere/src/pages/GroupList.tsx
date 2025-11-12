@@ -160,6 +160,26 @@ export default function GroupList() {
     }
   }, [location.state]);
 
+  // Connect WebSocket for live QR status and set up listener
+  useEffect(() => {
+    try {
+      const token = localStorage.getItem('token');
+      if (token) {
+        apiService.connectWebSocket(token);
+      }
+      const handler = () => {
+        // On any qrStatusUpdate, refresh current selection to get latest status
+        refreshQRStatus();
+      };
+      window.addEventListener('qrStatusUpdate', handler as EventListener);
+      return () => {
+        window.removeEventListener('qrStatusUpdate', handler as EventListener);
+      };
+    } catch (e) {
+      console.warn('WebSocket setup failed:', e);
+    }
+  }, [selectedQRGroup]);
+
   const handleShowQRCode = async (group: any) => {
     try {
       console.log('🔍 Fetching QR code for group:', group.id);

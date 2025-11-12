@@ -9,7 +9,7 @@ from db.database import engine
 from sqlalchemy import text
 
 def migrate_database():
-    """Add missing columns to users and admin_groups tables"""
+    """Add missing columns and create useful indexes"""
 
     print("🔄 Migrating database schema...")
 
@@ -98,6 +98,29 @@ def migrate_database():
         result = conn.execute(text("PRAGMA table_info(admin_groups)"))
         final_admin_columns = [row[1] for row in result.fetchall()]
         print(f"📊 Final admin_groups column count: {len(final_admin_columns)}")
+
+        # Create indexes (SQLite friendly)
+        print("\n🧱 Creating indexes (if missing)...")
+        index_statements = [
+            # Group buys
+            "CREATE INDEX IF NOT EXISTS idx_group_buys_status_deadline ON group_buys (status, deadline)",
+            "CREATE INDEX IF NOT EXISTS idx_group_buys_location_status ON group_buys (location_zone, status)",
+            "CREATE INDEX IF NOT EXISTS idx_group_buys_product ON group_buys (product_id)",
+            "CREATE INDEX IF NOT EXISTS idx_group_buys_creator ON group_buys (creator_id)",
+            # Contributions
+            "CREATE INDEX IF NOT EXISTS idx_contributions_user_group ON contributions (user_id, group_buy_id)",
+            "CREATE INDEX IF NOT EXISTS idx_contributions_group_joined ON contributions (group_buy_id, joined_at)",
+            # Transactions
+            "CREATE INDEX IF NOT EXISTS idx_transactions_user_created ON transactions (user_id, created_at)",
+            "CREATE INDEX IF NOT EXISTS idx_transactions_product_created ON transactions (product_id, created_at)",
+            "CREATE INDEX IF NOT EXISTS idx_transactions_group_created ON transactions (group_buy_id, created_at)",
+        ]
+        for stmt in index_statements:
+            try:
+                conn.execute(text(stmt))
+                print(f"✅ {stmt.split(' ON ')[0]}")
+            except Exception as e:
+                print(f"⚠️  Index creation failed: {e}")
 
         conn.commit()
 

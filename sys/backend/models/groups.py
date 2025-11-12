@@ -95,6 +95,8 @@ class GroupCreateRequest(BaseModel):
     estimatedDelivery: str
     manufacturer: Optional[str] = None
     total_stock: Optional[int] = None
+    product_name: Optional[str] = None
+    product_description: Optional[str] = None
 
     class Config:
         schema_extra = {
@@ -1028,7 +1030,7 @@ async def join_group(
 
             # Create initial transaction record only if admin group has a linked product
             if admin_group.product_id:
-                from models import Transaction
+                from models.models import Transaction
                 transaction = Transaction(
                     user_id=user.id,
                     group_buy_id=None,  # Admin groups don't have group_buy_id
@@ -1106,7 +1108,7 @@ async def join_group(
                 create_order_from_completed_group(db, group_id)
 
             # Create transaction record for the contribution
-            from models import Transaction
+            from models.models import Transaction
             transaction = Transaction(
                 user_id=user.id,
                 group_buy_id=group_id,
@@ -1212,7 +1214,7 @@ async def update_group_quantity(
 
             # Create transaction record for the additional quantity
             if admin_group.product_id:
-                from models import Transaction
+                from models.models import Transaction
                 transaction = Transaction(
                     user_id=user.id,
                     group_buy_id=None,  # Admin groups don't have group_buy_id
@@ -1277,7 +1279,7 @@ async def update_group_quantity(
             group_buy.total_contributions += additional_amount
 
             # Create transaction record for the additional quantity
-            from models import Transaction
+            from models.models import Transaction
             transaction = Transaction(
                 user_id=user.id,
                 group_buy_id=group_id,
@@ -1598,8 +1600,7 @@ async def create_supplier_group(
 
         # Check if product already exists (by name), or create new one
         product = db.query(Product).filter(
-            Product.name == request.product_name or request.name,
-            Product.supplier_id == user.id
+            Product.name == (request.product_name or request.name)
         ).first()
 
         if not product:
@@ -1611,11 +1612,7 @@ async def create_supplier_group(
                 unit_price=request.originalPrice,
                 bulk_price=request.price,
                 moq=request.maxParticipants,
-                image_url=request.image,
-                supplier_id=user.id,
-                total_stock=request.total_stock,
-                manufacturer=request.manufacturer,
-                savings_factor=(request.originalPrice - request.price) / request.originalPrice if request.originalPrice > 0 else 0
+                image_url=request.image
             )
             db.add(product)
             db.flush()  # Get the product ID
@@ -1721,8 +1718,8 @@ async def get_supplier_group_details(
             "product": {
                 "name": group_buy.product.name,
                 "description": group_buy.product.description,
-                "manufacturer": group_buy.product.manufacturer,
-                "total_stock": group_buy.product.total_stock,
+                "manufacturer": None,  # Product model doesn't have manufacturer field
+                "total_stock": None,  # Product model doesn't have total_stock field
                 "regular_price": group_buy.product.unit_price
             }
         }

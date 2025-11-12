@@ -7,12 +7,23 @@ python backend/migrate_db.py analytics
 ```
 """
 
-from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey, Text, Index, ARRAY
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey, Text, Index
+from sqlalchemy.dialects.postgresql import JSONB as PG_JSONB  # type: ignore
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID  # type: ignore
+from sqlalchemy.dialects.postgresql import ARRAY as PG_ARRAY  # type: ignore
 from sqlalchemy.orm import relationship
 from db.database import Base
 from datetime import datetime
 import uuid
+import os
+
+# DB compatibility: use PostgreSQL types if DATABASE_URL is Postgres; otherwise fall back
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./groupbuy.db").lower()
+IS_POSTGRES = DATABASE_URL.startswith("postgresql")
+
+JSONType = PG_JSONB if IS_POSTGRES else dict  # SQLAlchemy will map Python dict to JSON for SQLite/others
+UUIDType = PG_UUID(as_uuid=True) if IS_POSTGRES else String(36)
+ARRAYString = PG_ARRAY(String) if IS_POSTGRES else Text  # fallback to Text-encoded JSON array
 
 # === RAW EVENT TRACKING ===
 
@@ -23,7 +34,7 @@ class EventsRaw(Base):
     """
     __tablename__ = "events_raw"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(UUIDType, primary_key=True, default=uuid.uuid4 if IS_POSTGRES else None)
     event_id = Column(String(100), unique=True, nullable=False, index=True)
     event_type = Column(String(50), nullable=False, index=True)
     
@@ -35,8 +46,8 @@ class EventsRaw(Base):
     # Timestamp
     timestamp = Column(DateTime(timezone=True), nullable=False, index=True)
     
-    # Event data (JSONB for fast queries on specific properties)
-    properties = Column(JSONB, default={})
+    # Event data
+    properties = Column(JSONType, default={})
     
     # Context data
     url = Column(Text)
@@ -58,12 +69,19 @@ class EventsRaw(Base):
     user = relationship("User", backref="events")
     
     # Indexes for common query patterns
-    __table_args__ = (
-        Index('idx_events_user_timestamp', 'user_id', 'timestamp'),
-        Index('idx_events_session_timestamp', 'session_id', 'timestamp'),
-        Index('idx_events_type_timestamp', 'event_type', 'timestamp'),
-        Index('idx_events_properties_gin', 'properties', postgresql_using='gin'),
-    )
+    if IS_POSTGRES:
+        __table_args__ = (
+            Index('idx_events_user_timestamp', 'user_id', 'timestamp'),
+            Index('idx_events_session_timestamp', 'session_id', 'timestamp'),
+            Index('idx_events_type_timestamp', 'event_type', 'timestamp'),
+            Index('idx_events_properties_gin', 'properties', postgresql_using='gin'),
+        )
+    else:
+        __table_args__ = (
+            Index('idx_events_user_timestamp', 'user_id', 'timestamp'),
+            Index('idx_events_session_timestamp', 'session_id', 'timestamp'),
+            Index('idx_events_type_timestamp', 'event_type', 'timestamp'),
+        )
 
 # === USER BEHAVIOR FEATURES ===
 
@@ -99,7 +117,7 @@ class UserBehaviorFeatures(Base):
     top_category_1 = Column(String(100))
     top_category_2 = Column(String(100))
     top_category_3 = Column(String(100))
-    category_scores = Column(JSONB, default={})  # {category: score}
+    category_scores = Column(JSONType, default={})  # {category: score}
     
     # Price behavior
     avg_price_viewed = Column(Float, default=0.0)
@@ -315,7 +333,7 @@ class UserSimilarity(Base):
     
     # Supporting data
     common_groups_count = Column(Integer, default=0)
-    common_categories = Column(ARRAY(String))
+    common_categories = Column(ARRAYString)
     
     # Metadata
     computed_at = Column(DateTime(timezone=True), server_default='now()')
@@ -341,7 +359,7 @@ class FeatureStore(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     feature_key = Column(String(200), unique=True, nullable=False, index=True)
-    feature_value = Column(JSONB, nullable=False)
+    feature_value = Column(JSONType, nullable=False)
     feature_type = Column(String(50), nullable=False, index=True)  # 'user', 'item', 'user_item', 'context'
     entity_id = Column(Integer, index=True)  # user_id or group_id depending on type
     
@@ -429,7 +447,7 @@ class SearchQuery(Base):
     # Query details
     query = Column(Text, nullable=False)
     normalized_query = Column(Text, index=True)  # Lowercase, trimmed
-    filters_applied = Column(JSONB, default={})
+    filters_applied = Column(JSONType, default={})
     sort_by = Column(String(50))
     
     # Results

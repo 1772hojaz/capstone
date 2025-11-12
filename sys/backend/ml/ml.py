@@ -16,7 +16,8 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.decomposition import NMF
 # import shap  # Temporarily disabled due to llvmlite compatibility issue
 from db.database import get_db
-from models.models import User, GroupBuy, Transaction, Product, MLModel, Contribution, AdminGroup, AdminGroupJoin, UserBehaviorFeatures
+from models.models import User, GroupBuy, Transaction, Product, MLModel, Contribution, AdminGroup, AdminGroupJoin
+from models.analytics_models import UserBehaviorFeatures as AnalyticsUserBehaviorFeatures
 from authentication.auth import verify_token, get_current_user
 from websocket.websocket_manager import manager
 from .explainability import explain_recommendation, explain_cluster_assignment, generate_counterfactual_explanation
@@ -36,8 +37,8 @@ def category_boost(product_category: str, preferred_categories: list) -> float:
 
 def get_behavior_factors(user_id: int, db: Session) -> dict:
     """Fetch and normalize behavioral metrics"""
-    behavior = db.query(UserBehaviorFeatures).filter(
-        UserBehaviorFeatures.user_id == user_id
+    behavior = db.query(AnalyticsUserBehaviorFeatures).filter(
+        AnalyticsUserBehaviorFeatures.user_id == user_id
     ).first()
     
     return {

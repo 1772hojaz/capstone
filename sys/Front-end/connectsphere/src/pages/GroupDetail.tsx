@@ -2,6 +2,7 @@ import { Search, MapPin, User, Users, ArrowLeft, Zap, Calendar, Tag, Clock, Cred
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import apiService from '../services/api';
+import analyticsService from '../services/analytics';
 import PaymentModal from '../components/PaymentModal';
 import PaymentStatusChecker from '../components/PaymentStatusChecker';
 
@@ -46,6 +47,16 @@ export default function GroupDetail() {
   console.log('GroupDetail groupData:', groupData);
   console.log('GroupDetail moq:', groupData?.moq);
   console.log('GroupDetail participants:', groupData?.participants);
+
+  // Analytics: track group view
+  useEffect(() => {
+    if (groupData) {
+      analyticsService.trackGroupView(groupData.id, {
+        ...groupData,
+        source: location.state?.source || 'direct'
+      });
+    }
+  }, [groupData]);
 
   // If no data available, show error
   if (!groupData) {
