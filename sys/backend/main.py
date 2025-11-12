@@ -120,7 +120,7 @@ def _parse_csv_env(name: str, default: str) -> list[str]:
 
 ALLOWED_ORIGINS = _parse_csv_env(
     "CORS_ALLOW_ORIGINS",
-    "http://localhost:5173,http://localhost:3000,http://localhost:3001"
+    "http://localhost:5173,http://localhost:3000,http://localhost:3001, https://connectsphere-p5t9.onrender.com"
 )
 ALLOW_METHODS = _parse_csv_env("CORS_ALLOW_METHODS", "*")
 ALLOW_HEADERS = _parse_csv_env("CORS_ALLOW_HEADERS", "*")
