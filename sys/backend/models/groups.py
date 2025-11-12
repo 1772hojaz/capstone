@@ -99,7 +99,7 @@ class GroupCreateRequest(BaseModel):
     product_description: Optional[str] = None
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "name": "Bulk Rice Purchase",
                 "description": "High-quality rice for traders",
@@ -128,7 +128,7 @@ class JoinGroupRequest(BaseModel):
     payment_reference: Optional[str] = None       # For card payments
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "quantity": 1,
                 "delivery_method": "pickup",
@@ -143,7 +143,7 @@ class UpdateQuantityRequest(BaseModel):
     payment_reference: Optional[str] = None
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "quantity_increase": 2,
                 "payment_transaction_id": "tx_123456789",
@@ -155,7 +155,7 @@ class UpdateContributionRequest(BaseModel):
     quantity: int
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "quantity": 5
             }

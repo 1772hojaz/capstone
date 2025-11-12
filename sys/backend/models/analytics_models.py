@@ -47,7 +47,7 @@ class EventsRaw(Base):
     timestamp = Column(DateTime(timezone=True), nullable=False, index=True)
     
     # Event data
-    properties = Column(JSONType, default={})
+    properties = Column(JSONType, nullable=True)
     
     # Context data
     url = Column(Text)
