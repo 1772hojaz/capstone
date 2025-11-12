@@ -453,8 +453,8 @@ class SearchQuery(Base):
     
     # Results
     result_count = Column(Integer, default=0)
-    clicked_result_ids = Column(ARRAY(Integer))  # Groups clicked from results
-    clicked_result_positions = Column(ARRAY(Integer))  # Positions of clicked results
+    clicked_result_ids = Column(ARRAYString)  # Groups clicked from results (JSON array for SQLite)
+    clicked_result_positions = Column(ARRAYString)  # Positions of clicked results (JSON array for SQLite)
     
     # Timing
     searched_at = Column(DateTime(timezone=True), nullable=False, server_default='now()', index=True)
