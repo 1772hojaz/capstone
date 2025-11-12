@@ -34,6 +34,15 @@ def _with_session(fn):
 def update_user_features_daily(db: Session):
     """Aggregate user behavior from events_raw into user_behavior_features."""
     try:
+        # Check if table exists by attempting a simple query
+        try:
+            db.query(UserBehaviorFeatures).first()
+        except Exception as e:
+            if "no such table" in str(e) or "no such column" in str(e):
+                logger.warning("Analytics tables not initialized. Run: python db/reset_analytics_tables.py")
+                return
+            raise
+        
         user_ids = [u.id for u in db.query(User.id).all()]
         for uid in user_ids:
             features = db.query(UserBehaviorFeatures).filter(UserBehaviorFeatures.user_id == uid).first()
@@ -71,6 +80,15 @@ def update_user_features_daily(db: Session):
 def update_group_metrics_daily(db: Session):
     """Aggregate group performance metrics from events and transactions."""
     try:
+        # Check if table exists
+        try:
+            db.query(GroupPerformanceMetrics).first()
+        except Exception as e:
+            if "no such table" in str(e) or "no such column" in str(e):
+                logger.warning("Analytics tables not initialized. Run: python db/reset_analytics_tables.py")
+                return
+            raise
+        
         group_ids = [g.id for g in db.query(AdminGroup.id).all()]
         for gid in group_ids:
             metrics = db.query(GroupPerformanceMetrics).filter(GroupPerformanceMetrics.admin_group_id == gid).first()
@@ -98,6 +116,16 @@ def update_group_metrics_daily(db: Session):
 def refresh_feature_store(db: Session):
     """Persist a few useful aggregates to the feature store for quick reads."""
     try:
+        # Check if tables exist
+        try:
+            db.query(FeatureStore).first()
+            db.query(UserBehaviorFeatures).first()
+        except Exception as e:
+            if "no such table" in str(e) or "no such column" in str(e):
+                logger.warning("Analytics tables not initialized. Run: python db/reset_analytics_tables.py")
+                return
+            raise
+        
         top_active_users = db.query(UserBehaviorFeatures.user_id).order_by(UserBehaviorFeatures.engagement_score.desc()).limit(50).all()
         key = "top_active_users"
         record = db.query(FeatureStore).filter(FeatureStore.feature_key == key).first()
