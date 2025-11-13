@@ -17,7 +17,7 @@ Quick links
 - Video Initial demo (Vimeo): https://vimeo.com/1125306747?share=copy
 - Final Product demo (Vimeo): https://vimeo.com/1132954187?share=copy&fl=sv&fe=ci
 - Link to github repo: https://github.com/1772hojaz/capstone
-- Link to deployed app: https://capstone-qlp3.onrender.com
+- Link to deployed app: [https://capstone-qlp3.onrender.com](https://connectsphere-p5t9.onrender.com/)
 
 How to set up the environment and the project
 ---------------------------------------------
