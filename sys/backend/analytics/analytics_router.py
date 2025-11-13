@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime, timedelta
 from pydantic import BaseModel, Field
+import uuid
 
 from db.database import get_db
 from models.analytics_models import EventsRaw, UserBehaviorFeatures, GroupPerformanceMetrics
@@ -94,6 +95,7 @@ def process_events_batch(events: List[AnalyticsEvent], db: Session):
             
             # Create event record
             event_record = EventsRaw(
+                id=str(uuid.uuid4()),  # Generate UUID for SQLite compatibility
                 event_id=event.event_id,
                 event_type=event.event_type,
                 user_id=event.user_id,

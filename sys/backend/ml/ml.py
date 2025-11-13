@@ -552,8 +552,8 @@ def get_recommendations_for_user(user: User, db: Session) -> List[dict]:
     global nmf_model, tfidf_model, clustering_model, scaler, feature_store
     
     # Load behavioral features
-    user_behavior = db.query(UserBehaviorFeatures).filter(
-        UserBehaviorFeatures.user_id == user.id
+    user_behavior = db.query(AnalyticsUserBehaviorFeatures).filter(
+        AnalyticsUserBehaviorFeatures.user_id == user.id
     ).first()
     
     # Default weights if no analytics available
