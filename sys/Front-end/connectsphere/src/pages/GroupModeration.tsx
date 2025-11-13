@@ -70,7 +70,7 @@ import {
 
   // State for dynamic data
   const [activeGroups, setActiveGroups] = useState<any[]>([]);
-  const [readyForPaymentGroups, setReadyForPaymentGroups] = useState<any[]>([]);
+  const [readyForPaymentOrders, setReadyForPaymentOrders] = useState<any[]>([]);
   const [moderationStats, setModerationStats] = useState({
     active_groups: 0,
     total_members: 0,
@@ -98,9 +98,9 @@ import {
         const activeData = await apiService.getActiveGroups();
         setActiveGroups(activeData);
 
-        // Fetch ready for payment groups
-        const readyForPaymentData = await apiService.getReadyForPaymentGroups();
-        setReadyForPaymentGroups(readyForPaymentData);
+        // Fetch ready for payment orders
+        const readyForPaymentData = await apiService.getAdminOrdersReadyForPayment();
+        setReadyForPaymentOrders(readyForPaymentData);
 
       } catch (err) {
         console.error('Error fetching moderation data:', err);
@@ -122,8 +122,8 @@ import {
   const processGroupPayment = async () => {
     try {
       setPaymentStatus('processing');
-      // API call to process payment
-      await apiService.processGroupPayment(selectedPaymentGroup.id);
+      // API call to process payment for the order
+      await apiService.processAdminOrderPayment(selectedPaymentGroup.id);
 
       setPaymentStatus('completed');
       // Close modal after success feedback
@@ -184,8 +184,8 @@ import {
       setModerationStats(stats);
       const activeData = await apiService.getActiveGroups();
       setActiveGroups(activeData);
-      const readyForPaymentData = await apiService.getReadyForPaymentGroups();
-      setReadyForPaymentGroups(readyForPaymentData);
+      const readyForPaymentData = await apiService.getAdminOrdersReadyForPayment();
+      setReadyForPaymentOrders(readyForPaymentData);
 
       alert('Group deleted successfully!');
     } catch (error: any) {
@@ -516,7 +516,7 @@ import {
           </div>
         </div>
 
-        {/* Ready for Payment Groups */}
+        {/* Ready for Payment Orders */}
         <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
           <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-purple-50 via-violet-50 to-purple-50">
             <div className="flex items-center justify-between mb-4">
@@ -525,8 +525,8 @@ import {
                   <DollarSign className="w-6 h-6 text-white" />
                 </div>
                 <div>
-                  <h3 className="text-xl font-bold text-gray-900">Ready for Payment</h3>
-                  <p className="text-sm text-gray-500 mt-0.5">Groups that have reached their target and need payment processing</p>
+                  <h3 className="text-xl font-bold text-gray-900">Orders Ready for Payment</h3>
+                  <p className="text-sm text-gray-500 mt-0.5">Confirmed orders awaiting admin payment processing</p>
                 </div>
               </div>
             </div>
@@ -537,7 +537,7 @@ import {
               </div>
               <input
                 type="text"
-                placeholder="Search ready for payment groups..."
+                placeholder="Search orders by group name, supplier, or product..."
                 value={readyForPaymentSearch}
                 onChange={(e) => setReadyForPaymentSearch(e.target.value)}
                 className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-sm bg-white shadow-sm transition-all duration-200"
@@ -545,71 +545,72 @@ import {
             </div>
           </div>
           <div className="p-6 max-h-[500px] overflow-y-auto space-y-4 bg-gradient-to-br from-purple-50 via-violet-50 to-pink-50">
-            {readyForPaymentGroups
-              .filter((group) => {
+            {readyForPaymentOrders
+              .filter((order) => {
                 if (!readyForPaymentSearch.trim()) return true;
 
                 const searchTerm = readyForPaymentSearch.toLowerCase();
                 return (
-                  group.name?.toLowerCase().includes(searchTerm) ||
-                  group.description?.toLowerCase().includes(searchTerm) ||
-                  group.category?.toLowerCase().includes(searchTerm) ||
-                  group.product?.name?.toLowerCase().includes(searchTerm) ||
-                  group.product?.description?.toLowerCase().includes(searchTerm) ||
-                  group.product?.manufacturer?.toLowerCase().includes(searchTerm)
+                  order.group?.name?.toLowerCase().includes(searchTerm) ||
+                  order.group?.description?.toLowerCase().includes(searchTerm) ||
+                  order.group?.category?.toLowerCase().includes(searchTerm) ||
+                  order.group?.product?.name?.toLowerCase().includes(searchTerm) ||
+                  order.group?.product?.description?.toLowerCase().includes(searchTerm) ||
+                  order.group?.product?.manufacturer?.toLowerCase().includes(searchTerm) ||
+                  order.supplier?.name?.toLowerCase().includes(searchTerm)
                 );
               })
-              .map((group) => (
-              <div key={`ready-${group.id}`} className="bg-white border border-purple-200 rounded-xl p-5 hover:shadow-lg transition-all duration-300 hover:border-purple-300 transform hover:-translate-y-1">
+              .map((order) => (
+              <div key={`order-${order.id}`} className="bg-white border border-purple-200 rounded-xl p-5 hover:shadow-lg transition-all duration-300 hover:border-purple-300 transform hover:-translate-y-1">
                 <div className="flex items-start gap-4 mb-4">
                   {/* Thumbnail */}
                   <div className="flex-shrink-0">
                     <img
-                      src={group.product?.image || group.image || '/api/placeholder/150/100'}
-                      alt={group.product?.name || group.name}
+                      src={order.group?.product?.image || order.group?.image || '/api/placeholder/150/100'}
+                      alt={order.group?.product?.name || order.group?.name}
                       className="w-32 h-24 object-cover rounded-xl border-2 border-purple-200 shadow-md"
                     />
                   </div>
 
                   <div className="flex-1">
-                    {/* Group Details */}
+                    {/* Order Details */}
                     <div className="flex items-center gap-2 mb-2">
-                      <h4 className="text-lg font-bold text-gray-900">{group.name}</h4>
+                      <h4 className="text-lg font-bold text-gray-900">Order #{order.id}</h4>
                       <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold bg-green-100 text-green-700 rounded-full shadow-sm">
-                        <CheckCircle2 className="w-3 h-3" /> Target Reached
+                        <CheckCircle2 className="w-3 h-3" /> Confirmed
                       </span>
                     </div>
-                    <p className="text-sm text-gray-600 mb-3 line-clamp-2">{group.description}</p>
+                    <p className="text-sm text-gray-600 mb-3">Group: {order.group?.name}</p>
                     <div className="flex flex-wrap gap-3 text-xs text-gray-600 mb-4">
-                      <span className="px-2 py-1 bg-gray-100 rounded-full">Category: <span className="font-semibold text-gray-800">{group.category}</span></span>
-                      <span className="px-2 py-1 bg-gray-100 rounded-full">Due: <span className="font-semibold text-gray-800">{group.dueDate}</span></span>
-                      <span className="px-2 py-1 bg-green-100 rounded-full">Amount: <span className="font-semibold text-green-700">{group.totalAmount}</span></span>
-                      <span className="px-2 py-1 bg-purple-100 rounded-full">Created by: <span className="font-semibold text-purple-700">{group.creator}</span> <span className={`text-xs px-1.5 py-0.5 rounded-full ml-1 ${group.creator_type === 'Supplier' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>{group.creator_type}</span></span>
+                      <span className="px-2 py-1 bg-gray-100 rounded-full">Category: <span className="font-semibold text-gray-800">{order.group?.category}</span></span>
+                      <span className="px-2 py-1 bg-gray-100 rounded-full">Supplier: <span className="font-semibold text-purple-700">{order.supplier?.name}</span></span>
+                      <span className="px-2 py-1 bg-green-100 rounded-full">Total Amount: <span className="font-semibold text-green-700">{order.total_amount}</span></span>
+                      <span className="px-2 py-1 bg-blue-100 rounded-full">Participants: <span className="font-semibold text-blue-700">{order.participant_count}</span></span>
                     </div>
 
                     {/* Product Details */}
                     <div className="bg-gradient-to-br from-gray-50 to-purple-50 p-4 rounded-xl mb-3 border border-purple-200">
                       <div className="flex items-center gap-2 mb-2">
                         <Package className="w-4 h-4 text-purple-600" />
-                        <h5 className="font-semibold text-gray-900">{group.product.name}</h5>
+                        <h5 className="font-semibold text-gray-900">{order.group?.product?.name}</h5>
                       </div>
-                      <p className="text-sm text-gray-600 mb-3 line-clamp-1">{group.product.description}</p>
+                      <p className="text-sm text-gray-600 mb-3 line-clamp-1">{order.group?.product?.description}</p>
                       <div className="grid grid-cols-2 gap-3 text-sm">
                         <div className="bg-white p-2 rounded-lg">
                           <span className="text-gray-500 text-xs">Regular Price</span>
-                          <p className="font-semibold text-gray-900">{group.product.regularPrice}</p>
+                          <p className="font-semibold text-gray-900">{order.group?.product?.regularPrice}</p>
                         </div>
                         <div className="bg-green-50 p-2 rounded-lg">
                           <span className="text-green-600 text-xs">Bulk Price</span>
-                          <p className="font-semibold text-green-700">{group.product.bulkPrice}</p>
+                          <p className="font-semibold text-green-700">{order.group?.product?.bulkPrice}</p>
                         </div>
                         <div className="bg-white p-2 rounded-lg">
                           <span className="text-gray-500 text-xs">Stock</span>
-                          <p className="font-semibold text-gray-900">{group.product.totalStock} units</p>
+                          <p className="font-semibold text-gray-900">{order.group?.product?.totalStock} units</p>
                         </div>
                         <div className="bg-white p-2 rounded-lg">
                           <span className="text-gray-500 text-xs">Manufacturer</span>
-                          <p className="font-semibold text-gray-900 truncate">{group.product.manufacturer}</p>
+                          <p className="font-semibold text-gray-900 truncate">{order.group?.product?.manufacturer}</p>
                         </div>
                       </div>
                     </div>
@@ -617,14 +618,14 @@ import {
                 </div>
                 <div className="flex gap-2">
                   <button
-                    onClick={() => handlePaymentProcess(group)}
+                    onClick={() => handlePaymentProcess(order)}
                     className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-purple-600 to-violet-600 text-white text-sm font-medium rounded-xl hover:from-purple-700 hover:to-violet-700 transition-all duration-200 shadow-md hover:shadow-lg"
                   >
                     <DollarSign className="w-4 h-4" />
                     Process Payment
                   </button>
                   <button
-                    onClick={() => handleViewDetails(group)}
+                    onClick={() => handleViewDetails(order.group)}
                     className="px-4 py-3 border-2 border-gray-300 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50 hover:border-gray-400 transition-all duration-200"
                   >
                     <Eye className="w-4 h-4" />
@@ -632,13 +633,25 @@ import {
                 </div>
               </div>
             ))}
-            {activeGroups.filter((group) => group.members >= group.targetMembers).length === 0 && (
+            {readyForPaymentOrders.filter((order) => {
+              if (!readyForPaymentSearch.trim()) return true;
+              const searchTerm = readyForPaymentSearch.toLowerCase();
+              return (
+                order.group?.name?.toLowerCase().includes(searchTerm) ||
+                order.group?.description?.toLowerCase().includes(searchTerm) ||
+                order.group?.category?.toLowerCase().includes(searchTerm) ||
+                order.group?.product?.name?.toLowerCase().includes(searchTerm) ||
+                order.group?.product?.description?.toLowerCase().includes(searchTerm) ||
+                order.group?.product?.manufacturer?.toLowerCase().includes(searchTerm) ||
+                order.supplier?.name?.toLowerCase().includes(searchTerm)
+              );
+            }).length === 0 && (
               <div className="text-center py-8">
                 <div className="w-16 h-16 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center mx-auto mb-4">
                   <DollarSign className="w-8 h-8" />
                 </div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">No Groups Ready for Payment</h3>
-                <p className="text-gray-600">Groups that have reached their target will appear here for payment processing.</p>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">No Orders Ready for Payment</h3>
+                <p className="text-gray-600">Confirmed orders will appear here for payment processing.</p>
               </div>
             )}
           </div>
@@ -1000,6 +1013,9 @@ import {
 
                           const activeData = await apiService.getActiveGroups();
                           setActiveGroups(activeData);
+
+                          const readyForPaymentData = await apiService.getAdminOrdersReadyForPayment();
+                          setReadyForPaymentOrders(readyForPaymentData);
 
                         } catch (err) {
                           console.error('Error fetching moderation data:', err);
@@ -1393,31 +1409,28 @@ import {
               {paymentStatus === 'pending' && (
                 <>
                   <div className="mb-6 p-4 bg-blue-50 rounded-lg text-left">
-                    {/* Group Details */}
+                    {/* Order Details */}
                     <div className="mb-4">
-                      <h4 className="font-semibold text-blue-900">Group Details</h4>
-                      <p className="text-sm text-blue-800 mt-1">{selectedPaymentGroup.name}</p>
+                      <h4 className="font-semibold text-blue-900">Order Details</h4>
+                      <p className="text-sm text-blue-800 mt-1">Order #{selectedPaymentGroup.id}</p>
+                      <p className="text-sm text-blue-800">Group: {selectedPaymentGroup.group?.name}</p>
                     </div>
                     <div className="grid grid-cols-2 gap-4 text-sm mb-4">
                       <div>
-                        <p className="text-blue-600">Members</p>
-                        <p className="font-medium text-blue-900">{selectedPaymentGroup.members}/{selectedPaymentGroup.targetMembers}</p>
+                        <p className="text-blue-600">Participants</p>
+                        <p className="font-medium text-blue-900">{selectedPaymentGroup.participant_count}</p>
                       </div>
                       <div>
                         <p className="text-blue-600">Category</p>
-                        <p className="font-medium text-blue-900">{selectedPaymentGroup.category}</p>
+                        <p className="font-medium text-blue-900">{selectedPaymentGroup.group?.category}</p>
                       </div>
                       <div>
-                        <p className="text-blue-600">Due Date</p>
-                        <p className="font-medium text-blue-900">{selectedPaymentGroup.dueDate}</p>
+                        <p className="text-blue-600">Supplier</p>
+                        <p className="font-medium text-purple-600">{selectedPaymentGroup.supplier?.name}</p>
                       </div>
                       <div>
                         <p className="text-blue-600">Total Amount</p>
-                        <p className="font-medium text-blue-900">{selectedPaymentGroup.totalAmount}</p>
-                      </div>
-                      <div>
-                        <p className="text-blue-600">Created by</p>
-                        <p className="font-medium text-purple-600">{selectedPaymentGroup.creator} <span className={`text-xs px-1.5 py-0.5 rounded-full ml-1 ${selectedPaymentGroup.creator_type === 'Supplier' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>{selectedPaymentGroup.creator_type}</span></p>
+                        <p className="font-medium text-blue-900">{selectedPaymentGroup.total_amount}</p>
                       </div>
                     </div>
                     
@@ -1427,24 +1440,24 @@ import {
                       <div className="space-y-3">
                         <div>
                           <p className="text-blue-600">Product</p>
-                          <p className="font-medium text-blue-900">{selectedPaymentGroup.product.name}</p>
+                          <p className="font-medium text-blue-900">{selectedPaymentGroup.group?.product?.name}</p>
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                           <div>
                             <p className="text-blue-600">Regular Price</p>
-                            <p className="font-medium text-blue-900">{selectedPaymentGroup.product.regularPrice}</p>
+                            <p className="font-medium text-blue-900">{selectedPaymentGroup.group?.product?.regularPrice}</p>
                           </div>
                           <div>
                             <p className="text-blue-600">Bulk Price</p>
-                            <p className="font-medium text-green-600">{selectedPaymentGroup.product.bulkPrice}</p>
+                            <p className="font-medium text-green-600">{selectedPaymentGroup.group?.product?.bulkPrice}</p>
                           </div>
                           <div>
                             <p className="text-blue-600">Total Stock</p>
-                            <p className="font-medium text-blue-900">{selectedPaymentGroup.product.totalStock} units</p>
+                            <p className="font-medium text-blue-900">{selectedPaymentGroup.group?.product?.totalStock} units</p>
                           </div>
                           <div>
                             <p className="text-blue-600">Manufacturer</p>
-                            <p className="font-medium text-blue-900">{selectedPaymentGroup.product.manufacturer}</p>
+                            <p className="font-medium text-blue-900">{selectedPaymentGroup.group?.product?.manufacturer}</p>
                           </div>
                         </div>
                       </div>

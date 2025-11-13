@@ -267,6 +267,16 @@ class ApiService {
     return this.request('/api/admin/groups/ready-for-payment');
   }
 
+  async getAdminOrdersReadyForPayment() {
+    return this.request('/api/admin/orders/ready-for-payment');
+  }
+
+  async processAdminOrderPayment(orderId) {
+    return this.request(`/api/admin/orders/${orderId}/process-payment`, {
+      method: 'POST',
+    });
+  }
+
   async getCompletedGroups() {
     return this.request('/api/admin/groups/completed');
   }

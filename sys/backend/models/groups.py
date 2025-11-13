@@ -1034,9 +1034,9 @@ async def join_group(
             # Update group participant count
             admin_group.participants += 1
 
-            # Check if group has reached target and create order for supplier approval
+            # Check if group should be completed (reached max_participants)
             if admin_group.max_participants and admin_group.participants >= admin_group.max_participants:
-                # Create order for supplier approval
+                # Create order automatically when admin group completes
                 from routers.supplier_orders import create_order_from_admin_group
                 create_order_from_admin_group(db, group_id)
 
@@ -1219,6 +1219,12 @@ async def update_group_quantity(
                 existing_join.payment_transaction_id = request.payment_transaction_id
             if request.payment_reference:
                 existing_join.payment_reference = request.payment_reference
+
+            # Check if group should be completed after quantity increase
+            if admin_group.max_participants and admin_group.participants >= admin_group.max_participants:
+                # Create order automatically when admin group completes
+                from routers.supplier_orders import create_order_from_admin_group
+                create_order_from_admin_group(db, group_id)
 
             # Calculate additional amount needed
             unit_price = admin_group.price
@@ -1860,12 +1866,12 @@ async def generate_supplier_group_qr(
 
 # Admin Group Moderation Endpoints
 
-@router.get("/admin/groups/ready-for-payment")
-async def get_admin_ready_for_payment_groups(
+@router.get("/admin/orders/ready-for-payment")
+async def get_admin_orders_ready_for_payment(
     user: User = Depends(verify_token),
     db: Session = Depends(get_db)
 ):
-    """Get all groups ready for payment processing (admin endpoint)"""
+    """Get orders that are confirmed and ready for admin payment processing"""
     try:
         # Verify user is admin
         if not user.is_admin:
@@ -1874,54 +1880,155 @@ async def get_admin_ready_for_payment_groups(
                 detail="Admin access required"
             )
 
-        # Get GroupBuy groups that are ready for payment
-        ready_groups = db.query(GroupBuy).join(GroupBuy.product).filter(
-            GroupBuy.status == "ready_for_payment"
-        ).all()
+        # Import Order model
+        from models.orders import Order
+        from models.models import AdminGroup
+
+        # Get confirmed orders
+        confirmed_orders = db.query(Order).filter(Order.status == "confirmed").all()
 
         result = []
-        for group in ready_groups:
-            # Calculate participants count
-            participants_count = db.query(Contribution).filter(
-                Contribution.group_buy_id == group.id
-            ).count()
+        for order in confirmed_orders:
+            # Get group information
+            group_info = None
+            if order.group_id:
+                # Try GroupBuy first
+                group_buy = db.query(GroupBuy).filter(GroupBuy.id == order.group_id).first()
+                if group_buy:
+                    group_info = {
+                        "id": group_buy.id,
+                        "name": group_buy.product.name if group_buy.product else f"Group Buy #{group_buy.id}",
+                        "type": "GroupBuy",
+                        "supplier": group_buy.creator.company_name or group_buy.creator.full_name if group_buy.creator else "Unknown",
+                        "members": len(group_buy.contributions) if group_buy.contributions else 0,
+                        "image": group_buy.product.image_url if group_buy.product else None,
+                        "product": {
+                            "name": group_buy.product.name if group_buy.product else "Unknown Product",
+                            "bulkPrice": group_buy.product.bulk_price if group_buy.product else 0,
+                            "regularPrice": group_buy.product.unit_price if group_buy.product else 0
+                        }
+                    }
+                else:
+                    # Try AdminGroup
+                    admin_group = db.query(AdminGroup).filter(AdminGroup.id == order.group_id).first()
+                    if admin_group:
+                        group_info = {
+                            "id": admin_group.id,
+                            "name": admin_group.name,
+                            "type": "AdminGroup",
+                            "supplier": "Admin",  # Admin groups are managed by admin
+                            "members": admin_group.participants,
+                            "image": admin_group.image,
+                            "product": {
+                                "name": admin_group.product_name or admin_group.name,
+                                "bulkPrice": admin_group.price,
+                                "regularPrice": admin_group.original_price
+                            }
+                        }
 
-            # Get supplier info
-            supplier_name = "Unknown Supplier"
-            if group.creator and group.creator.is_supplier:
-                supplier_name = group.creator.company_name or group.creator.full_name or "Supplier"
-
-            result.append({
-                "id": group.id,
-                "name": group.product.name if group.product else f"Group Buy #{group.id}",
-                "description": group.product.description if group.product else "User-created group buy",
-                "category": group.product.category if group.product else "General",
-                "supplier": supplier_name,
-                "members": participants_count,
-                "targetMembers": group.product.moq if group.product else 10,
-                "total_value": round(group.total_contributions, 2),
-                "total_savings": round(group.total_contributions * (group.product.savings_factor if group.product else 0), 2),
-                "product": {
-                    "name": group.product.name if group.product else f"Group Buy #{group.id}",
-                    "image": group.product.image_url if group.product and group.product.image_url else "/api/placeholder/150/100",
-                    "bulkPrice": group.product.bulk_price if group.product else 0,
-                    "regularPrice": group.product.unit_price if group.product else 0,
-                    "manufacturer": group.product.manufacturer if group.product else None
-                },
-                "status": "ready_for_payment",
-                "progress": f"{participants_count}/{group.product.moq if group.product else 10}",
-                "progressPercentage": 100.0,  # Ready for payment groups are at 100%
-                "created_at": group.created_at.isoformat() if group.created_at else None,
-                "completed_at": group.deadline.isoformat() if group.deadline else None
-            })
+            if group_info:
+                result.append({
+                    "id": order.id,
+                    "order_number": order.order_number,
+                    "group": group_info,
+                    "supplier_id": order.supplier_id,
+                    "trader_count": order.trader_count,
+                    "total_value": round(order.total_value, 2),
+                    "total_savings": round(order.total_savings, 2),
+                    "delivery_location": order.delivery_location,
+                    "status": order.status,
+                    "created_at": order.created_at.isoformat() if order.created_at else None
+                })
 
         return result
 
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error getting admin ready for payment groups: {e}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve ready for payment groups")
+        print(f"Error getting admin orders ready for payment: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve orders ready for payment")
+
+@router.post("/admin/orders/{order_id}/process-payment")
+async def process_admin_order_payment(
+    order_id: int,
+    user: User = Depends(verify_token),
+    db: Session = Depends(get_db)
+):
+    """Process payment for a confirmed order (admin endpoint)"""
+    try:
+        # Verify user is admin
+        if not user.is_admin:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Admin access required"
+            )
+
+        # Import Order model
+        from models.orders import Order
+
+        # Get the confirmed order
+        order = db.query(Order).filter(
+            Order.id == order_id,
+            Order.status == "confirmed"
+        ).first()
+
+        if not order:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Confirmed order not found"
+            )
+
+        # Here you would integrate with payment processing
+        # For now, just mark as completed
+        order.status = "completed"
+        order.updated_at = datetime.utcnow()
+
+        # If this is a GroupBuy order, update the group status
+        if order.group_id:
+            group_buy = db.query(GroupBuy).filter(GroupBuy.id == order.group_id).first()
+            if group_buy:
+                group_buy.status = "payment_completed"
+                group_buy.completed_at = datetime.utcnow()
+
+                # Create payment records for all contributors
+                contributions = db.query(Contribution).filter(
+                    Contribution.group_buy_id == order.group_id,
+                    not Contribution.is_fully_paid
+                ).all()
+
+                for contribution in contributions:
+                    # Mark contribution as paid
+                    contribution.is_fully_paid = True
+                    contribution.paid_amount = contribution.contribution_amount
+
+                    # Create transaction record
+                    transaction = Transaction(
+                        user_id=contribution.user_id,
+                        group_buy_id=order.group_id,
+                        product_id=group_buy.product_id,
+                        quantity=contribution.quantity,
+                        amount=contribution.contribution_amount,
+                        transaction_type="payment_completed",
+                        location_zone=contribution.user.location_zone or "Unknown"
+                    )
+                    db.add(transaction)
+
+        db.commit()
+
+        return {
+            "message": "Order payment processed successfully",
+            "order_id": order_id,
+            "order_number": order.order_number,
+            "total_amount": round(order.total_value, 2),
+            "status": "completed"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        print(f"Error processing admin order payment: {e}")
+        raise HTTPException(status_code=500, detail="Failed to process order payment")
 
 @router.post("/admin/groups/{group_id}/process-payment")
 async def process_admin_group_payment(
@@ -2006,7 +2113,7 @@ async def get_admin_group_moderation_stats(
         if not user.is_admin:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                               detail="Admin access required"
+                detail="Admin access required"
             )
 
         # Count groups ready for payment
@@ -2106,7 +2213,7 @@ async def refund_group_participants(
                     if not flutterwave_success:
                         transaction = Transaction(
                             user_id=contribution.user_id,
-                            group_buy_id=None,  # Admin groups don't have group_buy_id
+                            group_buy_id=group_id,
                             product_id=group_buy.product_id,
                             quantity=contribution.quantity,
                             amount=-1 * round(refund_amount, 2),  # Negative amount for refund
@@ -2244,7 +2351,7 @@ async def delete_admin_group(
     user: User = Depends(verify_token),
     db: Session = Depends(get_db)
 ):
-    """Delete any group (admin endpoint) - automatically refunds all participants"""
+    """Delete any group (admin endpoint)"""
     try:
         # Verify user is admin
         if not user.is_admin:
@@ -2253,8 +2360,6 @@ async def delete_admin_group(
                 detail="Admin access required"
             )
 
-        refund_result = None
-        
         # First try to find as GroupBuy
         group_buy = db.query(GroupBuy).filter(GroupBuy.id == group_id).first()
         if group_buy:
@@ -2265,27 +2370,19 @@ async def delete_admin_group(
             ).all()
 
             if contributions:
-                # AUTO-TRIGGER REFUNDS before deletion
-                print(f"Auto-refunding {len(contributions)} participants before deleting GroupBuy {group_id}")
-                try:
-                    refund_result = await refund_group_participants(group_id, user, db)
-                except Exception as refund_error:
-                    print(f"Error during automatic refund: {refund_error}")
-                    raise HTTPException(
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail=f"Failed to process refunds before deletion: {str(refund_error)}"
-                    )
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Cannot delete group with {len(contributions)} active participants. Use refund-participants endpoint first."
+                )
 
             # Delete the group
             db.delete(group_buy)
             db.commit()
 
             return {
-                "message": "Group deleted successfully and participants refunded",
+                "message": "Group deleted successfully",
                 "group_id": group_id,
-                "group_type": "GroupBuy",
-                "refunded_count": len(contributions),
-                "automatic_refund_result": refund_result if refund_result else None
+                "group_type": "GroupBuy"
             }
 
         # Try to find as AdminGroup
@@ -2298,27 +2395,19 @@ async def delete_admin_group(
             ).all()
 
             if joins:
-                # AUTO-TRIGGER REFUNDS before deletion
-                print(f"Auto-refunding {len(joins)} participants before deleting AdminGroup {group_id}")
-                try:
-                    refund_result = await refund_group_participants(group_id, user, db)
-                except Exception as refund_error:
-                    print(f"Error during automatic refund: {refund_error}")
-                    raise HTTPException(
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail=f"Failed to process refunds before deletion: {str(refund_error)}"
-                    )
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Cannot delete group with {len(joins)} active participants. Use refund-participants endpoint first."
+                )
 
             # Delete the group
             db.delete(admin_group)
             db.commit()
 
             return {
-                "message": "Group deleted successfully and participants refunded",
+                "message": "Group deleted successfully",
                 "group_id": group_id,
-                "group_type": "AdminGroup",
-                "refunded_count": len(joins),
-                "automatic_refund_result": refund_result if refund_result else None
+                "group_type": "AdminGroup"
             }
 
         # If neither found
@@ -2332,6 +2421,4 @@ async def delete_admin_group(
     except Exception as e:
         db.rollback()
         print(f"Error deleting admin group: {e}")
-        import traceback
-        traceback.print_exc()
         raise HTTPException(status_code=500, detail="Failed to delete group")
