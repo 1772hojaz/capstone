@@ -19,6 +19,8 @@ class ProductCreate(BaseModel):
     bulk_price_zig: Optional[float] = None
     moq: int
     category: Optional[str] = None
+    manufacturer: Optional[str] = None
+    total_stock: Optional[int] = None
 
 class ProductUpdate(BaseModel):
     name: Optional[str] = None
@@ -30,6 +32,8 @@ class ProductUpdate(BaseModel):
     bulk_price_zig: Optional[float] = None
     moq: Optional[int] = None
     category: Optional[str] = None
+    manufacturer: Optional[str] = None
+    total_stock: Optional[int] = None
     is_active: Optional[bool] = None
 
 class ProductResponse(BaseModel):
@@ -43,6 +47,8 @@ class ProductResponse(BaseModel):
     bulk_price_zig: Optional[float]
     moq: int
     category: Optional[str]
+    manufacturer: Optional[str]
+    total_stock: Optional[int]
     is_active: bool
     savings_factor: float
 

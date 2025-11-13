@@ -395,10 +395,25 @@ async def get_my_groups(
                 # Format due date
                 due_date = group_buy.deadline.strftime("%b %d, %Y") if group_buy.deadline else "No deadline"
                 
-                # Determine status based on group state
-                if group_buy.status == "completed":
+                # Determine status based on group state and supplier status
+                if group_buy.status == "cancelled" or group_buy.supplier_status == "supplier_rejected":
+                    status = "cancelled"
+                    order_status = "Cancelled - Refund processing" if contrib.refund_status == "pending" else "Cancelled"
+                elif group_buy.supplier_status == "ready_for_collection":
                     status = "ready_for_pickup"
-                    order_status = "Ready for pickup"
+                    order_status = "Ready for pickup - Generate QR code"
+                elif group_buy.supplier_status == "collected":
+                    status = "collected"
+                    order_status = "Collected"
+                elif group_buy.supplier_status == "supplier_accepted":
+                    status = "in_fulfillment"
+                    order_status = "Accepted by supplier - In fulfillment"
+                elif group_buy.supplier_status == "pending_supplier":
+                    status = "pending_supplier"
+                    order_status = "Waiting for supplier confirmation"
+                elif group_buy.status == "completed":
+                    status = "completed"
+                    order_status = "Completed - Processing"
                 elif group_buy.status == "active" and group_buy.moq_progress >= 100:
                     status = "payment_pending"
                     order_status = "Payment pending"
@@ -406,8 +421,8 @@ async def get_my_groups(
                     status = "active"
                     order_status = "Active - collecting participants"
                 else:
-                    status = "cancelled"
-                    order_status = "Cancelled"
+                    status = "unknown"
+                    order_status = "Status unknown"
                 
                 group_data = {
                     "id": group_buy.id,
@@ -437,7 +452,19 @@ async def get_my_groups(
                     "longDescription": group_buy.product.description or f"Join this group buy to get {group_buy.product.name} at discounted bulk pricing.",
                     "category": group_buy.product.category or "General",
                     "endDate": group_buy.deadline.strftime("%Y-%m-%dT%H:%M:%SZ") if group_buy.deadline else None,
-                    "quantity": contrib.quantity  # Add user's quantity
+                    "quantity": contrib.quantity,  # Add user's quantity
+                    # Supplier workflow fields
+                    "supplierStatus": group_buy.supplier_status,
+                    "supplierResponseAt": group_buy.supplier_response_at.isoformat() if group_buy.supplier_response_at else None,
+                    "readyForCollectionAt": group_buy.ready_for_collection_at.isoformat() if group_buy.ready_for_collection_at else None,
+                    "supplierNotes": group_buy.supplier_notes,
+                    # Contribution tracking
+                    "contributionId": contrib.id,
+                    "isCollected": contrib.is_collected,
+                    "collectedAt": contrib.collected_at.isoformat() if contrib.collected_at else None,
+                    "hasQRCode": bool(contrib.qr_code_token),
+                    "refundStatus": contrib.refund_status,
+                    "refundedAt": contrib.refunded_at.isoformat() if contrib.refunded_at else None
                 }
                 groups_data.append(group_data)
         
@@ -566,6 +593,60 @@ async def get_my_groups(
     except Exception as e:
         print(f"Error getting user groups: {e}")
         raise HTTPException(status_code=500, detail=f"Error retrieving groups: {str(e)}")
+
+@router.get("/groups/{group_id}/qr-code")
+async def get_qr_code_for_contribution(
+    group_id: int,
+    user: User = Depends(verify_token),
+    db: Session = Depends(get_db)
+):
+    """Get QR code for trader's contribution in a group"""
+    from services.qr_service import QRCodeService
+    
+    # Find user's contribution in this group
+    contribution = db.query(Contribution).filter(
+        Contribution.group_buy_id == group_id,
+        Contribution.user_id == user.id
+    ).first()
+    
+    if not contribution:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="You are not a participant in this group"
+        )
+    
+    # Check if group is ready for collection
+    group_buy = db.query(GroupBuy).filter(GroupBuy.id == group_id).first()
+    if not group_buy or group_buy.supplier_status != "ready_for_collection":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Group is not ready for collection yet"
+        )
+    
+    # Generate or retrieve QR code
+    qr_data = QRCodeService.generate_qr_code_for_contribution(db, contribution, include_image=True)
+    
+    return {
+        "success": True,
+        "qr_code": qr_data["qr_image"],
+        "token": qr_data["token"],
+        "contribution_id": contribution.id,
+        "quantity": contribution.quantity,
+        "product_name": group_buy.product.name if group_buy.product else "Unknown",
+        "pickup_location": group_buy.location_zone,
+        "is_collected": contribution.is_collected
+    }
+
+@router.get("/refunds")
+async def get_my_refunds(
+    user: User = Depends(verify_token),
+    db: Session = Depends(get_db)
+):
+    """Get all refunds for the current user"""
+    from services.refund_service import RefundService
+    
+    refunds = RefundService.get_user_refunds(db, user.id)
+    return {"refunds": refunds}
 
 @router.get("/past-groups-summary")
 async def get_past_groups_summary(
@@ -856,8 +937,8 @@ async def get_group_detail(
             product=ProductInfo(
                 name=group_buy.product.name if group_buy.product else f"Group Buy #{group_buy.id}",
                 description=group_buy.product.description if group_buy.product else "User-created group buy",
-                manufacturer=None,  # GroupBuy products don't have manufacturer info
-                totalStock=None,    # GroupBuy products don't have stock info
+                manufacturer=group_buy.product.manufacturer if group_buy.product else None,
+                totalStock=group_buy.product.total_stock if group_buy.product else None,
                 regularPrice=group_buy.product.unit_price if group_buy.product else 0
             ),
             progressPercentage=progress_percentage,

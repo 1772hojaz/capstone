@@ -80,11 +80,23 @@ def process_events_batch(events: List[AnalyticsEvent], db: Session):
     """
     Process and store events batch with idempotency.
     Runs in background to avoid blocking API responses.
+    
+    NOTE: Only tracks events for TRADERS (non-admin, non-supplier users)
     """
     try:
         events_to_insert = []
         
         for event in events:
+            # Skip events from anonymous users or events without user_id
+            if not event.user_id:
+                continue
+            
+            # CRITICAL: Only track events for TRADERS (not admins or suppliers)
+            user = db.query(User).filter(User.id == event.user_id).first()
+            if not user or user.is_admin or user.is_supplier:
+                print(f"⏭️  Skipping event from non-trader user {event.user_id}")
+                continue
+            
             # Check if event already exists (idempotency by event_id)
             existing = db.query(EventsRaw).filter(
                 EventsRaw.event_id == event.event_id

@@ -677,7 +677,7 @@ def get_recommendations_for_user(user: User, db: Session) -> List[dict]:
         enhanced_score = cf_weight * cf_scores + cbf_weight * cbf_scores + pop_weight * pop_norm
         
         # Time decay for inactive users
-        if user_behavior and user_behavior.days_since_last_activity > 30:
+        if user_behavior and user_behavior.days_since_last_activity and user_behavior.days_since_last_activity > 30:
             enhanced_score *= max(0.7, 1 - (user_behavior.days_since_last_activity/100))
         
         # Normalize hybrid scores to 0-1 range

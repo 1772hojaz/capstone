@@ -30,8 +30,11 @@ ARRAYString = PG_ARRAY(String) if IS_POSTGRES else Text  # fallback to Text-enco
 
 class EventsRaw(Base):
     """
-    Immutable append-only event store for all user interactions.
+    Immutable append-only event store for TRADER user interactions ONLY.
     This is the source of truth for all behavioral data.
+    
+    NOTE: This table ONLY tracks traders (non-admin, non-supplier users).
+    Events from admins and suppliers are automatically filtered out.
     """
     __tablename__ = "events_raw"
     
@@ -88,8 +91,10 @@ class EventsRaw(Base):
 
 class UserBehaviorFeatures(Base):
     """
-    Aggregated user behavior features computed from events.
+    Aggregated TRADER behavior features computed from events.
     Updated daily by ETL pipeline.
+    
+    NOTE: Only contains data for traders (non-admin, non-supplier users).
     """
     __tablename__ = "user_behavior_features"
     
@@ -232,7 +237,7 @@ class GroupPerformanceMetrics(Base):
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     
     # Relationships
-    admin_group = relationship("AdminGroup", backref="performance_metrics")
+    admin_group = relationship("AdminGroup", back_populates="performance_metrics")
     
     # Indexes
     __table_args__ = (
@@ -300,7 +305,7 @@ class UserGroupInteractionMatrix(Base):
     
     # Relationships
     user = relationship("User", backref="group_interactions")
-    admin_group = relationship("AdminGroup", backref="user_interactions")
+    admin_group = relationship("AdminGroup", back_populates="user_interactions")
     
     # Unique constraint
     __table_args__ = (

@@ -32,7 +32,11 @@ def _with_session(fn):
     return wrapper
 
 def update_user_features_daily(db: Session):
-    """Aggregate user behavior from events_raw into user_behavior_features."""
+    """
+    Aggregate user behavior from events_raw into user_behavior_features.
+    
+    NOTE: Only processes data for TRADERS (non-admin, non-supplier users)
+    """
     try:
         # Check if table exists by attempting a simple query
         try:
@@ -43,7 +47,11 @@ def update_user_features_daily(db: Session):
                 return
             raise
         
-        user_ids = [u.id for u in db.query(User.id).all()]
+        # CRITICAL: Only process TRADERS (not admins or suppliers)
+        user_ids = [u.id for u in db.query(User.id).filter(
+            User.is_admin == False, 
+            User.is_supplier == False
+        ).all()]
         for uid in user_ids:
             features = db.query(UserBehaviorFeatures).filter(UserBehaviorFeatures.user_id == uid).first()
             if not features:

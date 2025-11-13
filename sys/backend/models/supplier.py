@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.orm import Session
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, desc
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime, timedelta
@@ -269,7 +269,7 @@ async def get_supplier_dashboard_metrics(
             SupplierOrderItem.supplier_product_id,
             SupplierProduct.product_id,
             Product.name,
-            db.func.sum(SupplierOrderItem.total_amount).label('revenue')
+            func.sum(SupplierOrderItem.total_amount).label('revenue')
         ).join(
             SupplierOrder, SupplierOrderItem.supplier_order_id == SupplierOrder.id
         ).join(
@@ -284,7 +284,7 @@ async def get_supplier_dashboard_metrics(
             SupplierProduct.product_id,
             Product.name
         ).order_by(
-            db.desc('revenue')
+            desc('revenue')
         ).limit(5).all()
 
         top_products = [
@@ -547,6 +547,14 @@ async def process_order_action(
             order.scheduled_delivery_date = action_request.scheduled_delivery_date
             order.special_instructions = action_request.special_instructions
             message = "Order confirmed successfully"
+            
+            # Update GroupBuy supplier_status if this is a group buy order
+            if order.group_buy_id:
+                group_buy = db.query(GroupBuy).filter(GroupBuy.id == order.group_buy_id).first()
+                if group_buy:
+                    group_buy.supplier_status = "supplier_accepted"
+                    group_buy.supplier_response_at = datetime.utcnow()
+                    group_buy.supplier_notes = action_request.special_instructions
 
         elif action_request.action == "reject":
             if not action_request.reason:
@@ -554,6 +562,26 @@ async def process_order_action(
             order.status = "rejected"
             order.rejection_reason = action_request.reason
             message = "Order rejected"
+            
+            # Update GroupBuy supplier_status and trigger refunds if this is a group buy order
+            if order.group_buy_id:
+                from services.refund_service import RefundService
+                
+                group_buy = db.query(GroupBuy).filter(GroupBuy.id == order.group_buy_id).first()
+                if group_buy:
+                    group_buy.supplier_status = "supplier_rejected"
+                    group_buy.supplier_response_at = datetime.utcnow()
+                    group_buy.supplier_notes = action_request.reason
+                    db.commit()
+                    
+                    # Process refunds for all participants
+                    refund_result = RefundService.process_group_refunds(
+                        db, 
+                        order.group_buy_id, 
+                        reason=f"Supplier rejected: {action_request.reason}"
+                    )
+                    
+                    message += f" - Refunds processed: {refund_result.get('refunds_processed', 0)}"
 
         else:
             raise HTTPException(status_code=400, detail="Invalid action")
@@ -567,6 +595,84 @@ async def process_order_action(
         db.rollback()
         print(f"Error processing order action: {e}")
         raise HTTPException(status_code=500, detail="Failed to process order action")
+
+@router.post("/orders/{order_id}/mark-shipped")
+async def mark_order_shipped(
+    order_id: int,
+    supplier: User = Depends(verify_supplier),
+    db: Session = Depends(get_db)
+):
+    """Mark an order as shipped by supplier"""
+    try:
+        order = db.query(SupplierOrder).filter(
+            SupplierOrder.id == order_id,
+            SupplierOrder.supplier_id == supplier.id
+        ).first()
+        
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found")
+        
+        if order.status != "confirmed":
+            raise HTTPException(status_code=400, detail="Only confirmed orders can be marked as shipped")
+        
+        order.status = "shipped"
+        order.shipped_at = datetime.utcnow()
+        
+        db.commit()
+        db.refresh(order)
+        
+        return {
+            "message": "Order marked as shipped successfully",
+            "order_id": order.id,
+            "status": order.status,
+            "shipped_at": order.shipped_at.isoformat()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error marking order as shipped: {e}")
+        raise HTTPException(status_code=500, detail="Failed to mark order as shipped")
+
+@router.post("/orders/{order_id}/mark-delivered")
+async def mark_order_delivered(
+    order_id: int,
+    supplier: User = Depends(verify_supplier),
+    db: Session = Depends(get_db)
+):
+    """Mark an order as delivered to admin"""
+    try:
+        order = db.query(SupplierOrder).filter(
+            SupplierOrder.id == order_id,
+            SupplierOrder.supplier_id == supplier.id
+        ).first()
+        
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found")
+        
+        if order.status != "shipped":
+            raise HTTPException(status_code=400, detail="Only shipped orders can be marked as delivered")
+        
+        order.status = "delivered"
+        order.delivered_at = datetime.utcnow()
+        
+        db.commit()
+        db.refresh(order)
+        
+        return {
+            "message": "Order marked as delivered successfully",
+            "order_id": order.id,
+            "status": order.status,
+            "delivered_at": order.delivered_at.isoformat()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error marking order as delivered: {e}")
+        raise HTTPException(status_code=500, detail="Failed to mark order as delivered")
 
 # Pickup Location Management
 @router.get("/pickup-locations", response_model=List[PickupLocationResponse])
@@ -2234,6 +2340,12 @@ class CreateGroupRequest(BaseModel):
     estimated_delivery: Optional[str] = None
     features: Optional[List[str]] = None
     requirements: Optional[List[str]] = None
+    # Product details
+    product_name: Optional[str] = None
+    product_description: Optional[str] = None
+    manufacturer: Optional[str] = None
+    total_stock: Optional[int] = None
+    specifications: Optional[str] = None
 
 @router.post("/groups/create")
 async def create_supplier_group(
@@ -2296,6 +2408,12 @@ async def create_supplier_group(
             estimated_delivery=group_data.estimated_delivery,
             features=group_data.features,
             requirements=group_data.requirements,
+            # Product details
+            product_name=group_data.product_name,
+            product_description=group_data.product_description,
+            manufacturer=group_data.manufacturer,
+            total_stock=group_data.total_stock,
+            specifications=group_data.specifications,
             is_active=True,
             participants=0  # Start with 0 participants
         )

@@ -77,6 +77,8 @@ class Product(Base):
     bulk_price_zig = Column(Float)  # ZiG currency
     moq = Column(Integer, nullable=False)  # Minimum Order Quantity
     category = Column(String)
+    manufacturer = Column(String, nullable=True)  # Product manufacturer
+    total_stock = Column(Integer, nullable=True)  # Total available stock
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     
@@ -105,6 +107,12 @@ class GroupBuy(Base):
     status = Column(String, default="active")  # active, completed, cancelled
     created_at = Column(DateTime, default=datetime.utcnow)
     completed_at = Column(DateTime, nullable=True)
+    
+    # Supplier workflow fields
+    supplier_status = Column(String, nullable=True)  # pending_supplier, supplier_accepted, supplier_rejected, ready_for_collection, collected
+    supplier_response_at = Column(DateTime, nullable=True)
+    ready_for_collection_at = Column(DateTime, nullable=True)
+    supplier_notes = Column(Text, nullable=True)
     
     # Relationships
     product = relationship("Product", back_populates="group_buys")
@@ -142,6 +150,13 @@ class Contribution(Base):
     paid_amount = Column(Float, default=0.0)
     is_fully_paid = Column(Boolean, default=False)
     joined_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Collection and refund tracking
+    is_collected = Column(Boolean, default=False)
+    collected_at = Column(DateTime, nullable=True)
+    qr_code_token = Column(String, nullable=True)  # Unique token for QR verification
+    refund_status = Column(String, nullable=True)  # pending, completed, failed
+    refunded_at = Column(DateTime, nullable=True)
     
     # Relationships
     group_buy = relationship("GroupBuy", back_populates="contributions")
@@ -262,9 +277,11 @@ class AdminGroup(Base):
         return 0
 
     # Relationships
-    joins = relationship("AdminGroupJoin", back_populates="admin_group")
+    joins = relationship("AdminGroupJoin", back_populates="admin_group", cascade="all, delete-orphan")
     supplier_orders = relationship("SupplierOrder", backref="admin_group")
     product = relationship("Product", backref="admin_groups")
+    performance_metrics = relationship("GroupPerformanceMetrics", back_populates="admin_group", cascade="all, delete-orphan", uselist=False, passive_deletes=True)
+    user_interactions = relationship("UserGroupInteractionMatrix", back_populates="admin_group", cascade="all, delete-orphan", passive_deletes=True)
 
 class AdminGroupJoin(Base):
     __tablename__ = "admin_group_joins"
@@ -367,6 +384,11 @@ class SupplierOrder(Base):
     confirmed_at = Column(DateTime, nullable=True)
     shipped_at = Column(DateTime, nullable=True)
     delivered_at = Column(DateTime, nullable=True)
+    
+    # Admin verification fields
+    admin_verification_status = Column(String, default="pending")  # pending, verified, rejected
+    admin_verified_at = Column(DateTime, nullable=True)
+    qr_codes_generated = Column(Boolean, default=False)
     
     # Relationships
     supplier = relationship("User", back_populates="supplier_orders")

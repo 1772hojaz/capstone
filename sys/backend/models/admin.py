@@ -399,30 +399,21 @@ async def complete_group_buy(
     db: Session = Depends(get_db)
 ):
     """Mark a group-buy as completed (Admin only)"""
-    group = db.query(GroupBuy).filter(GroupBuy.id == group_id).first()
-    if not group:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group-buy not found")
+    from worker.auto_complete_groups import manually_complete_group
     
-    # Check if all contributions are fully paid
-    all_paid = all(c.is_fully_paid for c in group.contributions)
-    if not all_paid:
+    result = manually_complete_group(db, group_id)
+    
+    if not result["success"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Not all participants have fully paid"
+            detail=result["message"]
         )
     
-    # Check if MOQ is met
-    if group.total_quantity < group.product.moq:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="MOQ not met"
-        )
-    
-    group.status = "completed"
-    group.completed_at = datetime.utcnow()
-    db.commit()
-    
-    return {"message": "Group-buy completed successfully"}
+    return {
+        "message": "Group-buy completed successfully",
+        "supplier_status": result.get("supplier_status"),
+        "group_id": result.get("group_id")
+    }
 
 @router.post("/groups/{group_id}/cancel")
 async def cancel_group_buy(
@@ -439,6 +430,177 @@ async def cancel_group_buy(
     db.commit()
     
     return {"message": "Group-buy cancelled"}
+
+@router.get("/groups/ready-for-payment")
+async def get_groups_ready_for_payment(
+    admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Get groups where supplier has accepted and admin needs to verify/pay"""
+    from models.models import SupplierOrder
+    
+    groups = db.query(GroupBuy).filter(
+        GroupBuy.supplier_status == "supplier_accepted",
+        GroupBuy.status == "completed"
+    ).all()
+    
+    result = []
+    for group in groups:
+        # Get supplier order
+        supplier_order = db.query(SupplierOrder).filter(
+            SupplierOrder.group_buy_id == group.id
+        ).first()
+        
+        result.append({
+            "id": group.id,
+            "product_name": group.product.name if group.product else "Unknown",
+            "total_quantity": group.total_quantity,
+            "total_value": group.total_paid,
+            "location_zone": group.location_zone,
+            "completed_at": group.completed_at.isoformat() if group.completed_at else None,
+            "supplier_response_at": group.supplier_response_at.isoformat() if group.supplier_response_at else None,
+            "supplier_notes": group.supplier_notes,
+            "supplier_order_id": supplier_order.id if supplier_order else None,
+            "supplier_order_status": supplier_order.status if supplier_order else None,
+            "participants_count": group.participants_count
+        })
+    
+    return result
+
+@router.post("/groups/{group_id}/mark-ready-for-collection")
+async def mark_group_ready_for_collection(
+    group_id: int,
+    admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Mark group as ready for collection after admin receives items from supplier"""
+    from services.qr_service import QRCodeService
+    from models.models import SupplierOrder
+    
+    group = db.query(GroupBuy).filter(GroupBuy.id == group_id).first()
+    if not group:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
+    
+    if group.supplier_status != "supplier_accepted":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Group must be supplier_accepted before marking ready for collection"
+        )
+    
+    # Update group status
+    group.supplier_status = "ready_for_collection"
+    group.ready_for_collection_at = datetime.utcnow()
+    
+    # Generate QR codes for all contributions
+    qr_codes = QRCodeService.generate_qr_codes_for_group(db, group_id, include_images=False)
+    
+    # Update supplier order
+    supplier_order = db.query(SupplierOrder).filter(
+        SupplierOrder.group_buy_id == group_id
+    ).first()
+    
+    if supplier_order:
+        supplier_order.admin_verification_status = "verified"
+        supplier_order.admin_verified_at = datetime.utcnow()
+        supplier_order.qr_codes_generated = True
+    
+    db.commit()
+    
+    return {
+        "message": "Group marked as ready for collection",
+        "group_id": group_id,
+        "qr_codes_generated": len(qr_codes),
+        "ready_for_collection_at": group.ready_for_collection_at.isoformat()
+    }
+
+@router.post("/groups/{group_id}/verify-delivery")
+async def verify_supplier_delivery(
+    group_id: int,
+    admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Admin confirms receipt of items from supplier"""
+    from models.models import SupplierOrder
+    
+    group = db.query(GroupBuy).filter(GroupBuy.id == group_id).first()
+    if not group:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
+    
+    supplier_order = db.query(SupplierOrder).filter(
+        SupplierOrder.group_buy_id == group_id
+    ).first()
+    
+    if not supplier_order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Supplier order not found")
+    
+    if supplier_order.status != "confirmed":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Supplier order must be confirmed first"
+        )
+    
+    # Mark as delivered
+    supplier_order.status = "delivered"
+    supplier_order.delivered_at = datetime.utcnow()
+    supplier_order.admin_verification_status = "verified"
+    supplier_order.admin_verified_at = datetime.utcnow()
+    
+    db.commit()
+    
+    return {
+        "message": "Delivery verified by admin",
+        "order_id": supplier_order.id,
+        "verified_at": supplier_order.admin_verified_at.isoformat()
+    }
+
+@router.post("/verify-qr")
+async def verify_qr_code(
+    token: str,
+    admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Verify QR code at pickup location"""
+    from services.qr_service import QRCodeService
+    
+    verification = QRCodeService.verify_qr_token(db, token)
+    
+    if not verification:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid QR code")
+    
+    return verification
+
+@router.post("/collect-with-qr")
+async def collect_with_qr(
+    token: str,
+    admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Mark contribution as collected after QR verification"""
+    from services.qr_service import QRCodeService
+    
+    result = QRCodeService.mark_as_collected(db, token)
+    
+    if not result["success"]:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result["message"])
+    
+    return result
+
+@router.post("/groups/{group_id}/process-refunds")
+async def process_group_refunds(
+    group_id: int,
+    reason: Optional[str] = "Admin initiated refund",
+    admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Manually process refunds for a group"""
+    from services.refund_service import RefundService
+    
+    result = RefundService.process_group_refunds(db, group_id, reason)
+    
+    if not result["success"]:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result["message"])
+    
+    return result
 
 @router.post("/groups/{group_id}/process-payment")
 async def process_admin_group_payment(
