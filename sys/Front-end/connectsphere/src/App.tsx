@@ -15,6 +15,7 @@ import ProfilePage from './pages/ProfilePage';
 import GroupModeration from './pages/GroupModeration';
 import Users from './pages/Users';
 import SystemSettings from './pages/SystemSettings';
+import MLBenchmarking from './pages/admin/MLBenchmarking';
 import PaymentSuccess from './pages/PaymentSuccess';
 import PaymentFailure from './pages/PaymentFailure';
 import PaymentPage from './pages/PaymentPage';
@@ -156,6 +157,12 @@ function App() {
         <Route path="/settings" element={
           <MainLayout>
             <SystemSettings />
+          </MainLayout>
+        } />
+
+        <Route path="/admin/ml-benchmarking" element={
+          <MainLayout>
+            <MLBenchmarking />
           </MainLayout>
         } />
 

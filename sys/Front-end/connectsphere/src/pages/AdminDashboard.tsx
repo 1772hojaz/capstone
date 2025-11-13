@@ -1,4 +1,4 @@
-import { Users, Eye, ShoppingBag, TrendingUp, DollarSign, RefreshCw, Clock } from 'lucide-react';
+import { Users, Eye, ShoppingBag, TrendingUp, DollarSign, RefreshCw, Clock, BarChart3 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useState, useEffect, useRef } from 'react';
 import { ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Bar, PieChart, Pie, Cell } from 'recharts';
@@ -1099,6 +1099,13 @@ const AdminDashboard = () => {
                 description="Configure global platform settings, notifications, and error integration points."
                 buttonText="Configure System"
                 link="/settings"
+              />
+              <ManagementCard
+                icon={<BarChart3 className="w-8 h-8" />}
+                title="ML Benchmarking"
+                description="Evaluate recommendation model performance with precision, recall, and NDCG metrics."
+                buttonText="View Benchmarks"
+                link="/admin/ml-benchmarking"
               />
             </div>
           </div>

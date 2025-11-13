@@ -186,8 +186,15 @@ def load_models():
             print("✓ Loaded tfidf.pkl (Content-Based Filtering)")
         
         if os.path.exists(scaler_path):
-            scaler = joblib.load(scaler_path)
-            print("✓ Loaded scaler.pkl")
+            loaded_scaler = joblib.load(scaler_path)
+            # Handle both old (single scaler) and new (dict of scalers) formats
+            if isinstance(loaded_scaler, dict):
+                scaler = loaded_scaler
+                print("✓ Loaded scaler.pkl (multi-scaler format)")
+            else:
+                # Legacy single scaler - wrap it
+                scaler = {'purchase': loaded_scaler, 'preference': loaded_scaler}
+                print("✓ Loaded scaler.pkl (legacy format)")
             
         if os.path.exists(feature_store_path):
             with open(feature_store_path, 'r') as f:
@@ -330,9 +337,15 @@ async def train_clustering_model_with_progress(db: Session):
             
             pref_features = np.zeros(10)
             if user.preferred_categories:
-                category_mapping = {'electronics': 0, 'clothing': 1, 'food': 2, 'household': 3, 'tools': 4}
+                # Mbare Musika product categories
+                category_mapping = {
+                    'fruits': 0, 'vegetables': 1, 'grains': 2, 'legumes': 3, 
+                    'poultry': 4, 'fish': 5, 'food': 2, 'protein': 6,
+                    'dried vegetables': 7, 'electronics': 8, 'clothing': 9, 
+                    'household': 2, 'tools': 8
+                }
                 for cat in user.preferred_categories[:3]:
-                    if cat.lower() in category_mapping:
+                    if cat and cat.lower() in category_mapping:
                         pref_features[category_mapping[cat.lower()]] = 1
             
             budget_mapping = {'low': 0, 'medium': 1, 'high': 2}
@@ -351,12 +364,24 @@ async def train_clustering_model_with_progress(db: Session):
             trader_features.append(combined_features)
         
         trader_features = np.array(trader_features)
-        scaler = MinMaxScaler()
-        mat_scaled = scaler.fit_transform(trader_features)
         
-        # Determine optimal clusters
-        K_range = range(2, min(9, n_users // 2 + 1))
-        best_k, best_score = 4, -1
+        # Weight preference features more heavily (they're currently underrepresented)
+        # Purchase features: 74 dimensions, Preference features: 10 dimensions
+        # Scale to give preferences 3x weight
+        purchase_features = trader_features[:, :n_products]
+        pref_features_raw = trader_features[:, n_products:]
+        
+        scaler_purchase = MinMaxScaler()
+        scaler_pref = MinMaxScaler()
+        purchase_scaled = scaler_purchase.fit_transform(purchase_features)
+        pref_scaled = scaler_pref.fit_transform(pref_features_raw) * 3  # 3x weight
+        
+        mat_scaled = np.concatenate([purchase_scaled, pref_scaled], axis=1)
+        
+        # Determine optimal clusters with wider range
+        max_k = min(15, max(8, n_users // 50))  # Allow up to 15 clusters, min 8
+        K_range = range(3, max_k + 1)  # Start from 3 clusters
+        best_k, best_score = 5, -1  # Default to 5 clusters
         
         for k in K_range:
             km = KMeans(n_clusters=k, init="k-means++", n_init=10, random_state=42)
@@ -453,7 +478,11 @@ async def train_clustering_model_with_progress(db: Session):
         joblib.dump(clustering_model, os.path.join(MODEL_DIR, "clustering_model.pkl"))
         joblib.dump(nmf_model, os.path.join(MODEL_DIR, "nmf_model.pkl"))
         joblib.dump(tfidf_model, os.path.join(MODEL_DIR, "tfidf.pkl"))
-        joblib.dump(scaler, os.path.join(MODEL_DIR, "scaler.pkl"))
+        # Save both scalers
+        joblib.dump({
+            'purchase': scaler_purchase,
+            'preference': scaler_pref
+        }, os.path.join(MODEL_DIR, "scaler.pkl"))
         
         feature_store = {
             "product_id_to_name": {int(p.id): p.name for p in products},

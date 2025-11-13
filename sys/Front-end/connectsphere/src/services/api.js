@@ -729,6 +729,44 @@ class ApiService {
       this.websocketConnected = false;
     }
   }
+
+  // =========================================================================
+  // ML BENCHMARKING METHODS
+  // =========================================================================
+
+  /**
+   * Run a new benchmark evaluation
+   * Evaluates all baseline models and stores results
+   */
+  async runBenchmark() {
+    return this.request('/api/ml/benchmark/run', {
+      method: 'POST',
+    });
+  }
+
+  /**
+   * Get the latest benchmark results
+   * Returns metrics for all models from the most recent run
+   */
+  async getLatestBenchmark() {
+    return this.request('/api/ml/benchmark/latest');
+  }
+
+  /**
+   * Get benchmark history
+   * @param {number} limit - Number of historical runs to retrieve (default 10)
+   */
+  async getBenchmarkHistory(limit = 10) {
+    return this.request(`/api/ml/benchmark/history?limit=${limit}`);
+  }
+
+  /**
+   * Get detailed comparison of all baseline models
+   * Returns comprehensive metrics for model comparison
+   */
+  async getBaselineComparison() {
+    return this.request('/api/ml/benchmark/comparison');
+  }
 }
 
 // Create and export a singleton instance

@@ -498,6 +498,30 @@ class QRScanHistory(Base):
 # UserBehaviorFeatures moved to analytics_models.py to avoid duplication
 # Import from there if needed: from models.analytics_models import UserBehaviorFeatures
 
+class BenchmarkResult(Base):
+    """Store ML model benchmark evaluation results"""
+    __tablename__ = "benchmark_results"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    model_name = Column(String, index=True, nullable=False)  # "hybrid", "random", "popularity", etc.
+    precision_at_5 = Column(Float, nullable=False)
+    precision_at_10 = Column(Float, nullable=False)
+    recall_at_5 = Column(Float, nullable=False)
+    recall_at_10 = Column(Float, nullable=False)
+    ndcg_at_5 = Column(Float, nullable=False)
+    ndcg_at_10 = Column(Float, nullable=False)
+    map_score = Column(Float, nullable=False)  # Mean Average Precision
+    hit_rate = Column(Float, nullable=False)
+    coverage = Column(Float, nullable=False)
+    test_set_size = Column(Integer, nullable=False)
+    evaluation_time = Column(Float, default=0.0)  # seconds
+    run_at = Column(DateTime, default=datetime.utcnow, index=True)
+    notes = Column(Text, nullable=True)
+    
+    __table_args__ = (
+        Index("idx_benchmark_model_rundate", "model_name", "run_at"),
+    )
+
 
 # Pydantic models for API responses
 class QRCodeGenerateRequest(BaseModel):

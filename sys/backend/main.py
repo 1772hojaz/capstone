@@ -22,6 +22,7 @@ from models.products import router as products_router
 from models.groups import router as groups_router
 from models.chat import router as chat_router
 from ml.ml import router as ml_router
+from ml.benchmarking import router as benchmarking_router
 from models.admin import router as admin_router
 from models.settings import router as settings_router
 from models.supplier import router as supplier_router
@@ -410,6 +411,7 @@ app.include_router(products_router, prefix="/api/products", tags=["Products"])
 app.include_router(groups_router, prefix="/api/groups", tags=["Group-Buys"])
 app.include_router(chat_router, prefix="/api/chat", tags=["Chat"])
 app.include_router(ml_router, prefix="/api/ml", tags=["Machine Learning"])
+app.include_router(benchmarking_router, prefix="/api/ml", tags=["ML Benchmarking"])
 app.include_router(admin_router, prefix="/api/admin", tags=["Admin"])
 app.include_router(settings_router, prefix="/api/settings", tags=["Settings"])
 app.include_router(supplier_router, prefix="/api/supplier", tags=["Supplier"])

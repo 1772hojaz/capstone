@@ -170,3 +170,13 @@ async def run_daily_analytics_scheduler(interval_hours: int = 24):
         except Exception as e:
             logger.exception(f"Analytics ETL cycle failed: {e}")
         await asyncio.sleep(interval_hours * 3600)
+
+
+if __name__ == "__main__":
+    print("=" * 70)
+    print("ANALYTICS ETL PIPELINE")
+    print("=" * 70)
+    print("Processing analytics data...")
+    asyncio.run(run_daily_analytics_jobs_once())
+    print("✅ ETL pipeline completed!")
+    print("=" * 70)
