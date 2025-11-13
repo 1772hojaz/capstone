@@ -81,6 +81,34 @@ export default function AllGroups() {
     fetchGroups();
   }, []);
 
+  // Filtered and sorted groups - MUST be defined before useEffect that uses it
+  const filteredAndSortedGroups = useMemo(() => {
+    let filtered = groups.filter(group => {
+      const matchesSearch = group.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                           group.description.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesCategory = selectedCategory === 'All' || group.category === selectedCategory;
+      return matchesSearch && matchesCategory;
+    });
+
+    // Sort groups
+    filtered.sort((a, b) => {
+      switch (sortBy) {
+        case 'participants':
+          return b.participants - a.participants;
+        case 'price-low':
+          return a.price - b.price;
+        case 'price-high':
+          return b.price - a.price;
+        case 'newest':
+          return new Date(b.created).getTime() - new Date(a.created).getTime();
+        default:
+          return 0;
+      }
+    });
+
+    return filtered;
+  }, [groups, searchQuery, selectedCategory, sortBy]);
+
   // Analytics: page view + changes to filters/sorting/view mode
   useEffect(() => {
     analyticsService.trackPageView('all_groups', {
@@ -141,34 +169,6 @@ export default function AllGroups() {
       alert((err as Error)?.message || 'Failed to join group');
     }
   };
-
-  // Filtered and sorted groups
-  const filteredAndSortedGroups = useMemo(() => {
-    let filtered = groups.filter(group => {
-      const matchesSearch = group.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                           group.description.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesCategory = selectedCategory === 'All' || group.category === selectedCategory;
-      return matchesSearch && matchesCategory;
-    });
-
-    // Sort groups
-    filtered.sort((a, b) => {
-      switch (sortBy) {
-        case 'participants':
-          return b.participants - a.participants;
-        case 'price-low':
-          return a.price - b.price;
-        case 'price-high':
-          return b.price - a.price;
-        case 'newest':
-          return new Date(b.created).getTime() - new Date(a.created).getTime();
-        default:
-          return 0;
-      }
-    });
-
-    return filtered;
-  }, [groups, searchQuery, selectedCategory, sortBy]);
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">

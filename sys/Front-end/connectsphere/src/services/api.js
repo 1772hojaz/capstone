@@ -165,6 +165,10 @@ class ApiService {
     return this.request(`/api/groups/${groupId}/qr-code?t=${timestamp}`);
   }
 
+  async getUserRefunds() {
+    return this.request('/api/groups/refunds');
+  }
+
   async getAllGroups(params = {}) {
     const queryString = new URLSearchParams(params).toString();
     const endpoint = queryString ? `/api/groups?${queryString}` : '/api/groups';
@@ -444,6 +448,18 @@ class ApiService {
     });
   }
 
+  async markOrderShipped(orderId) {
+    return this.request(`/api/supplier/orders/${orderId}/mark-shipped`, {
+      method: 'POST',
+    });
+  }
+
+  async markOrderDelivered(orderId) {
+    return this.request(`/api/supplier/orders/${orderId}/mark-delivered`, {
+      method: 'POST',
+    });
+  }
+
   // Supplier Pickup Locations
   async getSupplierPickupLocations() {
     return this.request('/api/supplier/pickup-locations');
@@ -484,6 +500,39 @@ class ApiService {
 
   async markQRCodeAsUsed(qrCodeId) {
     return this.request(`/api/admin/qr/mark-used/${qrCodeId}`, {
+      method: 'POST',
+    });
+  }
+
+  // New Admin endpoints for group workflow
+  async getGroupsReadyForPayment() {
+    return this.request('/api/admin/groups/ready-for-payment');
+  }
+
+  async markGroupReadyForCollection(groupId) {
+    return this.request(`/api/admin/groups/${groupId}/mark-ready-for-collection`, {
+      method: 'POST',
+    });
+  }
+
+  async verifySupplierDelivery(groupId) {
+    return this.request(`/api/admin/groups/${groupId}/verify-delivery`, {
+      method: 'POST',
+    });
+  }
+
+  async verifyQRCode(token) {
+    return this.request(`/api/admin/verify-qr?token=${encodeURIComponent(token)}`);
+  }
+
+  async collectWithQR(token) {
+    return this.request(`/api/admin/collect-with-qr?token=${encodeURIComponent(token)}`, {
+      method: 'POST',
+    });
+  }
+
+  async processGroupRefunds(groupId, reason) {
+    return this.request(`/api/admin/groups/${groupId}/process-refunds?reason=${encodeURIComponent(reason || '')}`, {
       method: 'POST',
     });
   }

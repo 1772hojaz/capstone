@@ -1,4 +1,12 @@
-// Analytics Service for tracking user interactions
+/**
+ * Analytics Service - TRADER ONLY
+ * 
+ * Tracks TRADER user behavior and interactions for analytics and ML recommendations.
+ * Events are batched and sent to the backend every 5 seconds or when the page unloads.
+ * 
+ * NOTE: Backend automatically filters out events from admin and supplier users.
+ * Only trader (regular user) events are stored in the analytics database.
+ */
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
 class AnalyticsService {

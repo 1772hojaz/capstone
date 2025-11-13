@@ -377,16 +377,16 @@ export default function GroupList() {
               Recommended
             </button>
             <button 
-              onClick={() => navigate('/groups')}
-              className="text-sm font-medium text-blue-600"
-            >
-              My Groups
-            </button>
-            <button 
               onClick={() => navigate('/all-groups')}
               className="text-sm text-gray-700 hover:text-gray-900"
             >
               All Groups
+            </button>
+            <button 
+              onClick={() => navigate('/groups')}
+              className="text-sm font-medium text-blue-600"
+            >
+              My Groups
             </button>
           </nav>
 

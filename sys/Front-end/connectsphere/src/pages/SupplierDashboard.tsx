@@ -38,7 +38,10 @@ interface Order {
 
 const SupplierDashboard: React.FC = () => {
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
-  const [orders, setOrders] = useState<Order[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]); // Pending orders
+  const [confirmedOrders, setConfirmedOrders] = useState<Order[]>([]);
+  const [shippedOrders, setShippedOrders] = useState<Order[]>([]);
+  const [deliveredOrders, setDeliveredOrders] = useState<Order[]>([]);
   const [invoices, setInvoices] = useState<any[]>([]);
   const [payments, setPayments] = useState<any[]>([]);
   const [notifications, setNotifications] = useState<any[]>([]);
@@ -121,7 +124,10 @@ const SupplierDashboard: React.FC = () => {
       const token = localStorage.getItem('token');
       const [
         metricsResponse,
-        ordersResponse,
+        pendingOrdersResponse,
+        confirmedOrdersResponse,
+        shippedOrdersResponse,
+        deliveredOrdersResponse,
         invoicesResponse,
         paymentsResponse,
         paymentDashboardResponse,
@@ -129,6 +135,9 @@ const SupplierDashboard: React.FC = () => {
       ] = await Promise.all([
         fetch('/api/supplier/dashboard/metrics', { headers: { Authorization: `Bearer ${token}` } }),
         fetch('/api/supplier/orders?status=pending', { headers: { Authorization: `Bearer ${token}` } }),
+        fetch('/api/supplier/orders?status=confirmed', { headers: { Authorization: `Bearer ${token}` } }),
+        fetch('/api/supplier/orders?status=shipped', { headers: { Authorization: `Bearer ${token}` } }),
+        fetch('/api/supplier/orders?status=delivered', { headers: { Authorization: `Bearer ${token}` } }),
         fetch('/api/supplier/invoices', { headers: { Authorization: `Bearer ${token}` } }),
         fetch('/api/supplier/payments', { headers: { Authorization: `Bearer ${token}` } }),
         fetch('/api/supplier/payments/dashboard', { headers: { Authorization: `Bearer ${token}` } }),
@@ -140,9 +149,24 @@ const SupplierDashboard: React.FC = () => {
         setMetrics(metricsData);
       }
 
-      if (ordersResponse.ok) {
-        const ordersData = await ordersResponse.json();
-        setOrders(ordersData);
+      if (pendingOrdersResponse.ok) {
+        const pendingOrdersData = await pendingOrdersResponse.json();
+        setOrders(pendingOrdersData);
+      }
+
+      if (confirmedOrdersResponse.ok) {
+        const confirmedOrdersData = await confirmedOrdersResponse.json();
+        setConfirmedOrders(confirmedOrdersData);
+      }
+
+      if (shippedOrdersResponse.ok) {
+        const shippedOrdersData = await shippedOrdersResponse.json();
+        setShippedOrders(shippedOrdersData);
+      }
+
+      if (deliveredOrdersResponse.ok) {
+        const deliveredOrdersData = await deliveredOrdersResponse.json();
+        setDeliveredOrders(deliveredOrdersData);
       }
 
       if (invoicesResponse.ok) {
@@ -189,6 +213,26 @@ const SupplierDashboard: React.FC = () => {
       }
     } catch (error) {
       console.error('Error processing order:', error);
+    }
+  };
+
+  const handleMarkShipped = async (orderId: number) => {
+    try {
+      await apiService.markOrderShipped(orderId);
+      // Refresh orders
+      fetchDashboardData();
+    } catch (error) {
+      console.error('Error marking order as shipped:', error);
+    }
+  };
+
+  const handleMarkDelivered = async (orderId: number) => {
+    try {
+      await apiService.markOrderDelivered(orderId);
+      // Refresh orders
+      fetchDashboardData();
+    } catch (error) {
+      console.error('Error marking order as delivered:', error);
     }
   };
 
@@ -519,32 +563,32 @@ const SupplierDashboard: React.FC = () => {
         {/* Tab Content */}
         {activeTab === 'orders' && (
           <div className="space-y-8">
-            {/* Order Management */}
+            {/* Pending Orders - New Orders Awaiting Acceptance */}
             <div>
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">Order Management</h2>
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">
+                Pending Orders <span className="text-sm text-gray-500">({orders.length})</span>
+              </h2>
               <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                 {orders.length === 0 ? (
-                  <div className="text-center py-12">
-                    <ShoppingCart className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">No pending orders</h3>
-                    <p className="text-gray-600">All orders have been processed.</p>
+                  <div className="text-center py-8">
+                    <Clock className="h-10 w-10 text-gray-400 mx-auto mb-3" />
+                    <p className="text-gray-600">No pending orders to review.</p>
                   </div>
                 ) : (
                   <div className="space-y-4">
                     {orders.map((order) => (
-                      <div key={order.id} className="border border-gray-200 rounded-lg p-6 bg-white">
+                      <div key={order.id} className="border border-orange-200 rounded-lg p-6 bg-orange-50">
                         <div className="flex justify-between items-start mb-4">
                           <div>
                             <h3 className="font-semibold text-gray-900">{order.order_number}</h3>
                             <p className="text-sm text-gray-600">{order.group_name}</p>
                             <p className="text-sm text-gray-600">{order.trader_count} traders • {order.delivery_location}</p>
                           </div>
-                          <Badge variant="outline" className="flex items-center gap-1">
+                          <Badge variant="outline" className="flex items-center gap-1 bg-orange-100 border-orange-300">
                             <Clock className="h-3 w-3" />
-                            Pending
+                            Awaiting Response
                           </Badge>
                         </div>
-
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                           <div>
                             <h4 className="font-medium text-gray-900 mb-2">Products</h4>
@@ -559,23 +603,155 @@ const SupplierDashboard: React.FC = () => {
                             <p className="text-sm text-green-600">Savings: ${order.total_savings}</p>
                           </div>
                         </div>
-
                         <div className="flex gap-2">
-                          <Button
-                            onClick={() => handleOrderAction(order.id, 'confirm')}
-                            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white"
-                          >
-                            <CheckCircle className="h-4 w-4" />
-                            Confirm Order
+                          <Button onClick={() => handleOrderAction(order.id, 'confirm')} className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white">
+                            <CheckCircle className="h-4 w-4" />Accept Order
                           </Button>
-                          <Button
-                            variant="outline"
-                            onClick={() => handleOrderAction(order.id, 'reject', 'Capacity constraints')}
-                            className="flex items-center gap-2 text-red-600 border-red-300 hover:bg-red-50"
-                          >
-                            <AlertCircle className="h-4 w-4" />
-                            Reject Order
+                          <Button variant="outline" onClick={() => handleOrderAction(order.id, 'reject', 'Capacity constraints')} className="flex items-center gap-2 text-red-600 border-red-300 hover:bg-red-50">
+                            <AlertCircle className="h-4 w-4" />Reject Order
                           </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Confirmed Orders - Ready to Ship */}
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">
+                Confirmed Orders - Ready to Ship <span className="text-sm text-gray-500">({confirmedOrders.length})</span>
+              </h2>
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                {confirmedOrders.length === 0 ? (
+                  <div className="text-center py-8">
+                    <Package className="h-10 w-10 text-gray-400 mx-auto mb-3" />
+                    <p className="text-gray-600">No confirmed orders awaiting shipment.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {confirmedOrders.map((order) => (
+                      <div key={order.id} className="border border-blue-200 rounded-lg p-6 bg-blue-50">
+                        <div className="flex justify-between items-start mb-4">
+                          <div>
+                            <h3 className="font-semibold text-gray-900">{order.order_number}</h3>
+                            <p className="text-sm text-gray-600">{order.group_name}</p>
+                            <p className="text-sm text-gray-600">{order.trader_count} traders • {order.delivery_location}</p>
+                          </div>
+                          <Badge variant="outline" className="flex items-center gap-1 bg-blue-100 border-blue-300">
+                            <Package className="h-3 w-3" />Confirmed
+                          </Badge>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                          <div>
+                            <h4 className="font-medium text-gray-900 mb-2">Products</h4>
+                            {order.products.map((product, index) => (
+                              <div key={index} className="text-sm text-gray-600">
+                                {product.name}: {product.quantity} × ${product.unit_price}
+                              </div>
+                            ))}
+                          </div>
+                          <div className="text-right">
+                            <p className="text-lg font-semibold text-gray-900">Total: ${order.total_value}</p>
+                          </div>
+                        </div>
+                        <Button onClick={() => handleMarkShipped(order.id)} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white">
+                          <Package className="h-4 w-4" />Mark as Shipped
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Shipped Orders - In Transit */}
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">
+                Shipped Orders - In Transit <span className="text-sm text-gray-500">({shippedOrders.length})</span>
+              </h2>
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                {shippedOrders.length === 0 ? (
+                  <div className="text-center py-8">
+                    <TrendingUp className="h-10 w-10 text-gray-400 mx-auto mb-3" />
+                    <p className="text-gray-600">No orders currently in transit.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {shippedOrders.map((order) => (
+                      <div key={order.id} className="border border-purple-200 rounded-lg p-6 bg-purple-50">
+                        <div className="flex justify-between items-start mb-4">
+                          <div>
+                            <h3 className="font-semibold text-gray-900">{order.order_number}</h3>
+                            <p className="text-sm text-gray-600">{order.group_name}</p>
+                            <p className="text-sm text-gray-600">{order.trader_count} traders • {order.delivery_location}</p>
+                          </div>
+                          <Badge variant="outline" className="flex items-center gap-1 bg-purple-100 border-purple-300">
+                            <TrendingUp className="h-3 w-3" />In Transit
+                          </Badge>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                          <div>
+                            <h4 className="font-medium text-gray-900 mb-2">Products</h4>
+                            {order.products.map((product, index) => (
+                              <div key={index} className="text-sm text-gray-600">
+                                {product.name}: {product.quantity} × ${product.unit_price}
+                              </div>
+                            ))}
+                          </div>
+                          <div className="text-right">
+                            <p className="text-lg font-semibold text-gray-900">Total: ${order.total_value}</p>
+                          </div>
+                        </div>
+                        <Button onClick={() => handleMarkDelivered(order.id)} className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white">
+                          <CheckCircle className="h-4 w-4" />Mark as Delivered
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Delivered Orders - Awaiting Admin Verification */}
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">
+                Delivered Orders - Awaiting Admin Verification <span className="text-sm text-gray-500">({deliveredOrders.length})</span>
+              </h2>
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                {deliveredOrders.length === 0 ? (
+                  <div className="text-center py-8">
+                    <CheckCircle className="h-10 w-10 text-gray-400 mx-auto mb-3" />
+                    <p className="text-gray-600">No delivered orders awaiting verification.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {deliveredOrders.map((order) => (
+                      <div key={order.id} className="border border-green-200 rounded-lg p-6 bg-green-50">
+                        <div className="flex justify-between items-start mb-4">
+                          <div>
+                            <h3 className="font-semibold text-gray-900">{order.order_number}</h3>
+                            <p className="text-sm text-gray-600">{order.group_name}</p>
+                            <p className="text-sm text-gray-600">{order.trader_count} traders • {order.delivery_location}</p>
+                          </div>
+                          <Badge variant="outline" className="flex items-center gap-1 bg-green-100 border-green-300">
+                            <CheckCircle className="h-3 w-3" />Delivered
+                          </Badge>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <h4 className="font-medium text-gray-900 mb-2">Products</h4>
+                            {order.products.map((product, index) => (
+                              <div key={index} className="text-sm text-gray-600">
+                                {product.name}: {product.quantity} × ${product.unit_price}
+                              </div>
+                            ))}
+                          </div>
+                          <div className="text-right">
+                            <p className="text-lg font-semibold text-gray-900">Total: ${order.total_value}</p>
+                            <p className="text-sm text-gray-500 mt-2">Waiting for admin to verify receipt and mark as ready for trader pickup.</p>
+                          </div>
                         </div>
                       </div>
                     ))}
