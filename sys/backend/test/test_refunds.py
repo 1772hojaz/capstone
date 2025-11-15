@@ -37,4 +37,3 @@ def test_automatic_refund_on_reject(client, db_session, trader_user, supplier_us
     tx = db_session.query(Transaction).filter(Transaction.user_id == trader_user.id, Transaction.transaction_type == 'refund').first()
     assert tx is not None
     assert tx.amount < 0
-*** End Patch

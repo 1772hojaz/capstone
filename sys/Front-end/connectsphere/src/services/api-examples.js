@@ -2,6 +2,7 @@
 // This file demonstrates how to use the API service in your React components
 
 import apiService from '../services/api';
+import { Navigate } from 'react-router-dom';
 
 // Example 1: Login Component
 const handleLogin = async (email, password) => {
@@ -64,12 +65,15 @@ const handleRetrainModels = async () => {
 };
 
 // Example 5: Checking Authentication Status
+// Note: This is example code only - component declarations should be in .jsx or .tsx files
 const ProtectedComponent = () => {
   if (!apiService.isAuthenticated()) {
-    return <Navigate to="/login" />;
+    // In actual implementation: return <Navigate to="/login" />;
+    return null; // Placeholder for example purposes
   }
 
-  return <Dashboard />;
+  // In actual implementation: return <Dashboard />;
+  return null; // Placeholder for example purposes
 };
 
 // Example 6: Logout
