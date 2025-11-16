@@ -30,6 +30,7 @@ from payment.payment_router import router as payment_router
 from ml.ml_scheduler import scheduler, start_scheduler
 from websocket.websocket_manager import manager
 from analytics.analytics_router import router as analytics_router
+from analytics.behavioral_ml_router import router as behavioral_ml_router
 from analytics.etl_pipeline import run_daily_analytics_scheduler
 from gateway.gateway_router import router as gateway_router
 from graphql.schema import app as graphql_app, ENABLE_GRAPHQL
@@ -439,6 +440,7 @@ app.include_router(settings_router, prefix="/api/settings", tags=["Settings"])
 app.include_router(supplier_router, prefix="/api/supplier", tags=["Supplier"])
 app.include_router(payment_router, prefix="/api/payment", tags=["Payment"])
 app.include_router(analytics_router)
+app.include_router(behavioral_ml_router)
 app.include_router(gateway_router)
 
 # Basic metrics endpoint for lightweight monitoring
