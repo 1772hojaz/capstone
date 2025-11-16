@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.orm import Session
-from sqlalchemy import func, or_, desc
+from sqlalchemy import func, desc, or_
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime, timedelta
@@ -12,7 +12,7 @@ import cloudinary.uploader
 import cloudinary.api
 
 from db.database import get_db
-from models.models import User, SupplierProduct, ProductPricingTier, SupplierOrder, SupplierOrderItem, Product, GroupBuy, SupplierPickupLocation, SupplierInvoice, SupplierPayment, SupplierNotification, AdminGroup, AdminGroupJoin
+from models.models import User, SupplierProduct, ProductPricingTier, SupplierOrder, SupplierOrderItem, Product, GroupBuy, SupplierPickupLocation, SupplierInvoice, SupplierPayment, SupplierNotification, AdminGroup, AdminGroupJoin, Transaction
 from authentication.auth import verify_token
 
 # Configure logging
@@ -72,6 +72,12 @@ class OrderActionRequest(BaseModel):
     delivery_method: Optional[str] = None
     scheduled_delivery_date: Optional[datetime] = None
     special_instructions: Optional[str] = None
+
+
+class ShipDeliveryRequest(BaseModel):
+    tracking_number: Optional[str] = None
+    tracking_url: Optional[str] = None
+    notes: Optional[str] = None
 
 class PickupLocationCreate(BaseModel):
     name: str
@@ -479,8 +485,8 @@ async def get_supplier_orders(
     result = []
     for order in orders:
         # Get group info
-        group_name = "Unknown Group"
-        trader_count = 0
+        group_name = "Direct Order"  # Default for orders not linked to groups
+        trader_count = 1  # Default for direct orders
 
         if order.group_buy_id:
             # Query the GroupBuy object
@@ -493,7 +499,10 @@ async def get_supplier_orders(
             admin_group = db.query(AdminGroup).filter(AdminGroup.id == order.admin_group_id).first()
             if admin_group:
                 group_name = admin_group.name
-                trader_count = admin_group.participants or 0
+                # Count actual joins for admin groups
+                trader_count = db.query(func.count(AdminGroupJoin.id)).filter(
+                    AdminGroupJoin.admin_group_id == admin_group.id
+                ).scalar() or 0
 
         # Get products
         products = []
@@ -547,14 +556,6 @@ async def process_order_action(
             order.scheduled_delivery_date = action_request.scheduled_delivery_date
             order.special_instructions = action_request.special_instructions
             message = "Order confirmed successfully"
-            
-            # Update GroupBuy supplier_status if this is a group buy order
-            if order.group_buy_id:
-                group_buy = db.query(GroupBuy).filter(GroupBuy.id == order.group_buy_id).first()
-                if group_buy:
-                    group_buy.supplier_status = "supplier_accepted"
-                    group_buy.supplier_response_at = datetime.utcnow()
-                    group_buy.supplier_notes = action_request.special_instructions
 
         elif action_request.action == "reject":
             if not action_request.reason:
@@ -562,26 +563,6 @@ async def process_order_action(
             order.status = "rejected"
             order.rejection_reason = action_request.reason
             message = "Order rejected"
-            
-            # Update GroupBuy supplier_status and trigger refunds if this is a group buy order
-            if order.group_buy_id:
-                from services.refund_service import RefundService
-                
-                group_buy = db.query(GroupBuy).filter(GroupBuy.id == order.group_buy_id).first()
-                if group_buy:
-                    group_buy.supplier_status = "supplier_rejected"
-                    group_buy.supplier_response_at = datetime.utcnow()
-                    group_buy.supplier_notes = action_request.reason
-                    db.commit()
-                    
-                    # Process refunds for all participants
-                    refund_result = RefundService.process_group_refunds(
-                        db, 
-                        order.group_buy_id, 
-                        reason=f"Supplier rejected: {action_request.reason}"
-                    )
-                    
-                    message += f" - Refunds processed: {refund_result.get('refunds_processed', 0)}"
 
         else:
             raise HTTPException(status_code=400, detail="Invalid action")
@@ -596,82 +577,76 @@ async def process_order_action(
         print(f"Error processing order action: {e}")
         raise HTTPException(status_code=500, detail="Failed to process order action")
 
-@router.post("/orders/{order_id}/mark-shipped")
+
+@router.post("/orders/{order_id}/ship")
 async def mark_order_shipped(
     order_id: int,
+    ship_data: ShipDeliveryRequest,
     supplier: User = Depends(verify_supplier),
     db: Session = Depends(get_db)
 ):
-    """Mark an order as shipped by supplier"""
+    """Mark a confirmed order as shipped"""
     try:
         order = db.query(SupplierOrder).filter(
             SupplierOrder.id == order_id,
             SupplierOrder.supplier_id == supplier.id
         ).first()
-        
         if not order:
             raise HTTPException(status_code=404, detail="Order not found")
-        
+
         if order.status != "confirmed":
             raise HTTPException(status_code=400, detail="Only confirmed orders can be marked as shipped")
-        
+
         order.status = "shipped"
         order.shipped_at = datetime.utcnow()
-        
+        if ship_data.tracking_number:
+            order.tracking_number = ship_data.tracking_number
+        if ship_data.tracking_url:
+            order.tracking_url = ship_data.tracking_url
+        if ship_data.notes:
+            order.shipment_notes = ship_data.notes
+
         db.commit()
-        db.refresh(order)
-        
-        return {
-            "message": "Order marked as shipped successfully",
-            "order_id": order.id,
-            "status": order.status,
-            "shipped_at": order.shipped_at.isoformat()
-        }
-        
+        return {"message": "Order marked as shipped"}
     except HTTPException:
         raise
     except Exception as e:
         db.rollback()
-        logger.error(f"Error marking order as shipped: {e}")
+        print(f"Error marking order shipped: {e}")
         raise HTTPException(status_code=500, detail="Failed to mark order as shipped")
 
-@router.post("/orders/{order_id}/mark-delivered")
+
+@router.post("/orders/{order_id}/deliver")
 async def mark_order_delivered(
     order_id: int,
+    deliver_data: ShipDeliveryRequest,
     supplier: User = Depends(verify_supplier),
     db: Session = Depends(get_db)
 ):
-    """Mark an order as delivered to admin"""
+    """Mark a shipped order as delivered"""
     try:
         order = db.query(SupplierOrder).filter(
             SupplierOrder.id == order_id,
             SupplierOrder.supplier_id == supplier.id
         ).first()
-        
         if not order:
             raise HTTPException(status_code=404, detail="Order not found")
-        
+
         if order.status != "shipped":
             raise HTTPException(status_code=400, detail="Only shipped orders can be marked as delivered")
-        
+
         order.status = "delivered"
         order.delivered_at = datetime.utcnow()
-        
+        if deliver_data.notes:
+            order.delivery_notes = deliver_data.notes
+
         db.commit()
-        db.refresh(order)
-        
-        return {
-            "message": "Order marked as delivered successfully",
-            "order_id": order.id,
-            "status": order.status,
-            "delivered_at": order.delivered_at.isoformat()
-        }
-        
+        return {"message": "Order marked as delivered"}
     except HTTPException:
         raise
     except Exception as e:
         db.rollback()
-        logger.error(f"Error marking order as delivered: {e}")
+        print(f"Error marking order delivered: {e}")
         raise HTTPException(status_code=500, detail="Failed to mark order as delivered")
 
 # Pickup Location Management
@@ -945,18 +920,24 @@ async def get_payment_dashboard(
         
         # Get monthly breakdown (last 6 months)
         six_months_ago = datetime.utcnow() - timedelta(days=180)
-        monthly_payments = db.query(
-            db.func.strftime('%Y-%m', SupplierPayment.processed_at).label('month'),
-            db.func.sum(SupplierPayment.amount).label('amount')
-        ).filter(
+        monthly_payments_query = db.query(SupplierPayment).filter(
             SupplierPayment.supplier_id == supplier.id,
             SupplierPayment.status == "completed",
             SupplierPayment.processed_at >= six_months_ago
-        ).group_by('month').order_by('month').all()
+        ).all()
+        
+        # Group by month in Python
+        monthly_data = {}
+        for payment in monthly_payments_query:
+            if payment.processed_at:
+                month_key = payment.processed_at.strftime('%Y-%m')
+                if month_key not in monthly_data:
+                    monthly_data[month_key] = 0
+                monthly_data[month_key] += payment.amount
         
         monthly_data = [
             {"month": month, "amount": amount}
-            for month, amount in monthly_payments
+            for month, amount in sorted(monthly_data.items())
         ]
         
         # Get next payout date (simplified - every 15th and last day of month)
@@ -1712,23 +1693,69 @@ async def delete_supplier_group(
             )
 
         # Check if group has participants
-        participant_count = db.query(func.count(AdminGroupJoin.id)).filter(
+        joins = db.query(AdminGroupJoin).filter(
             AdminGroupJoin.admin_group_id == group_id
-        ).scalar() or 0
+        ).all()
 
-        if participant_count > 0:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Cannot delete group with {participant_count} active participants"
-            )
+        refunded = []
+        manual_refund_required = []
 
-        # Delete the group
-        db.delete(group)
-        db.commit()
+        if joins:
+            # Process refunds for joined participants where possible
+            for join in joins:
+                try:
+                    # Calculate refund amount (price * quantity)
+                    refund_amount = (group.price or 0.0) * (join.quantity or 0)
+
+                    # Only create an internal refund transaction if we have a linked product
+                    # and therefore a sensible product_id to attach. For admin groups without
+                    # a product_id or where external payment is used, record for manual review.
+                    if getattr(group, 'product_id', None):
+                        txn = Transaction(
+                            user_id=join.user_id,
+                            group_buy_id=None,
+                            product_id=group.product_id,
+                            quantity=join.quantity or 0,
+                            amount=-1 * round(refund_amount, 2),
+                            transaction_type="refund",
+                            location_zone=(getattr(join.user, 'location_zone', None) or "Unknown")
+                        )
+                        db.add(txn)
+                        refunded.append({
+                            "user_id": join.user_id,
+                            "quantity": join.quantity,
+                            "refund_amount": round(refund_amount, 2)
+                        })
+                    else:
+                        # Mark for manual refund if we can't create an internal transaction
+                        manual_refund_required.append({
+                            "user_id": join.user_id,
+                            "quantity": join.quantity,
+                            "reason": "No linked product_id - requires manual refund"
+                        })
+
+                    # Remove the join record
+                    db.delete(join)
+                except Exception as e:
+                    print(f"Error refunding join {join.id} for group {group_id}: {e}")
+                    db.rollback()
+                    raise HTTPException(status_code=500, detail="Failed while processing refunds")
+
+        # Finally delete the group itself
+        try:
+            db.delete(group)
+            db.commit()
+        except Exception as e:
+            print(f"Error deleting supplier group {group_id}: {e}")
+            db.rollback()
+            raise HTTPException(status_code=500, detail="Failed to delete group after refunds")
 
         return {
             "message": "Group deleted successfully",
-            "group_id": group_id
+            "group_id": group_id,
+            "refunded_count": len(refunded),
+            "refunded": refunded,
+            "manual_refund_required": manual_refund_required
         }
 
     except HTTPException:
@@ -2014,13 +2041,24 @@ async def get_supplier_group_insights(
 
         # Performance benchmarks
         avg_completion_rate = sum(g["completion_rate"] for g in group_insights) / len(group_insights) if group_insights else 0
-        avg_time_to_first_participant = db.query(func.avg(
-            func.extract('epoch', AdminGroupJoin.joined_at - AdminGroup.created) / 86400
-        )).join(
+        
+        # Calculate average time to first participant in Python
+        first_participants = db.query(
+            AdminGroupJoin.joined_at,
+            AdminGroup.created
+        ).join(
             AdminGroup, AdminGroupJoin.admin_group_id == AdminGroup.id
         ).filter(
             AdminGroup.admin_name == supplier_name
-        ).scalar() or 0
+        ).all()
+        
+        time_diffs = []
+        for joined_at, created in first_participants:
+            if joined_at and created:
+                time_diff = (joined_at - created).total_seconds() / 86400  # Convert to days
+                time_diffs.append(time_diff)
+        
+        avg_time_to_first_participant = sum(time_diffs) / len(time_diffs) if time_diffs else 0
 
         return {
             "group_insights": group_insights,
@@ -2340,12 +2378,8 @@ class CreateGroupRequest(BaseModel):
     estimated_delivery: Optional[str] = None
     features: Optional[List[str]] = None
     requirements: Optional[List[str]] = None
-    # Product details
-    product_name: Optional[str] = None
-    product_description: Optional[str] = None
     manufacturer: Optional[str] = None
     total_stock: Optional[int] = None
-    specifications: Optional[str] = None
 
 @router.post("/groups/create")
 async def create_supplier_group(
@@ -2408,12 +2442,8 @@ async def create_supplier_group(
             estimated_delivery=group_data.estimated_delivery,
             features=group_data.features,
             requirements=group_data.requirements,
-            # Product details
-            product_name=group_data.product_name,
-            product_description=group_data.product_description,
             manufacturer=group_data.manufacturer,
             total_stock=group_data.total_stock,
-            specifications=group_data.specifications,
             is_active=True,
             participants=0  # Start with 0 participants
         )
@@ -2440,5 +2470,8 @@ async def create_supplier_group(
         raise
     except Exception as e:
         print(f"Error creating supplier group: {e}")
-        db.rollback()
         raise HTTPException(status_code=500, detail="Failed to create group")
+
+# Include the supplier orders router
+from routers.supplier_orders import router as orders_router
+router.include_router(orders_router)

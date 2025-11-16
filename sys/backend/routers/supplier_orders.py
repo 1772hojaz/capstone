@@ -8,8 +8,8 @@ import uuid
 from db.database import get_db
 from models.orders import Order, OrderItem
 from models.groups import GroupBuy, Contribution
-from models.user import User
-from auth.auth import get_current_user
+from models.models import User
+from authentication.auth import get_current_user
 
 router = APIRouter()
 

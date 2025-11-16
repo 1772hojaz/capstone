@@ -250,6 +250,23 @@ async def rate_limit_middleware(request: Request, call_next):
 @app.on_event("startup")
 async def startup_event():
     """Initialize HYBRID models on startup and start daily retraining scheduler"""
+    # Validate database schema FIRST before doing anything else
+    try:
+        logger.info("\n" + "="*70)
+        logger.info("STEP 1: Database Schema Validation")
+        logger.info("="*70)
+        from validate_db import check_and_fix_database
+        db_valid = check_and_fix_database()
+        if not db_valid:
+            logger.error("❌ Database validation failed! Please check the logs and run create_tables.py if needed.")
+            logger.error("   The backend may not work correctly until database schema is fixed.")
+        else:
+            logger.info("✅ Database schema validated successfully!")
+        logger.info("="*70 + "\n")
+    except Exception as e:
+        logger.error(f"❌ Database validation error: {e}")
+        logger.error("   Continuing with startup, but you may encounter database errors...")
+    
     db = SessionLocal()
     try:
         # Basic environment sanity checks
@@ -269,8 +286,13 @@ async def startup_event():
         logger.info("="*60)
         
         # Check if we have products
-        product_count = db.query(Product).count()
-        logger.info(f"\n[Products] Products in database: {product_count}")
+        try:
+            product_count = db.query(Product).count()
+            logger.info(f"\n[Products] Products in database: {product_count}")
+        except Exception as e:
+            logger.warning(f"  Database schema issue when counting products: {e}")
+            logger.warning("  Continuing with startup - this may affect ML features")
+            product_count = 0
         
         if product_count < 5:
             logger.warning("  Not enough products! Please seed Mbare products first.")
