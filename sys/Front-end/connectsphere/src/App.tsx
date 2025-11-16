@@ -5,7 +5,6 @@ import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import SupplierLandingPage from './pages/SupplierLandingPage';
 import SupplierLoginPage from './pages/SupplierLoginPage';
-import AdminDashboard from './pages/AdminDashboard';
 import TraderDashboard from './pages/TraderDashboard';
 import SupplierDashboard from './pages/SupplierDashboard';
 import GroupList from './pages/GroupList';
@@ -16,7 +15,6 @@ import GroupModeration from './pages/GroupModeration';
 import CompletedGroups from './pages/CompletedGroups';
 import ReadyForPaymentGroups from './pages/ReadyForPaymentGroups';
 import Users from './pages/Users';
-import SystemSettings from './pages/SystemSettings';
 import PaymentSuccess from './pages/PaymentSuccess';
 import PaymentFailure from './pages/PaymentFailure';
 import PaymentPage from './pages/PaymentPage';
@@ -24,6 +22,10 @@ import DashboardPage from './pages/DashboardPage';
 import PricingPage from './pages/PricingPage';
 import ContactPage from './pages/ContactPage';
 import AnalyticsDashboard from './components/analytics/AnalyticsDashboard';
+import Overview from './pages/Overview';
+import MLVisualisations from './pages/MLVisualisations';
+import Management from './pages/Management';
+import QRVerification from './pages/QRVerification';
 
 function App() {
   return (
@@ -68,12 +70,6 @@ function App() {
         <Route path="/supplier/profile" element={
           <MainLayout>
             <ProfilePage />
-          </MainLayout>
-        } />
-
-        <Route path="/admin" element={
-          <MainLayout>
-            <AdminDashboard />
           </MainLayout>
         } />
 
@@ -167,13 +163,31 @@ function App() {
           </MainLayout>
         } />
 
-        <Route path="/settings" element={
+        <Route path="/analytics" element={<AnalyticsDashboard />} />
+
+        <Route path="/overview" element={
           <MainLayout>
-            <SystemSettings />
+            <Overview />
           </MainLayout>
         } />
 
-        <Route path="/analytics" element={<AnalyticsDashboard />} />
+        <Route path="/ml-visualisations" element={
+          <MainLayout>
+            <MLVisualisations />
+          </MainLayout>
+        } />
+
+        <Route path="/management" element={
+          <MainLayout>
+            <Management />
+          </MainLayout>
+        } />
+
+        <Route path="/qr-verification" element={
+          <MainLayout>
+            <QRVerification />
+          </MainLayout>
+        } />
       </Routes>
     </Router>
   );

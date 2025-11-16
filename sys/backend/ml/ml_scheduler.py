@@ -7,6 +7,9 @@ from db.database import SessionLocal
 from models.models import MLModel, Transaction
 from .ml import train_clustering_model_with_progress
 import os
+from datetime import datetime
+from models.models import AdminGroup, AdminGroupJoin, SupplierOrder
+from routers.supplier_orders import create_order_from_admin_group
 
 class MLModelScheduler:
     def __init__(self):
@@ -26,10 +29,63 @@ class MLModelScheduler:
                 print(f"⚠️  Scheduler error: {e}")
                 await asyncio.sleep(3600)  # Wait 1 hour on error
     
+    async def check_completed_admin_groups(self, db: Session):
+        """Check for completed AdminGroups and create orders automatically"""
+        try:
+            # Find AdminGroups that are completed but don't have orders yet
+            # Completed by: reaching max_participants OR past end_date with participants > 0
+            completed_groups = db.query(AdminGroup).filter(
+                AdminGroup.is_active,
+                # Either reached max participants
+                ((AdminGroup.participants >= AdminGroup.max_participants) & 
+                 (AdminGroup.max_participants.isnot(None))) |
+                # Or past end date with at least 1 participant
+                ((AdminGroup.end_date < datetime.utcnow()) & 
+                 (AdminGroup.participants > 0))
+            ).all()
+            
+            orders_created = 0
+            for group in completed_groups:
+                # Check if order already exists for this group
+                existing_order = db.query(SupplierOrder).filter(
+                    SupplierOrder.admin_group_id == group.id
+                ).first()
+                
+                if not existing_order:
+                    # Skip groups without valid product_id
+                    if not group.product_id:
+                        print(f"⏭️  Skipping AdminGroup {group.id} ({group.name}) - no product_id")
+                        continue
+                        
+                    try:
+                        print(f"📦 Creating order for completed AdminGroup {group.id} ({group.name})")
+                        order = create_order_from_admin_group(db, group.id)
+                        if order:
+                            orders_created += 1
+                            print(f"✅ Order created: {order.order_number} for AdminGroup {group.id}")
+                        else:
+                            print(f"⚠️  Failed to create order for AdminGroup {group.id}")
+                    except Exception as e:
+                        print(f"❌ Error creating order for AdminGroup {group.id}: {e}")
+                        # Continue with other groups instead of failing the entire process
+                        continue
+            
+            if orders_created > 0:
+                print(f"🎯 Created {orders_created} orders for completed AdminGroups")
+            else:
+                print("ℹ️  No new completed AdminGroups found")
+                
+        except Exception as e:
+            print(f"❌ Error checking completed AdminGroups: {e}")
+            db.rollback()
+    
     async def auto_retrain(self):
         """Auto-retrain HYBRID models and keep only the best one"""
         db = SessionLocal()
         try:
+            # Check for completed AdminGroups and create orders
+            await self.check_completed_admin_groups(db)
+            
             # Check if we have new data since last training
             last_model = db.query(MLModel).filter(
                 MLModel.model_type == "hybrid_recommender"

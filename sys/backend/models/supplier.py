@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.orm import Session
-from sqlalchemy import func, or_
+from sqlalchemy import func, desc, or_
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime, timedelta
@@ -275,7 +275,7 @@ async def get_supplier_dashboard_metrics(
             SupplierOrderItem.supplier_product_id,
             SupplierProduct.product_id,
             Product.name,
-            db.func.sum(SupplierOrderItem.total_amount).label('revenue')
+            func.sum(SupplierOrderItem.total_amount).label('revenue')
         ).join(
             SupplierOrder, SupplierOrderItem.supplier_order_id == SupplierOrder.id
         ).join(
@@ -290,7 +290,7 @@ async def get_supplier_dashboard_metrics(
             SupplierProduct.product_id,
             Product.name
         ).order_by(
-            db.desc('revenue')
+            desc('revenue')
         ).limit(5).all()
 
         top_products = [
@@ -485,8 +485,8 @@ async def get_supplier_orders(
     result = []
     for order in orders:
         # Get group info
-        group_name = "Unknown Group"
-        trader_count = 0
+        group_name = "Direct Order"  # Default for orders not linked to groups
+        trader_count = 1  # Default for direct orders
 
         if order.group_buy_id:
             # Query the GroupBuy object
@@ -499,7 +499,10 @@ async def get_supplier_orders(
             admin_group = db.query(AdminGroup).filter(AdminGroup.id == order.admin_group_id).first()
             if admin_group:
                 group_name = admin_group.name
-                trader_count = admin_group.participants or 0
+                # Count actual joins for admin groups
+                trader_count = db.query(func.count(AdminGroupJoin.id)).filter(
+                    AdminGroupJoin.admin_group_id == admin_group.id
+                ).scalar() or 0
 
         # Get products
         products = []
@@ -917,18 +920,24 @@ async def get_payment_dashboard(
         
         # Get monthly breakdown (last 6 months)
         six_months_ago = datetime.utcnow() - timedelta(days=180)
-        monthly_payments = db.query(
-            db.func.strftime('%Y-%m', SupplierPayment.processed_at).label('month'),
-            db.func.sum(SupplierPayment.amount).label('amount')
-        ).filter(
+        monthly_payments_query = db.query(SupplierPayment).filter(
             SupplierPayment.supplier_id == supplier.id,
             SupplierPayment.status == "completed",
             SupplierPayment.processed_at >= six_months_ago
-        ).group_by('month').order_by('month').all()
+        ).all()
+        
+        # Group by month in Python
+        monthly_data = {}
+        for payment in monthly_payments_query:
+            if payment.processed_at:
+                month_key = payment.processed_at.strftime('%Y-%m')
+                if month_key not in monthly_data:
+                    monthly_data[month_key] = 0
+                monthly_data[month_key] += payment.amount
         
         monthly_data = [
             {"month": month, "amount": amount}
-            for month, amount in monthly_payments
+            for month, amount in sorted(monthly_data.items())
         ]
         
         # Get next payout date (simplified - every 15th and last day of month)
@@ -2032,13 +2041,24 @@ async def get_supplier_group_insights(
 
         # Performance benchmarks
         avg_completion_rate = sum(g["completion_rate"] for g in group_insights) / len(group_insights) if group_insights else 0
-        avg_time_to_first_participant = db.query(func.avg(
-            func.extract('epoch', AdminGroupJoin.joined_at - AdminGroup.created) / 86400
-        )).join(
+        
+        # Calculate average time to first participant in Python
+        first_participants = db.query(
+            AdminGroupJoin.joined_at,
+            AdminGroup.created
+        ).join(
             AdminGroup, AdminGroupJoin.admin_group_id == AdminGroup.id
         ).filter(
             AdminGroup.admin_name == supplier_name
-        ).scalar() or 0
+        ).all()
+        
+        time_diffs = []
+        for joined_at, created in first_participants:
+            if joined_at and created:
+                time_diff = (joined_at - created).total_seconds() / 86400  # Convert to days
+                time_diffs.append(time_diff)
+        
+        avg_time_to_first_participant = sum(time_diffs) / len(time_diffs) if time_diffs else 0
 
         return {
             "group_insights": group_insights,

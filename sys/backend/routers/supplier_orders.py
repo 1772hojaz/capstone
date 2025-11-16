@@ -209,18 +209,19 @@ def create_order_from_completed_group(db: Session, group_id: int):
 
 # Function to create order from completed admin group
 def create_order_from_admin_group(db: Session, group_id: int):
-    """Create an order record when an admin group is completed"""
+    """Create a SUPPLIER ORDER record when an admin group is completed"""
 
     # Import AdminGroup here to avoid circular imports
     from models.models import AdminGroup, AdminGroupJoin
+    from models.supplier import SupplierOrder, SupplierOrderItem
 
     # Get the completed admin group
     admin_group = db.query(AdminGroup).filter(AdminGroup.id == group_id).first()
     if not admin_group:
         return None
 
-    # Check if order already exists for this admin group
-    existing_order = db.query(Order).filter(Order.group_id == group_id).first()
+    # Check if supplier order already exists for this admin group
+    existing_order = db.query(SupplierOrder).filter(SupplierOrder.admin_group_id == group_id).first()
     if existing_order:
         return existing_order
 
@@ -233,9 +234,9 @@ def create_order_from_admin_group(db: Session, group_id: int):
     # Calculate totals
     total_value = sum(j.quantity * admin_group.price for j in joins)
     total_savings = sum(j.quantity * (admin_group.original_price - admin_group.price) for j in joins)
-    trader_count = len(set(j.user_id for j in joins))
 
     # Generate unique order number
+    import uuid
     order_number = f"ADM-{group_id}-{uuid.uuid4().hex[:8].upper()}"
 
     # For admin groups, determine the supplier
@@ -244,35 +245,36 @@ def create_order_from_admin_group(db: Session, group_id: int):
     if admin_group.product_id:
         from models.models import Product
         product = db.query(Product).filter(Product.id == admin_group.product_id).first()
-        if product and product.supplier_id:
+        if product and hasattr(product, 'supplier_id') and product.supplier_id:
             supplier_id = product.supplier_id
 
-    # Create order
-    order = Order(
+    # Create SUPPLIER ORDER
+    supplier_order = SupplierOrder(
+        supplier_id=supplier_id,
+        admin_group_id=group_id,
         order_number=order_number,
-        supplier_id=supplier_id,  # Admin or designated supplier for admin groups
-        group_id=group_id,
-        group_name=admin_group.name,
-        trader_count=trader_count,
-        delivery_location=admin_group.shipping_info or "TBD",
+        status="pending",  # Start as pending for supplier approval
         total_value=total_value,
         total_savings=total_savings,
-        status="pending"
+        delivery_method="pickup",  # Default for admin groups
+        delivery_location=admin_group.shipping_info or "TBD",
+        special_instructions="Admin group order - requires supplier confirmation before payment processing"
     )
 
-    db.add(order)
+    db.add(supplier_order)
     db.flush()  # Get the order ID
 
-    # Create order items (single item for admin groups)
-    order_item = OrderItem(
-        order_id=order.id,
-        product_name=admin_group.product_name or admin_group.name,
+    # Create supplier order items (single item for admin groups)
+    supplier_order_item = SupplierOrderItem(
+        supplier_order_id=supplier_order.id,
+        supplier_product_id=admin_group.product_id if admin_group.product_id else None,
         quantity=sum(j.quantity for j in joins),
         unit_price=admin_group.price,
         total_amount=total_value
     )
 
-    db.add(order_item)
+    db.add(supplier_order_item)
     db.commit()
 
-    return order
+    print(f"Created supplier order {order_number} for completed admin group {group_id}")
+    return supplier_order

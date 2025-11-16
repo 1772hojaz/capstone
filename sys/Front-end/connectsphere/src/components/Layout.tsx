@@ -2,9 +2,9 @@ import type { ReactNode } from 'react';
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { 
-  Search, Bell, Menu, X, LogOut, Home, Users, Shield, 
+  Bell, Menu, X, LogOut, Home, Users, Shield, 
   Settings, ChevronRight, Activity, TrendingUp, Sparkles,
-  Moon, Sun
+  Moon, Sun, DollarSign
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -30,10 +30,13 @@ const Layout = ({ children, title = 'Dashboard', subtitle }: LayoutProps) => {
   }, []);
 
   const navItems = [
-    { path: '/admin', label: 'Dashboard', icon: Home },
+    { path: '/overview', label: 'Overview', icon: Activity },
+    { path: '/ml-visualisations', label: 'ML Visualisations', icon: TrendingUp },
+    { path: '/management', label: 'Management', icon: Settings },
+    { path: '/qr-verification', label: 'QR Verification', icon: Shield },
     { path: '/users', label: 'Users', icon: Users },
     { path: '/moderation', label: 'Moderation', icon: Shield },
-    { path: '/settings', label: 'Settings', icon: Settings },
+    { path: '/ready-for-payment', label: 'Ready for Payment', icon: DollarSign },
   ];
 
   return (
@@ -63,14 +66,44 @@ const Layout = ({ children, title = 'Dashboard', subtitle }: LayoutProps) => {
             <div className="hidden lg:flex items-center gap-3">
               <nav className="flex gap-1 bg-gray-100 rounded-lg p-1">
                 <button 
-                  onClick={() => navigate('/admin')}
+                  onClick={() => navigate('/overview')}
                   className={`px-3 xl:px-4 py-2 text-sm font-medium rounded-md transition-all duration-200 whitespace-nowrap ${
-                    location.pathname === '/admin' 
+                    location.pathname === '/overview' 
                       ? 'bg-white text-blue-600 shadow-sm' 
                       : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
                   }`}
                 >
-                  Dashboard
+                  Overview
+                </button>
+                <button 
+                  onClick={() => navigate('/ml-visualisations')}
+                  className={`px-3 xl:px-4 py-2 text-sm font-medium rounded-md transition-all duration-200 whitespace-nowrap ${
+                    location.pathname === '/ml-visualisations' 
+                      ? 'bg-white text-blue-600 shadow-sm' 
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                  }`}
+                >
+                  ML Visualisations
+                </button>
+                <button 
+                  onClick={() => navigate('/management')}
+                  className={`px-3 xl:px-4 py-2 text-sm font-medium rounded-md transition-all duration-200 whitespace-nowrap ${
+                    location.pathname === '/management' 
+                      ? 'bg-white text-blue-600 shadow-sm' 
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                  }`}
+                >
+                  Management
+                </button>
+                <button 
+                  onClick={() => navigate('/qr-verification')}
+                  className={`px-3 xl:px-4 py-2 text-sm font-medium rounded-md transition-all duration-200 whitespace-nowrap ${
+                    location.pathname === '/qr-verification' 
+                      ? 'bg-white text-blue-600 shadow-sm' 
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                  }`}
+                >
+                  QR Verification
                 </button>
                 <button 
                   onClick={() => navigate('/users')}
@@ -93,29 +126,19 @@ const Layout = ({ children, title = 'Dashboard', subtitle }: LayoutProps) => {
                   Moderation
                 </button>
                 <button 
-                  onClick={() => navigate('/settings')}
+                  onClick={() => navigate('/ready-for-payment')}
                   className={`px-3 xl:px-4 py-2 text-sm font-medium rounded-md transition-all duration-200 whitespace-nowrap ${
-                    location.pathname === '/settings' 
+                    location.pathname === '/ready-for-payment' 
                       ? 'bg-white text-blue-600 shadow-sm' 
                       : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
                   }`}
                 >
-                  Settings
+                  Ready for Payment
                 </button>
               </nav>
 
               {/* Desktop Actions */}
               <div className="flex items-center gap-2">
-                {/* Search */}
-                <div className="relative hidden xl:block">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <input
-                    type="text"
-                    placeholder="Search..."
-                    className="pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none w-40 transition-all duration-200"
-                  />
-                </div>
-
                 {/* Notifications */}
                 <button className="relative p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-all duration-200">
                   <Bell className="w-5 h-5" />
@@ -159,16 +182,55 @@ const Layout = ({ children, title = 'Dashboard', subtitle }: LayoutProps) => {
               <nav className="flex flex-col gap-2">
                 <button 
                   onClick={() => {
-                    navigate('/admin');
+                    navigate('/overview');
                     setMobileMenuOpen(false);
                   }}
                   className={`px-4 py-3 text-left text-sm font-medium rounded-lg transition-all duration-200 ${
-                    location.pathname === '/admin' 
+                    location.pathname === '/overview' 
                       ? 'bg-blue-50 text-blue-600' 
                       : 'text-gray-600 hover:bg-gray-50'
                   }`}
                 >
-                  Dashboard
+                  Overview
+                </button>
+                <button 
+                  onClick={() => {
+                    navigate('/ml-visualisations');
+                    setMobileMenuOpen(false);
+                  }}
+                  className={`px-4 py-3 text-left text-sm font-medium rounded-lg transition-all duration-200 ${
+                    location.pathname === '/ml-visualisations' 
+                      ? 'bg-blue-50 text-blue-600' 
+                      : 'text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  ML Visualisations
+                </button>
+                <button 
+                  onClick={() => {
+                    navigate('/management');
+                    setMobileMenuOpen(false);
+                  }}
+                  className={`px-4 py-3 text-left text-sm font-medium rounded-lg transition-all duration-200 ${
+                    location.pathname === '/management' 
+                      ? 'bg-blue-50 text-blue-600' 
+                      : 'text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  Management
+                </button>
+                <button 
+                  onClick={() => {
+                    navigate('/qr-verification');
+                    setMobileMenuOpen(false);
+                  }}
+                  className={`px-4 py-3 text-left text-sm font-medium rounded-lg transition-all duration-200 ${
+                    location.pathname === '/qr-verification' 
+                      ? 'bg-blue-50 text-blue-600' 
+                      : 'text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  QR Verification
                 </button>
                 <button 
                   onClick={() => {
@@ -198,16 +260,16 @@ const Layout = ({ children, title = 'Dashboard', subtitle }: LayoutProps) => {
                 </button>
                 <button 
                   onClick={() => {
-                    navigate('/settings');
+                    navigate('/ready-for-payment');
                     setMobileMenuOpen(false);
                   }}
                   className={`px-4 py-3 text-left text-sm font-medium rounded-lg transition-all duration-200 ${
-                    location.pathname === '/settings' 
+                    location.pathname === '/ready-for-payment' 
                       ? 'bg-blue-50 text-blue-600' 
                       : 'text-gray-600 hover:bg-gray-50'
                   }`}
                 >
-                  Settings
+                  Ready for Payment
                 </button>
                 
                 {/* Mobile Logout */}

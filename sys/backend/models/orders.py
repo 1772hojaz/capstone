@@ -9,7 +9,8 @@ class Order(Base):
     id = Column(Integer, primary_key=True, index=True)
     order_number = Column(String(50), unique=True, index=True, nullable=False)
     supplier_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    group_id = Column(Integer, ForeignKey("group_buys.id"), nullable=True)
+    group_id = Column(Integer, nullable=True)  # Can reference either group_buys.id or admin_groups.id
+    group_type = Column(String(20), nullable=False, default="group_buy")  # "group_buy" or "admin_group"
     group_name = Column(String(255), nullable=False)
     trader_count = Column(Integer, default=0)
     delivery_location = Column(String(255))
@@ -24,7 +25,8 @@ class Order(Base):
 
     # Relationships
     supplier = relationship("User", back_populates="orders")
-    group = relationship("GroupBuy", back_populates="orders")
+    # Note: We can't have direct foreign key relationships to both tables,
+    # so we'll handle this in the application logic
     items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
 
 class OrderItem(Base):

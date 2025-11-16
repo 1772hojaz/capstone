@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Users, Shield, Package, Settings, Search, User, LayoutDashboard } from 'lucide-react';
+import { Users, Shield, Package, Settings, Search, User, LayoutDashboard, DollarSign } from 'lucide-react';
 
 interface SidebarLayoutProps {
   children: ReactNode;
@@ -14,6 +14,7 @@ const SidebarLayout = ({ children }: SidebarLayoutProps) => {
     { icon: LayoutDashboard, label: 'Admin Dashboard', path: '/admin' },
     { icon: Users, label: 'User Management', path: '/users' },
     { icon: Shield, label: 'Group Moderation', path: '/moderation' },
+    { icon: DollarSign, label: 'Ready for Payment', path: '/ready-for-payment' },
     { icon: Package, label: 'Product Catalog', path: '/products' },
     { icon: Settings, label: 'System Settings', path: '/settings' },
   ];

@@ -117,6 +117,12 @@ const TraderDashboard = () => {
             >
               My Groups
             </button>
+            <button 
+              onClick={() => navigate('/ready-for-payment')}
+              className="text-sm text-gray-700 hover:text-gray-900"
+            >
+              Ready for Payment
+            </button>
           </nav>
 
           {/* Right Side */}

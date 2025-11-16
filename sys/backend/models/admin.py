@@ -2094,3 +2094,156 @@ async def mark_qr_code_as_used(
         db.rollback()
         print(f"Error marking QR code as used: {e}")
         raise HTTPException(status_code=500, detail="Failed to mark QR code as used")
+
+
+# Admin Order Management Endpoints
+
+@router.get("/orders/ready-for-payment")
+async def get_admin_orders_ready_for_payment(
+    admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Get orders that are confirmed and ready for admin payment processing"""
+    try:
+        # Import Order model
+        from models.orders import Order
+        from models.models import AdminGroup
+
+        # Get confirmed orders
+        confirmed_orders = db.query(Order).filter(Order.status == "confirmed").all()
+
+        result = []
+        for order in confirmed_orders:
+            # Get group information
+            group_info = None
+            if order.group_id:
+                # Try GroupBuy first
+                group_buy = db.query(GroupBuy).filter(GroupBuy.id == order.group_id).first()
+                if group_buy:
+                    group_info = {
+                        "id": group_buy.id,
+                        "name": group_buy.product.name if group_buy.product else f"Group Buy #{group_buy.id}",
+                        "type": "GroupBuy",
+                        "supplier": group_buy.creator.company_name or group_buy.creator.full_name if group_buy.creator else "Unknown",
+                        "members": len(group_buy.contributions) if group_buy.contributions else 0,
+                        "image": group_buy.product.image_url if group_buy.product else None,
+                        "product": {
+                            "name": group_buy.product.name if group_buy.product else "Unknown Product",
+                            "bulkPrice": group_buy.product.bulk_price if group_buy.product else 0,
+                            "regularPrice": group_buy.product.unit_price if group_buy.product else 0
+                        }
+                    }
+                else:
+                    # Try AdminGroup
+                    admin_group = db.query(AdminGroup).filter(AdminGroup.id == order.group_id).first()
+                    if admin_group:
+                        group_info = {
+                            "id": admin_group.id,
+                            "name": admin_group.name,
+                            "type": "AdminGroup",
+                            "supplier": "Admin",  # Admin groups are managed by admin
+                            "members": admin_group.participants,
+                            "image": admin_group.image,
+                            "product": {
+                                "name": admin_group.product_name or admin_group.name,
+                                "bulkPrice": admin_group.price,
+                                "regularPrice": admin_group.original_price
+                            }
+                        }
+
+            if group_info:
+                result.append({
+                    "id": order.id,
+                    "order_number": order.order_number,
+                    "group": group_info,
+                    "supplier_id": order.supplier_id,
+                    "trader_count": order.trader_count,
+                    "total_value": round(order.total_value, 2),
+                    "total_savings": round(order.total_savings, 2),
+                    "delivery_location": order.delivery_location,
+                    "status": order.status,
+                    "created_at": order.created_at.isoformat() if order.created_at else None
+                })
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error getting admin orders ready for payment: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve orders ready for payment")
+
+@router.post("/orders/{order_id}/process-payment")
+async def process_admin_order_payment(
+    order_id: int,
+    admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Process payment for a confirmed order (admin endpoint)"""
+    try:
+        # Import Order model
+        from models.orders import Order
+
+        # Get the confirmed order
+        order = db.query(Order).filter(
+            Order.id == order_id,
+            Order.status == "confirmed"
+        ).first()
+
+        if not order:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Confirmed order not found"
+            )
+
+        # Here you would integrate with payment processing
+        # For now, just mark as completed
+        order.status = "completed"
+        order.updated_at = datetime.utcnow()
+
+        # If this is a GroupBuy order, update the group status
+        if order.group_id:
+            group_buy = db.query(GroupBuy).filter(GroupBuy.id == order.group_id).first()
+            if group_buy:
+                group_buy.status = "payment_completed"
+                group_buy.completed_at = datetime.utcnow()
+
+                # Create payment records for all contributors
+                contributions = db.query(Contribution).filter(
+                    Contribution.group_buy_id == order.group_id,
+                    not Contribution.is_fully_paid
+                ).all()
+
+                for contribution in contributions:
+                    # Mark contribution as paid
+                    contribution.is_fully_paid = True
+                    contribution.paid_amount = contribution.contribution_amount
+
+                    # Create transaction record
+                    transaction = Transaction(
+                        user_id=contribution.user_id,
+                        group_buy_id=order.group_id,
+                        product_id=group_buy.product_id,
+                        quantity=contribution.quantity,
+                        amount=contribution.contribution_amount,
+                        transaction_type="payment_completed",
+                        location_zone=contribution.user.location_zone or "Unknown"
+                    )
+                    db.add(transaction)
+
+        db.commit()
+
+        return {
+            "message": "Order payment processed successfully",
+            "order_id": order_id,
+            "order_number": order.order_number,
+            "total_amount": round(order.total_value, 2),
+            "status": "completed"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        print(f"Error processing admin order payment: {e}")
+        raise HTTPException(status_code=500, detail="Failed to process order payment")

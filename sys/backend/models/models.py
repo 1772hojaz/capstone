@@ -112,7 +112,7 @@ class GroupBuy(Base):
     creator = relationship("User", back_populates="created_groups", foreign_keys=[creator_id])
     contributions = relationship("Contribution", back_populates="group_buy", cascade="all, delete-orphan")
     chat_messages = relationship("ChatMessage", back_populates="group_buy", cascade="all, delete-orphan")
-    orders = relationship("Order", back_populates="group")
+    # orders relationship removed - handled in application logic since Order can reference multiple group types
     
     @property
     def moq_progress(self):
