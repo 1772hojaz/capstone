@@ -1,88 +1,108 @@
 #!/usr/bin/env python3
-"""
-Test script to verify improved recommendation scores after database reset
-"""
+"""Test script to check if recommendations make sense"""
 
 from db.database import SessionLocal
-from models.models import User
-from ml.ml import get_recommendations_for_user, load_models
-import random
+from models.models import User, Product, Transaction, GroupBuy
+from ml.ml import get_recommendations_for_user
+from datetime import datetime
 
-def main():
-    print("="*80)
-    print("🎯 Testing Hybrid Recommender with 100 Traders Dataset")
-    print("="*80)
-    
-    # Load models
-    print("\n📦 Loading ML models...")
-    load_models()
-    print("✅ Models loaded\n")
-    
-    db = SessionLocal()
-    
-    # Get all traders
-    traders = db.query(User).filter(~User.is_admin).all()
-    print(f"👥 Total traders in database: {len(traders)}\n")
-    
-    # Test 5 random traders
-    sample_traders = random.sample(traders, min(5, len(traders)))
-    
-    print("Testing recommendations for 5 random traders:")
-    print("="*80)
-    
-    all_scores = []
-    
-    for i, trader in enumerate(sample_traders, 1):
-        print(f"\n{i}. {trader.full_name}")
-        print(f"   Email: {trader.email}")
-        print(f"   Location: {trader.location_zone}")
+db = SessionLocal()
+
+print("="*70)
+print("TESTING RECOMMENDATION SYSTEM")
+print("="*70)
+
+# Get sample users
+print("\n1. Sample Users in Database:")
+users = db.query(User).filter(User.is_admin == False).limit(5).all()
+for u in users:
+    tx_count = db.query(Transaction).filter(Transaction.user_id == u.id).count()
+    print(f"   User ID: {u.id} | Email: {u.email[:20]}... | Zone: {u.location_zone} | Cluster: {u.cluster_id} | Transactions: {tx_count}")
+
+# Get sample products
+print("\n2. Sample Products:")
+products = db.query(Product).limit(5).all()
+for p in products:
+    print(f"   ID: {p.id} | {p.name:30s} | Category: {p.category:15s} | Bulk Price: ${p.bulk_price:.2f}")
+
+# Check active group buys
+active_groups = db.query(GroupBuy).filter(
+    GroupBuy.status == "active",
+    GroupBuy.deadline > datetime.utcnow()
+).all()
+print(f"\n3. Active Group Buys: {len(active_groups)}")
+if active_groups:
+    for gb in active_groups[:5]:
+        print(f"   GB ID: {gb.id} | Product: {gb.product.name if gb.product else 'Unknown':30s} | Zone: {gb.location_zone} | Progress: {gb.moq_progress:.1f}%")
+
+# Test recommendations for a user with transaction history
+print("\n4. Testing Recommendations:")
+test_user = users[0]
+print(f"\nGetting recommendations for User ID: {test_user.id} ({test_user.email})")
+print(f"   User's Location Zone: {test_user.location_zone}")
+print(f"   User's Cluster: {test_user.cluster_id}")
+
+# Check user's purchase history
+user_transactions = db.query(Transaction).filter(Transaction.user_id == test_user.id).all()
+if user_transactions:
+    print(f"   User has {len(user_transactions)} transactions")
+    # Show what categories they've bought
+    product_ids = [tx.product_id for tx in user_transactions]
+    purchased_products = db.query(Product).filter(Product.id.in_(product_ids)).all()
+    categories = {}
+    for p in purchased_products:
+        categories[p.category] = categories.get(p.category, 0) + 1
+    print(f"   Top purchased categories: {dict(sorted(categories.items(), key=lambda x: x[1], reverse=True)[:3])}")
+
+# Get recommendations
+try:
+    recommendations = get_recommendations_for_user(test_user, db)
+    print(f"\n   Received {len(recommendations)} recommendations:")
+    print("\n   Top 5 Recommendations:")
+    print("   " + "-"*68)
+    for i, rec in enumerate(recommendations[:5], 1):
+        score = rec.get('recommendation_score', 0)
+        product_name = rec.get('product_name', 'Unknown')
+        category = rec.get('category', 'N/A')
+        savings = rec.get('savings', 0)
+        reason = rec.get('reason', 'No reason')
+        moq_progress = rec.get('moq_progress', 0)
         
-        # Get recommendations
-        recs = get_recommendations_for_user(trader, db)
-        
-        if not recs:
-            print("   ⚠️  No recommendations generated")
-            continue
-        
-        print("   📊 Top 5 Recommendations:")
-        print("   " + "-"*76)
-        
-        for j, rec in enumerate(recs[:5], 1):
-            score = rec['recommendation_score'] * 100
-            all_scores.append(score)
-            
-            cf = rec.get('cf_score', 0) * 100
-            cbf = rec.get('cbf_score', 0) * 100
-            pop = rec.get('popularity_score', 0) * 100
-            
-            product_name = rec['product_name'][:35]
-            
-            print(f"   {j}. {product_name:35} | {score:5.1f}% "
-                  f"(CF:{cf:5.1f}% CBF:{cbf:5.1f}% Pop:{pop:5.1f}%)")
-    
-    db.close()
-    
-    # Summary statistics
-    if all_scores:
-        print("\n" + "="*80)
-        print("📈 Recommendation Score Statistics")
-        print("="*80)
-        print(f"Total recommendations tested: {len(all_scores)}")
-        print(f"Max score: {max(all_scores):.1f}%")
-        print(f"Min score: {min(all_scores):.1f}%")
-        print(f"Average score: {sum(all_scores)/len(all_scores):.1f}%")
+        print(f"   {i}. {product_name[:35]:35s} | Score: {score:.3f}")
+        print(f"      Category: {category:15s} | Savings: {savings:.0f}% | MOQ: {moq_progress:.0f}%")
+        print(f"      Reason: {reason}")
         print()
-        
-        if max(all_scores) > 70:
-            print("✅ SUCCESS: Recommendation scores improved! Max > 70%")
-        elif max(all_scores) > 60:
-            print("✅ GOOD: Recommendation scores improved from previous 58%")
-        else:
-            print("⚠️  Scores similar to before. May need more diverse data.")
     
-    print("\n" + "="*80)
-    print("🎯 Test Complete!")
-    print("="*80)
+    # Analysis
+    print("\n5. Recommendation Quality Analysis:")
+    
+    # Check if recommendations match user's purchase history
+    rec_categories = [r.get('category') for r in recommendations[:5]]
+    matching_categories = sum(1 for cat in rec_categories if cat in categories)
+    print(f"   - Recommendations matching user's purchase categories: {matching_categories}/5")
+    
+    # Check variety
+    unique_categories = len(set(rec_categories))
+    print(f"   - Category variety in top 5: {unique_categories} unique categories")
+    
+    # Check if scores are reasonable
+    scores = [r.get('recommendation_score', 0) for r in recommendations[:5]]
+    print(f"   - Score range: {min(scores):.3f} to {max(scores):.3f}")
+    
+    # Check if there's personalization (scores should vary)
+    if len(set(scores)) > 1:
+        print(f"   - ✓ Scores are personalized (vary by recommendation)")
+    else:
+        print(f"   - ⚠ All scores are the same - may need improvement")
+    
+except Exception as e:
+    print(f"   ERROR: {e}")
+    import traceback
+    traceback.print_exc()
 
-if __name__ == "__main__":
-    main()
+print("\n" + "="*70)
+print("RECOMMENDATION TEST COMPLETE")
+print("="*70)
+
+db.close()
+
