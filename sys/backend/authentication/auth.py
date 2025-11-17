@@ -253,7 +253,9 @@ async def register(user_data: UserRegister, db: Session = Depends(get_db)):
         user_id=new_user.id,
         is_admin=new_user.is_admin,
         is_supplier=new_user.is_supplier,
-        location_zone=new_user.location_zone
+        location_zone=new_user.location_zone,
+        full_name=new_user.full_name,
+        email=new_user.email
     )
 
 @router.post("/login", response_model=Token)

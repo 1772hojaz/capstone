@@ -88,6 +88,126 @@ class FlutterwaveService:
         except Exception as e:
             logger.error(f"Fee calculation failed: {str(e)}")
             raise
+    
+    def initiate_transfer(
+        self, 
+        account_bank: str,
+        account_number: str,
+        amount: float,
+        narration: str,
+        currency: str = "USD",
+        beneficiary_name: str = None
+    ) -> Dict[str, Any]:
+        """
+        Initiate a bank transfer (payout) to supplier
+        
+        Args:
+            account_bank: Bank code (e.g., "044" for Access Bank in Nigeria)
+            account_number: Supplier's bank account number
+            amount: Amount to transfer
+            narration: Description of the transfer
+            currency: Currency code (default: USD)
+            beneficiary_name: Optional beneficiary name
+            
+        Returns:
+            Transfer response from Flutterwave
+        """
+        # Check if running in simulation mode
+        if self.secret_key.startswith('FLWSECK_TEST'):
+            logger.warning("Running in TEST mode - simulating transfer")
+            return {
+                "status": "success",
+                "message": "Transfer initiated (simulation)",
+                "data": {
+                    "id": f"simulated_transfer_{account_number}",
+                    "account_number": account_number,
+                    "bank_code": account_bank,
+                    "amount": amount,
+                    "currency": currency,
+                    "status": "successful",
+                    "reference": f"TRF-{account_number}-SIM"
+                }
+            }
+        
+        try:
+            payload = {
+                "account_bank": account_bank,
+                "account_number": account_number,
+                "amount": amount,
+                "narration": narration,
+                "currency": currency,
+                "callback_url": "http://localhost:8000/api/payment/transfer-callback"
+            }
+            
+            if beneficiary_name:
+                payload["beneficiary_name"] = beneficiary_name
+            
+            response = requests.post(
+                f"{self.base_url}/transfers",
+                json=payload,
+                headers=self.headers,
+                timeout=30
+            )
+            
+            result = response.json()
+            
+            if response.ok:
+                logger.info(f"Transfer initiated: {result}")
+                return result
+            else:
+                logger.error(f"Transfer failed: status={response.status_code}, body={result}")
+                return result
+                
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Transfer request failed: {str(e)}")
+            return {
+                "status": "error",
+                "message": str(e)
+            }
+    
+    def verify_transfer(self, transfer_id: str) -> Dict[str, Any]:
+        """
+        Verify a transfer transaction
+        
+        Args:
+            transfer_id: Transfer ID returned from initiate_transfer
+            
+        Returns:
+            Transfer status from Flutterwave
+        """
+        if self.secret_key.startswith('FLWSECK_TEST'):
+            logger.warning("Running in TEST mode - simulating transfer verification")
+            return {
+                "status": "success",
+                "message": "Transfer verified (simulation)",
+                "data": {
+                    "id": transfer_id,
+                    "status": "successful"
+                }
+            }
+        
+        try:
+            response = requests.get(
+                f"{self.base_url}/transfers/{transfer_id}",
+                headers=self.headers,
+                timeout=30
+            )
+            
+            result = response.json()
+            
+            if response.ok:
+                logger.info(f"Transfer verified: {result}")
+                return result
+            else:
+                logger.error(f"Transfer verification failed: {result}")
+                return result
+                
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Transfer verification failed: {str(e)}")
+            return {
+                "status": "error",
+                "message": str(e)
+            }
 
 # Global instance
 flutterwave_service = FlutterwaveService()

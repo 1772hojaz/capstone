@@ -34,6 +34,7 @@ from analytics.behavioral_ml_router import router as behavioral_ml_router
 from analytics.etl_pipeline import run_daily_analytics_scheduler
 from gateway.gateway_router import router as gateway_router
 from graphql.schema import app as graphql_app, ENABLE_GRAPHQL
+from routes.metadata import router as metadata_router
 
 # Centralized logging configuration
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -259,13 +260,13 @@ async def startup_event():
         from validate_db import check_and_fix_database
         db_valid = check_and_fix_database()
         if not db_valid:
-            logger.error("❌ Database validation failed! Please check the logs and run create_tables.py if needed.")
+            logger.error("[ERROR] Database validation failed! Please check the logs and run create_tables.py if needed.")
             logger.error("   The backend may not work correctly until database schema is fixed.")
         else:
-            logger.info("✅ Database schema validated successfully!")
+            logger.info("[OK] Database schema validated successfully!")
         logger.info("="*70 + "\n")
     except Exception as e:
-        logger.error(f"❌ Database validation error: {e}")
+        logger.error(f"[ERROR] Database validation error: {e}")
         logger.error("   Continuing with startup, but you may encounter database errors...")
     
     db = SessionLocal()
@@ -442,6 +443,7 @@ app.include_router(payment_router, prefix="/api/payment", tags=["Payment"])
 app.include_router(analytics_router)
 app.include_router(behavioral_ml_router)
 app.include_router(gateway_router)
+app.include_router(metadata_router, prefix="/api/metadata", tags=["Metadata"])
 
 # Basic metrics endpoint for lightweight monitoring
 @app.get("/metrics")

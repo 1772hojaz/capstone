@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Dict, List
 from sqlalchemy.orm import Session
 
-from models.models import GroupBuy, Contribution, User
+from models.models import GroupBuy, Contribution, User, AdminGroup, AdminGroupJoin
 
 
 class RefundService:
@@ -204,6 +204,86 @@ class RefundService:
             "refund_status": contribution.refund_status,
             "refunded_at": contribution.refunded_at.isoformat() if contribution.refunded_at else None,
             "refund_amount": contribution.paid_amount if contribution.refund_status else 0
+        }
+    
+    @staticmethod
+    def process_admin_group_refunds(
+        db: Session,
+        admin_group_id: int,
+        reason: str = "Admin cancelled group"
+    ) -> Dict:
+        """
+        Process refunds for all participants in an AdminGroup
+        
+        Args:
+            db: Database session
+            admin_group_id: AdminGroup ID to refund
+            reason: Reason for refund
+            
+        Returns:
+            Summary of refund processing
+        """
+        # Get all joins for this admin group
+        joins = db.query(AdminGroupJoin).filter(
+            AdminGroupJoin.admin_group_id == admin_group_id
+        ).all()
+        
+        if not joins:
+            return {
+                "success": False,
+                "message": "No participants found for refund",
+                "refunds_processed": 0
+            }
+        
+        successful_refunds = []
+        failed_refunds = []
+        
+        for join in joins:
+            try:
+                # Calculate refund amount
+                refund_amount = join.paid_amount if hasattr(join, 'paid_amount') and join.paid_amount else 0
+                
+                if refund_amount == 0:
+                    # Skip joins with no payment
+                    continue
+                
+                # Simulate refund (in production, use actual transaction_id from payment records)
+                refund_result = RefundService.initiate_refund(
+                    transaction_id=f"admin_group_{admin_group_id}_join_{join.id}",
+                    amount=refund_amount
+                )
+                
+                if refund_result.get("status") == "success":
+                    successful_refunds.append({
+                        "join_id": join.id,
+                        "user_id": join.user_id,
+                        "amount": refund_amount
+                    })
+                else:
+                    failed_refunds.append({
+                        "join_id": join.id,
+                        "user_id": join.user_id,
+                        "amount": refund_amount,
+                        "error": refund_result.get("message", "Unknown error")
+                    })
+                    
+            except Exception as e:
+                print(f"Error processing refund for join {join.id}: {e}")
+                failed_refunds.append({
+                    "join_id": join.id,
+                    "user_id": join.user_id,
+                    "amount": join.paid_amount if hasattr(join, 'paid_amount') else 0,
+                    "error": str(e)
+                })
+        
+        return {
+            "success": True,
+            "message": f"Processed {len(successful_refunds)} refunds successfully",
+            "refunds_processed": len(successful_refunds),
+            "refunds_failed": len(failed_refunds),
+            "successful_refunds": successful_refunds,
+            "failed_refunds": failed_refunds,
+            "reason": reason
         }
     
     @staticmethod

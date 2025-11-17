@@ -560,15 +560,62 @@ async def process_order_action(
         elif action_request.action == "reject":
             if not action_request.reason:
                 raise HTTPException(status_code=400, detail="Rejection reason required")
+            
             order.status = "rejected"
             order.rejection_reason = action_request.reason
-            message = "Order rejected"
+            
+            # Auto-trigger refunds when order is rejected
+            from services.refund_service import RefundService
+            from services.email_service import email_service
+            
+            refund_results = {"refunds_processed": 0, "refunds_failed": 0}
+            
+            try:
+                # Check if this order is linked to a GroupBuy or AdminGroup
+                if order.group_buy_id:
+                    # Process refunds for GroupBuy
+                    refund_results = RefundService.process_group_refunds(
+                        db=db,
+                        group_buy_id=order.group_buy_id,
+                        reason=f"Supplier rejected order: {action_request.reason}"
+                    )
+                elif order.admin_group_id:
+                    # Process refunds for AdminGroup
+                    refund_results = RefundService.process_admin_group_refunds(
+                        db=db,
+                        admin_group_id=order.admin_group_id,
+                        reason=f"Supplier rejected order: {action_request.reason}"
+                    )
+                
+                # Send refund confirmation emails to users
+                for refund in refund_results.get("successful_refunds", []):
+                    try:
+                        user = db.query(User).filter(User.id == refund["user_id"]).first()
+                        if user and user.email:
+                            email_service.send_refund_confirmation(
+                                user_email=user.email,
+                                user_name=user.full_name or "Valued Customer",
+                                refund_amount=refund["amount"],
+                                refund_reference=f"REF-{order.order_number}",
+                                reason=f"Supplier rejected order: {action_request.reason}"
+                            )
+                    except Exception as e:
+                        print(f"Failed to send refund email to user {refund['user_id']}: {e}")
+                
+                message = f"Order rejected and {refund_results['refunds_processed']} refund(s) processed automatically"
+                
+            except Exception as e:
+                print(f"Failed to process automatic refunds: {e}")
+                message = f"Order rejected but automatic refund failed: {str(e)}"
 
         else:
             raise HTTPException(status_code=400, detail="Invalid action")
 
         db.commit()
-        return {"message": message}
+        return {
+            "message": message,
+            "refund_summary": refund_results if action_request.action == "reject" else None
+        }
 
     except HTTPException:
         raise
@@ -2438,6 +2485,7 @@ async def create_supplier_group(
             max_participants=group_data.max_participants,
             end_date=end_date_obj,
             admin_name=supplier_name,
+            supplier_id=supplier.id,  # Track who created this group
             shipping_info=group_data.shipping_info,
             estimated_delivery=group_data.estimated_delivery,
             features=group_data.features,
@@ -2471,7 +2519,3 @@ async def create_supplier_group(
     except Exception as e:
         print(f"Error creating supplier group: {e}")
         raise HTTPException(status_code=500, detail="Failed to create group")
-
-# Include the supplier orders router
-from routers.supplier_orders import router as orders_router
-router.include_router(orders_router)

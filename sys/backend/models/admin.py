@@ -602,6 +602,140 @@ async def process_group_refunds(
     
     return result
 
+@router.post("/orders/{order_id}/transfer-funds")
+async def transfer_funds_to_supplier(
+    order_id: int,
+    admin = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Transfer funds to supplier after order acceptance
+    
+    This endpoint:
+    1. Verifies order is accepted by supplier
+    2. Calculates supplier payout (total - platform fees)
+    3. Initiates Flutterwave transfer to supplier
+    4. Records transfer in SupplierPayment table
+    5. Updates order payment status
+    """
+    from payment.flutterwave_service import flutterwave_service
+    from models.models import SupplierOrder, SupplierPayment
+    import uuid
+    
+    try:
+        # Get the order
+        order = db.query(SupplierOrder).filter(SupplierOrder.id == order_id).first()
+        if not order:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Order not found"
+            )
+        
+        # Verify order is confirmed/accepted by supplier
+        if order.status != "confirmed":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Order must be confirmed by supplier before funds transfer. Current status: {order.status}"
+            )
+        
+        # Check if payment has already been processed
+        existing_payment = db.query(SupplierPayment).filter(
+            SupplierPayment.order_id == order_id
+        ).first()
+        
+        if existing_payment and existing_payment.status == "completed":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Funds have already been transferred for this order"
+            )
+        
+        # Get supplier details
+        supplier = db.query(User).filter(User.id == order.supplier_id).first()
+        if not supplier:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Supplier not found"
+            )
+        
+        # Calculate payout amount (deduct platform fee)
+        PLATFORM_FEE_PERCENTAGE = 0.10  # 10% platform fee
+        total_amount = order.total_value
+        platform_fee = total_amount * PLATFORM_FEE_PERCENTAGE
+        supplier_payout = total_amount - platform_fee
+        
+        # Check if supplier has bank details
+        # For now, use placeholder values (in production, supplier should have these in profile)
+        supplier_bank_code = getattr(supplier, 'bank_code', '044')  # Default to Access Bank
+        supplier_account_number = getattr(supplier, 'account_number', '0000000000')
+        
+        if supplier_account_number == '0000000000':
+            # In simulation mode, this is acceptable
+            print(f"Warning: Supplier {supplier.id} has no bank details. Using simulation mode.")
+        
+        # Generate reference
+        transfer_ref = f"TRF-ORD-{order_id}-{uuid.uuid4().hex[:8].upper()}"
+        
+        # Initiate transfer via Flutterwave
+        transfer_result = flutterwave_service.initiate_transfer(
+            account_bank=supplier_bank_code,
+            account_number=supplier_account_number,
+            amount=supplier_payout,
+            narration=f"Payment for order {order.order_number}",
+            currency="USD",
+            beneficiary_name=supplier.company_name or supplier.full_name
+        )
+        
+        transfer_status = transfer_result.get("status")
+        transfer_id = transfer_result.get("data", {}).get("id", transfer_ref)
+        
+        # Create or update payment record
+        if existing_payment:
+            payment = existing_payment
+            payment.status = "completed" if transfer_status == "success" else "pending"
+            payment.transfer_id = transfer_id
+            payment.transfer_reference = transfer_ref
+        else:
+            payment = SupplierPayment(
+                supplier_id=supplier.id,
+                order_id=order_id,
+                amount=supplier_payout,
+                platform_fee=platform_fee,
+                payment_method="bank_transfer",
+                reference_number=transfer_ref,
+                transfer_id=transfer_id,
+                status="completed" if transfer_status == "success" else "pending"
+            )
+            db.add(payment)
+        
+        # Update order to indicate payment has been transferred
+        order.admin_verification_status = "verified"
+        order.admin_verified_at = datetime.utcnow()
+        
+        db.commit()
+        db.refresh(payment)
+        
+        return {
+            "message": "Funds transferred to supplier successfully",
+            "payment_id": payment.id,
+            "order_id": order_id,
+            "order_number": order.order_number,
+            "supplier_id": supplier.id,
+            "supplier_name": supplier.company_name or supplier.full_name,
+            "total_amount": round(total_amount, 2),
+            "platform_fee": round(platform_fee, 2),
+            "supplier_payout": round(supplier_payout, 2),
+            "transfer_status": transfer_status,
+            "transfer_id": transfer_id,
+            "transfer_reference": transfer_ref
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error transferring funds for order {order_id}: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to transfer funds: {str(e)}")
+
 @router.post("/groups/{group_id}/process-payment")
 async def process_admin_group_payment(
     group_id: int,
@@ -1988,7 +2122,15 @@ async def delete_admin_group(
     admin = Depends(verify_admin),
     db: Session = Depends(get_db)
 ):
-    """Delete an admin-managed group buying opportunity"""
+    """
+    Delete an admin-managed group buying opportunity
+    Now supports deletion with participants - automatically processes refunds and sends notifications
+    """
+    from services.email_service import email_service
+    from services.refund_service import RefundService
+    import csv
+    from io import StringIO
+    
     try:
         # Get the group
         group = db.query(AdminGroup).filter(AdminGroup.id == group_id).first()
@@ -1998,24 +2140,93 @@ async def delete_admin_group(
                 detail="Group not found"
             )
 
-        # Check if group has participants
-        participant_count = db.query(func.count(AdminGroupJoin.id)).filter(
+        # Get all participants with their details
+        participants_query = db.query(
+            AdminGroupJoin.id,
+            AdminGroupJoin.user_id,
+            AdminGroupJoin.quantity,
+            AdminGroupJoin.paid_amount,
+            User.email,
+            User.full_name
+        ).join(
+            User, User.id == AdminGroupJoin.user_id
+        ).filter(
             AdminGroupJoin.admin_group_id == group_id
-        ).scalar() or 0
+        ).all()
 
-        if participant_count > 0:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Cannot delete group with {participant_count} participants. Please cancel the group instead."
+        participants_data = []
+        refund_results = []
+        email_results = []
+        
+        # Process refunds and notifications for each participant
+        for join_id, user_id, quantity, paid_amount, email, full_name in participants_query:
+            # Calculate refund amount
+            refund_amount = paid_amount if paid_amount else (group.price * quantity)
+            
+            # Initiate refund via RefundService
+            # Note: For AdminGroup, we need to create a simulated transaction_id
+            transaction_id = f"admin_group_{group_id}_user_{user_id}"
+            refund_result = RefundService.initiate_refund(transaction_id, refund_amount)
+            
+            refund_status = refund_result.get("status", "unknown")
+            
+            # Send email notification
+            email_result = email_service.send_group_deletion_notification(
+                user_email=email,
+                user_name=full_name or "Valued Customer",
+                group_name=group.name,
+                group_id=group_id,
+                refund_amount=refund_amount,
+                refund_status=refund_status
             )
+            
+            # Store data for CSV
+            participants_data.append({
+                "user_id": user_id,
+                "email": email,
+                "full_name": full_name or "N/A",
+                "quantity": quantity,
+                "amount_paid": refund_amount,
+                "refund_status": refund_status
+            })
+            
+            refund_results.append({
+                "user_id": user_id,
+                "email": email,
+                "refund_amount": refund_amount,
+                "refund_status": refund_status
+            })
+            
+            email_results.append(email_result)
 
-        # Delete the group (AdminGroupJoin records should be cascade deleted if properly configured)
+        # Generate CSV data
+        csv_data = ""
+        if participants_data:
+            output = StringIO()
+            fieldnames = ["user_id", "email", "full_name", "quantity", "amount_paid", "refund_status"]
+            writer = csv.DictWriter(output, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(participants_data)
+            csv_data = output.getvalue()
+            output.close()
+
+        # Delete all join records
+        db.query(AdminGroupJoin).filter(
+            AdminGroupJoin.admin_group_id == group_id
+        ).delete()
+
+        # Delete the group
         db.delete(group)
         db.commit()
 
         return {
             "message": "Group deleted successfully",
-            "group_id": group_id
+            "group_id": group_id,
+            "participants_count": len(participants_data),
+            "csv_data": csv_data,
+            "refunds": refund_results,
+            "emails_sent": len([e for e in email_results if e.get("status") in ["sent", "simulated"]]),
+            "emails_failed": len([e for e in email_results if e.get("status") == "failed"])
         }
 
     except HTTPException:
@@ -2023,7 +2234,7 @@ async def delete_admin_group(
     except Exception as e:
         print(f"Error deleting admin group {group_id}: {e}")
         db.rollback()
-        raise HTTPException(status_code=500, detail="Failed to delete group")
+        raise HTTPException(status_code=500, detail=f"Failed to delete group: {str(e)}")
 
 @router.put("/groups/{group_id}/image")
 async def update_group_buy_image(

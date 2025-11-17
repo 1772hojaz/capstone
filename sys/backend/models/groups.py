@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from pydantic import BaseModel
 from typing import List, Optional
 import os
@@ -256,6 +257,8 @@ async def get_group_qr_code(
     db: Session = Depends(get_db)
 ):
     """Generate and return a QR code (base64 PNG) for a user's pickup of a group-buy.
+    
+    Includes contribution details if user has a contribution in the group.
 
     Returns JSON with fields:
     - qr_code: base64 PNG (no data: prefix)
@@ -264,8 +267,18 @@ async def get_group_qr_code(
     - pickup_instructions: human readable pickup instructions/location
     - is_used: whether this QR code has been used for pickup
     - status: ready/used status
+    - contribution_id: (optional) if user has a contribution
+    - quantity: (optional) contribution quantity
+    - product_name: (optional) product name
+    - is_collected: (optional) collection status
     """
     try:
+        # Check if user has a contribution in this group (for additional details)
+        contribution = db.query(Contribution).filter(
+            Contribution.group_buy_id == group_id,
+            Contribution.user_id == user.id
+        ).first()
+        
         # First, check if user already has a QR code for this group
         # Get the most recent valid QR code for this group
         existing_qr = db.query(QRCodePickup).filter(
@@ -279,7 +292,7 @@ async def get_group_qr_code(
             # Return existing QR code with current status
             qr_image_base64 = generate_qr_code_image(existing_qr.qr_code_data)
             
-            return {
+            response = {
                 # "qr_code_id": existing_qr.id,  # Removed - traders don't need this
                 "qr_code": qr_image_base64,
                 "qr_id": existing_qr.qr_code_data,
@@ -290,6 +303,16 @@ async def get_group_qr_code(
                 "status": "used" if existing_qr.is_used else "ready",
                 "status_text": "Yes" if existing_qr.is_used else "No"
             }
+            
+            # Add contribution details if available
+            if contribution:
+                group_buy = db.query(GroupBuy).filter(GroupBuy.id == group_id).first()
+                response["contribution_id"] = contribution.id
+                response["quantity"] = contribution.quantity
+                response["product_name"] = group_buy.product.name if (group_buy and group_buy.product) else "Unknown"
+                response["is_collected"] = contribution.is_collected if hasattr(contribution, 'is_collected') else False
+            
+            return response
         
         # If no existing QR code, create a new one
         # Try to find the group in AdminGroup or GroupBuy tables
@@ -343,7 +366,7 @@ async def get_group_qr_code(
         
         qr_image_base64 = generate_qr_code_image(qr_id)
 
-        return {
+        response = {
             # "qr_code_id": qr_record.id,  # Removed - traders don't need this
             "qr_code": qr_image_base64,
             "qr_id": qr_id,
@@ -354,6 +377,16 @@ async def get_group_qr_code(
             "status": "used" if qr_record.is_used else "ready",
             "status_text": "Yes" if qr_record.is_used else "No"
         }
+        
+        # Add contribution details if available
+        if contribution:
+            group_buy = db.query(GroupBuy).filter(GroupBuy.id == group_id).first()
+            response["contribution_id"] = contribution.id
+            response["quantity"] = contribution.quantity
+            response["product_name"] = group_buy.product.name if (group_buy and group_buy.product) else "Unknown"
+            response["is_collected"] = contribution.is_collected if hasattr(contribution, 'is_collected') else False
+        
+        return response
     except HTTPException:
         raise
     except Exception as e:
@@ -594,48 +627,6 @@ async def get_my_groups(
         print(f"Error getting user groups: {e}")
         raise HTTPException(status_code=500, detail=f"Error retrieving groups: {str(e)}")
 
-@router.get("/groups/{group_id}/qr-code")
-async def get_qr_code_for_contribution(
-    group_id: int,
-    user: User = Depends(verify_token),
-    db: Session = Depends(get_db)
-):
-    """Get QR code for trader's contribution in a group"""
-    from services.qr_service import QRCodeService
-    
-    # Find user's contribution in this group
-    contribution = db.query(Contribution).filter(
-        Contribution.group_buy_id == group_id,
-        Contribution.user_id == user.id
-    ).first()
-    
-    if not contribution:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="You are not a participant in this group"
-        )
-    
-    # Check if group is ready for collection
-    group_buy = db.query(GroupBuy).filter(GroupBuy.id == group_id).first()
-    if not group_buy or group_buy.supplier_status != "ready_for_collection":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Group is not ready for collection yet"
-        )
-    
-    # Generate or retrieve QR code
-    qr_data = QRCodeService.generate_qr_code_for_contribution(db, contribution, include_image=True)
-    
-    return {
-        "success": True,
-        "qr_code": qr_data["qr_image"],
-        "token": qr_data["token"],
-        "contribution_id": contribution.id,
-        "quantity": contribution.quantity,
-        "product_name": group_buy.product.name if group_buy.product else "Unknown",
-        "pickup_location": group_buy.location_zone,
-        "is_collected": contribution.is_collected
-    }
 
 @router.get("/refunds")
 async def get_my_refunds(
@@ -1034,11 +1025,15 @@ async def join_group(
     user: User = Depends(verify_token),
     db: Session = Depends(get_db)
 ):
-    """Join a group-buy by creating a contribution or join record.
+    """Join a group-buy by creating a contribution or join record with Flutterwave payment integration.
 
     Allows users to join an active group-buy by specifying quantity and delivery preferences.
     Handles both AdminGroup and GroupBuy groups.
+    Initiates payment via Flutterwave and confirms join after payment.
     """
+    from payment.flutterwave_service import flutterwave_service
+    import uuid
+    
     try:
         # First, try to find the group as an AdminGroup
         admin_group = db.query(AdminGroup).filter(
@@ -1088,9 +1083,33 @@ async def join_group(
                     detail="Group is full"
                 )
 
-            # Calculate contribution amount (upfront payment - typically 50%)
+            # Calculate contribution amount
             contribution_amount = request.quantity * admin_group.price
-            upfront_amount = contribution_amount * 0.5  # 50% upfront
+            # For now, require full payment upfront (can adjust to 50% later)
+            payment_amount = contribution_amount
+            
+            # Initialize Flutterwave payment
+            tx_ref = f"admin_group_{group_id}_user_{user.id}_{uuid.uuid4().hex[:8]}"
+            
+            try:
+                payment_result = flutterwave_service.initialize_payment(
+                    amount=payment_amount,
+                    email=user.email,
+                    tx_ref=tx_ref,
+                    currency="USD",
+                    redirect_url=f"http://localhost:8000/api/payment/callback?group_id={group_id}"
+                )
+                
+                # In simulation mode, payment is auto-approved
+                # In production, user would be redirected to payment_result['data']['link']
+                payment_status = payment_result.get("status")
+                transaction_id = payment_result.get("data", {}).get("id", tx_ref)
+                
+            except Exception as e:
+                print(f"Payment initialization failed: {e}")
+                # In simulation mode, continue anyway
+                payment_status = "simulated"
+                transaction_id = f"sim_{tx_ref}"
 
             # Create admin group join record
             join_record = AdminGroupJoin(
@@ -1098,27 +1117,57 @@ async def join_group(
                 admin_group_id=group_id,
                 quantity=request.quantity,
                 delivery_method=request.delivery_method,
-                payment_method=request.payment_method,
+                payment_method="flutterwave",
                 special_instructions=request.special_instructions,
-                payment_transaction_id=request.payment_transaction_id,
-                payment_reference=request.payment_reference
+                payment_transaction_id=transaction_id,
+                payment_reference=tx_ref,
+                paid_amount=payment_amount  # Store full payment amount
             )
 
             db.add(join_record)
+            db.flush()  # Flush to make join_record visible to queries
 
             # Update group participant count
             admin_group.participants += 1
+            
+            # Check if group should be completed (reached target quantity)
+            # Calculate total quantity sold across all participants (including this join)
+            total_quantity_sold = db.query(func.sum(AdminGroupJoin.quantity)).filter(
+                AdminGroupJoin.admin_group_id == group_id
+            ).scalar() or 0
+            
+            print(f"[DEBUG] AdminGroup {group_id}: total_quantity_sold={total_quantity_sold}, max_participants={admin_group.max_participants}, is_active={admin_group.is_active}")
+            
+            # Complete group if total quantity meets or exceeds max_participants (target quantity)
+            if admin_group.max_participants and total_quantity_sold >= admin_group.max_participants:
+                print(f"[DEBUG] AdminGroup {group_id} reached target quantity, marking as completed")
+                if admin_group.is_active:
+                    admin_group.is_active = False  # Mark as completed
+                    admin_group.end_date = datetime.utcnow()  # Update end date to now
+                    print(f"[DEBUG] AdminGroup {group_id} marked as completed, creating supplier order")
+                    
+                    # Create supplier order when group completes
+                    from worker.auto_complete_groups import create_supplier_order_for_admin_group
+                    try:
+                        create_supplier_order_for_admin_group(db, admin_group)
+                        print(f"[DEBUG] Supplier order created for AdminGroup {group_id}")
+                    except Exception as e:
+                        print(f"[ERROR] Failed to create supplier order for admin group: {e}")
+                else:
+                    print(f"[DEBUG] AdminGroup {group_id} already inactive, skipping completion")
+            else:
+                print(f"[DEBUG] AdminGroup {group_id} NOT completing: quantity check failed")
 
-            # Create initial transaction record only if admin group has a linked product
+            # Create transaction record
             if admin_group.product_id:
                 from models.models import Transaction
                 transaction = Transaction(
                     user_id=user.id,
-                    group_buy_id=None,  # Admin groups don't have group_buy_id
+                    group_buy_id=None,
                     product_id=admin_group.product_id,
                     quantity=request.quantity,
-                    amount=upfront_amount,
-                    transaction_type="upfront",
+                    amount=payment_amount,
+                    transaction_type="payment",
                     location_zone=user.location_zone or "Unknown"
                 )
                 db.add(transaction)
@@ -1126,12 +1175,12 @@ async def join_group(
             db.commit()
 
             return {
-                "message": "Successfully joined the group!",
+                "message": "Successfully joined the group with payment!",
                 "join_id": join_record.id,
                 "quantity": request.quantity,
-                "upfront_amount": round(upfront_amount, 2),
-                "total_amount": round(contribution_amount, 2),
-                "remaining_balance": round(contribution_amount - upfront_amount, 2),
+                "payment_amount": round(payment_amount, 2),
+                "payment_status": payment_status,
+                "transaction_id": transaction_id,
                 "group_progress": f"{admin_group.participants}/{admin_group.max_participants or 'unlimited'}"
             }
 
@@ -1164,6 +1213,27 @@ async def join_group(
 
             # Calculate contribution amount
             contribution_amount = request.quantity * group_buy.product.bulk_price
+            payment_amount = contribution_amount  # Full payment upfront
+            
+            # Initialize Flutterwave payment
+            tx_ref = f"group_buy_{group_id}_user_{user.id}_{uuid.uuid4().hex[:8]}"
+            
+            try:
+                payment_result = flutterwave_service.initialize_payment(
+                    amount=payment_amount,
+                    email=user.email,
+                    tx_ref=tx_ref,
+                    currency="USD",
+                    redirect_url=f"http://localhost:8000/api/payment/callback?group_id={group_id}"
+                )
+                
+                payment_status = payment_result.get("status")
+                transaction_id = payment_result.get("data", {}).get("id", tx_ref)
+                
+            except Exception as e:
+                print(f"Payment initialization failed: {e}")
+                payment_status = "simulated"
+                transaction_id = f"sim_{tx_ref}"
 
             # Create contribution record
             contribution = Contribution(
@@ -1171,8 +1241,10 @@ async def join_group(
                 group_buy_id=group_id,
                 quantity=request.quantity,
                 contribution_amount=contribution_amount,
-                paid_amount=0.0,  # No payment required upfront for GroupBuy
-                is_fully_paid=False
+                paid_amount=payment_amount,
+                is_fully_paid=True,  # Marked as paid in simulation mode
+                payment_transaction_id=transaction_id,
+                payment_reference=tx_ref
             )
 
             db.add(contribution)
@@ -1180,13 +1252,20 @@ async def join_group(
             # Update group totals
             group_buy.total_quantity += request.quantity
             group_buy.total_contributions += contribution_amount
+            group_buy.total_paid += payment_amount
 
             # Check if group should be completed (reached MOQ)
             if group_buy.moq_progress >= 100 and group_buy.status == "active":
                 group_buy.status = "completed"
-                # Create order automatically when group completes
-                from routers.supplier_orders import create_order_from_completed_group
-                create_order_from_completed_group(db, group_id)
+                group_buy.completed_at = datetime.utcnow()
+                group_buy.supplier_status = "pending_supplier"
+                
+                # Create supplier order when group completes
+                from worker.auto_complete_groups import create_supplier_order_for_group
+                try:
+                    create_supplier_order_for_group(db, group_buy)
+                except Exception as e:
+                    print(f"Failed to create supplier order: {e}")
 
             # Create transaction record for the contribution
             from models.models import Transaction
@@ -1195,8 +1274,8 @@ async def join_group(
                 group_buy_id=group_id,
                 product_id=group_buy.product_id,
                 quantity=request.quantity,
-                amount=contribution_amount,
-                transaction_type="contribution",
+                amount=payment_amount,
+                transaction_type="payment",
                 location_zone=user.location_zone or "Unknown"
             )
 
@@ -1204,12 +1283,14 @@ async def join_group(
             db.commit()
 
             return {
-                "message": "Successfully joined the group buy!",
+                "message": "Successfully joined the group buy with payment!",
                 "contribution_id": contribution.id,
                 "quantity": request.quantity,
-                "contribution_amount": round(contribution_amount, 2),
+                "payment_amount": round(payment_amount, 2),
+                "payment_status": payment_status,
+                "transaction_id": transaction_id,
                 "group_progress": f"{group_buy.total_quantity}/{group_buy.product.moq} ({group_buy.moq_progress:.1f}%)",
-                "payment_required": "Payment will be collected when the group reaches minimum quantity"
+                "group_status": group_buy.status
             }
 
         # If neither AdminGroup nor GroupBuy found

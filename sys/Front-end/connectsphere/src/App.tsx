@@ -3,6 +3,7 @@ import MainLayout from './layouts/MainLayout';
 import DashboardLayout from './components/DashboardLayout';
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
+import EnhancedRegistrationPage from './pages/EnhancedRegistrationPage';
 import SupplierLandingPage from './pages/SupplierLandingPage';
 import SupplierLoginPage from './pages/SupplierLoginPage';
 import AdminDashboard from './pages/AdminDashboard';
@@ -37,6 +38,12 @@ function App() {
         <Route path="/login" element={
           <MainLayout>
             <LoginPage />
+          </MainLayout>
+        } />
+
+        <Route path="/register" element={
+          <MainLayout>
+            <EnhancedRegistrationPage />
           </MainLayout>
         } />
 

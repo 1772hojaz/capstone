@@ -6,10 +6,10 @@ Creates supplier orders when groups transition to completed status
 
 from datetime import datetime
 from sqlalchemy.orm import Session
-from sqlalchemy import and_
+from sqlalchemy import and_, func
 
 from db.database import SessionLocal
-from models.models import GroupBuy, Contribution, SupplierOrder, SupplierOrderItem, SupplierProduct
+from models.models import GroupBuy, Contribution, SupplierOrder, SupplierOrderItem, SupplierProduct, AdminGroupJoin
 
 
 def check_and_complete_groups():
@@ -143,6 +143,83 @@ def create_supplier_order_for_group(db: Session, group_buy: GroupBuy):
         
     except Exception as e:
         print(f"Error creating supplier order for group {group_buy.id}: {e}")
+        db.rollback()
+        raise
+
+
+def create_supplier_order_for_admin_group(db: Session, admin_group):
+    """
+    Create a supplier order when an admin group is completed
+    
+    Args:
+        db: Database session
+        admin_group: AdminGroup that was just completed
+    """
+    try:
+        # Calculate total quantity and value from all joins
+        total_quantity = db.query(func.sum(AdminGroupJoin.quantity)).filter(
+            AdminGroupJoin.admin_group_id == admin_group.id
+        ).scalar() or 0
+        
+        total_value = admin_group.price * total_quantity
+        
+        # Get supplier ID from the admin group (set when supplier creates the group)
+        supplier_id = admin_group.supplier_id
+        
+        # If no supplier_id, try to find via product
+        if not supplier_id and admin_group.product_id:
+            supplier_product = db.query(SupplierProduct).filter(
+                SupplierProduct.product_id == admin_group.product_id,
+                SupplierProduct.is_active == True
+            ).first()
+            
+            if supplier_product:
+                supplier_id = supplier_product.supplier_id
+        
+        # If still no supplier found, skip order creation
+        if not supplier_id:
+            print(f"⚠️  No supplier found for admin group {admin_group.id}, skipping order creation")
+            return
+        
+        # Generate order number
+        order_number = f"ORD-AG-{admin_group.id}-{int(datetime.utcnow().timestamp())}"
+        
+        # Create supplier order
+        # AdminGroup doesn't have a location field, use pickup_location or default
+        delivery_location = getattr(admin_group, 'pickup_location', None) or "Central Location"
+        
+        supplier_order = SupplierOrder(
+            supplier_id=supplier_id,
+            admin_group_id=admin_group.id,
+            order_number=order_number,
+            status="pending",
+            total_value=total_value,
+            total_savings=0.0,  # Admin groups may not have savings calculation
+            delivery_location=delivery_location,
+            delivery_method="delivery",
+            admin_verification_status="pending"
+        )
+        
+        db.add(supplier_order)
+        db.flush()
+        
+        # Create order item (if product_id exists)
+        if admin_group.product_id:
+            order_item = SupplierOrderItem(
+                supplier_order_id=supplier_order.id,
+                supplier_product_id=supplier_product.id,
+                quantity=total_quantity,
+                unit_price=admin_group.price,
+                total_amount=total_value
+            )
+            db.add(order_item)
+        
+        db.commit()
+        
+        print(f"✅ Created supplier order {order_number} for admin group {admin_group.id}")
+        
+    except Exception as e:
+        print(f"Error creating supplier order for admin group {admin_group.id}: {e}")
         db.rollback()
         raise
 

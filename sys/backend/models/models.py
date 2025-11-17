@@ -252,6 +252,7 @@ class AdminGroup(Base):
     created = Column(DateTime, default=datetime.utcnow)
     end_date = Column(DateTime, nullable=False)
     admin_name = Column(String, default="Admin")
+    supplier_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # Track who created this group
     shipping_info = Column(String, default="Free shipping when group goal is reached")
     estimated_delivery = Column(String, default="2-3 weeks after group completion")
     features = Column(JSON)  # List of feature strings
@@ -298,6 +299,7 @@ class AdminGroupJoin(Base):
     special_instructions = Column(Text, nullable=True)
     payment_transaction_id = Column(String, nullable=True)  # For card payments
     payment_reference = Column(String, nullable=True)       # For card payments
+    paid_amount = Column(Float, nullable=True)              # Amount paid for this join
     joined_at = Column(DateTime, default=datetime.utcnow)
     
     # Relationships
@@ -453,9 +455,13 @@ class SupplierPayment(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     supplier_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    order_id = Column(Integer, ForeignKey("supplier_orders.id"), nullable=True)  # Link to order
     amount = Column(Float, nullable=False)
+    platform_fee = Column(Float, nullable=True)  # Platform fee deducted
     payment_method = Column(String, nullable=False)  # bank_transfer, mobile_money, cash
     reference_number = Column(String)
+    transfer_id = Column(String, nullable=True)  # Flutterwave transfer ID
+    transfer_reference = Column(String, nullable=True)  # Transfer reference
     status = Column(String, default="pending")  # pending, completed, failed
     processed_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)

@@ -526,7 +526,7 @@ def validate_database() -> Tuple[bool, Dict]:
         if table_name not in existing_tables:
             report["missing_tables"].append(table_name)
             report["valid"] = False
-            logger.warning(f"❌ Table '{table_name}' does not exist")
+            logger.warning(f"[MISSING] Table '{table_name}' does not exist")
     
     # Validate existing tables
     for table_name, expected_columns in EXPECTED_SCHEMA.items():
@@ -543,7 +543,7 @@ def validate_database() -> Tuple[bool, Dict]:
             }
             report["total_missing_columns"] += len(missing)
             
-            logger.warning(f"\n📋 Table: {table_name}")
+            logger.warning(f"\n[TABLE] {table_name}")
             logger.warning(f"   Missing columns ({len(missing)}): {', '.join(missing)}")
             
             # Generate and apply migrations
@@ -552,13 +552,13 @@ def validate_database() -> Tuple[bool, Dict]:
                 logger.info(f"   Applying: {sql}")
                 if apply_migration(sql):
                     report["migrations_applied"].append(sql)
-                    logger.info(f"   ✅ Successfully added column")
+                    logger.info(f"   [OK] Successfully added column")
                 else:
-                    logger.error(f"   ❌ Failed to add column")
+                    logger.error(f"   [ERROR] Failed to add column")
         
         elif extra:
             # Just informational - not an error
-            logger.info(f"\n📋 Table: {table_name}")
+            logger.info(f"\n[TABLE] {table_name}")
             logger.info(f"   Extra columns (informational): {', '.join(extra)}")
     
     # Final report
@@ -567,11 +567,11 @@ def validate_database() -> Tuple[bool, Dict]:
     logger.info("=" * 70)
     
     if report["valid"]:
-        logger.info("✅ Database schema is valid!")
+        logger.info("[OK] Database schema is valid!")
     else:
-        logger.warning(f"⚠️  Found {len(report['missing_tables'])} missing tables")
-        logger.warning(f"⚠️  Found {report['total_missing_columns']} missing columns")
-        logger.info(f"✅ Applied {len(report['migrations_applied'])} migrations")
+        logger.warning(f"[WARNING] Found {len(report['missing_tables'])} missing tables")
+        logger.warning(f"[WARNING] Found {report['total_missing_columns']} missing columns")
+        logger.info(f"[OK] Applied {len(report['migrations_applied'])} migrations")
     
     logger.info("=" * 70)
     
@@ -584,21 +584,21 @@ def check_and_fix_database():
         is_valid, report = validate_database()
         
         if report["missing_tables"]:
-            logger.warning("\n⚠️  Some tables are missing. Run create_tables.py to create them:")
+            logger.warning("\n[WARNING] Some tables are missing. Run create_tables.py to create them:")
             logger.warning(f"   python create_tables.py")
             return False
         
         if not is_valid and report["total_missing_columns"] > 0:
-            logger.info("\n✅ Database schema has been updated with missing columns")
+            logger.info("\n[OK] Database schema has been updated with missing columns")
             logger.info("   Backend can now start safely")
         
         return True
         
     except SQLAlchemyError as e:
-        logger.error(f"❌ Database validation failed: {e}")
+        logger.error(f"[ERROR] Database validation failed: {e}")
         return False
     except Exception as e:
-        logger.error(f"❌ Unexpected error during validation: {e}")
+        logger.error(f"[ERROR] Unexpected error during validation: {e}")
         return False
 
 
