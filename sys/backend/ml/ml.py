@@ -16,6 +16,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.decomposition import NMF
 # import shap  # Temporarily disabled due to llvmlite compatibility issue
 from db.database import get_db
+from ml.cold_start_handler import ColdStartHandler
 from models.models import User, GroupBuy, Transaction, Product, MLModel, Contribution, AdminGroup, AdminGroupJoin
 from models.analytics_models import UserBehaviorFeatures as AnalyticsUserBehaviorFeatures
 from authentication.auth import verify_token, get_current_user
@@ -175,40 +176,40 @@ def load_models():
         
         if os.path.exists(clustering_path):
             clustering_model = joblib.load(clustering_path)
-            print("✓ Loaded clustering_model.pkl")
+            print("[OK] Loaded clustering_model.pkl")
         
         if os.path.exists(nmf_path):
             nmf_model = joblib.load(nmf_path)
-            print("✓ Loaded nmf_model.pkl (Collaborative Filtering)")
+            print("[OK] Loaded nmf_model.pkl (Collaborative Filtering)")
             
         if os.path.exists(tfidf_path):
             tfidf_model = joblib.load(tfidf_path)
-            print("✓ Loaded tfidf.pkl (Content-Based Filtering)")
+            print("[OK] Loaded tfidf.pkl (Content-Based Filtering)")
         
         if os.path.exists(scaler_path):
             loaded_scaler = joblib.load(scaler_path)
             # Handle both old (single scaler) and new (dict of scalers) formats
             if isinstance(loaded_scaler, dict):
                 scaler = loaded_scaler
-                print("✓ Loaded scaler.pkl (multi-scaler format)")
+                print("[OK] Loaded scaler.pkl (multi-scaler format)")
             else:
                 # Legacy single scaler - wrap it
                 scaler = {'purchase': loaded_scaler, 'preference': loaded_scaler}
-                print("✓ Loaded scaler.pkl (legacy format)")
+                print("[OK] Loaded scaler.pkl (legacy format)")
             
         if os.path.exists(feature_store_path):
             with open(feature_store_path, 'r') as f:
                 feature_store = json.load(f)
-            print("✓ Loaded feature_store.json")
+            print("[OK] Loaded feature_store.json")
     except Exception as e:
-        print(f"⚠️  Error loading models: {e}")
+        print(f"[WARNING] Error loading models: {e}")
 
 async def train_clustering_model_with_progress(db: Session):
     """Train hybrid recommender system with progress tracking"""
     global clustering_model, nmf_model, tfidf_model, scaler, feature_store
     
     print("\n" + "="*60)
-    print("🚀 Training Hybrid Recommender with Progress Tracking")
+    print("[TRAINING] Hybrid Recommender with Progress Tracking")
     print("="*60)
     
     # Create a training status record
@@ -227,7 +228,7 @@ async def train_clustering_model_with_progress(db: Session):
     
     try:
         # Stage 1: Data Collection (10%)
-        print("1️⃣  Data Collection...")
+        print("[1/7] Data Collection...")
         training_status["current_stage"] = "data_collection"
         training_status["progress"] = 10
         training_status["stages_completed"].append("data_collection")
@@ -272,10 +273,10 @@ async def train_clustering_model_with_progress(db: Session):
         n_products = len(products)
         product_ids = [p.id for p in products]
         
-        print(f"   ✅ Collected: {n_users} users, {len(products)} products, {len(transactions)} transactions")
+        print(f"   [OK] Collected: {n_users} users, {len(products)} products, {len(transactions)} transactions")
         
         # Stage 2: Matrix Building (20%)
-        print("2️⃣  Building User-Product Matrix...")
+        print("[2/7] Building User-Product Matrix...")
         training_status["current_stage"] = "matrix_building"
         training_status["progress"] = 20
         training_status["stages_completed"].append("matrix_building")
@@ -306,10 +307,10 @@ async def train_clustering_model_with_progress(db: Session):
                 continue
         
         sparsity = (user_product_matrix == 0).sum() / user_product_matrix.size * 100
-        print(f"   ✅ Matrix built: {user_product_matrix.shape}, sparsity: {sparsity:.1f}%")
+        print(f"   [OK] Matrix built: {user_product_matrix.shape}, sparsity: {sparsity:.1f}%")
         
         # Stage 3: Clustering (40%)
-        print("3️⃣  Clustering Users...")
+        print("[3/7] Clustering Users...")
         training_status["current_stage"] = "clustering"
         training_status["progress"] = 40
         training_status["stages_completed"].append("clustering")
@@ -399,10 +400,10 @@ async def train_clustering_model_with_progress(db: Session):
             if user:
                 user.cluster_id = int(clustering_model.labels_[idx])
         
-        print(f"   ✅ Clustering complete: {best_k} clusters, silhouette={best_score:.4f}")
+        print(f"   [OK] Clustering complete: {best_k} clusters, silhouette={best_score:.4f}")
         
         # Stage 4: NMF Training (60%)
-        print("4️⃣  Training NMF (Collaborative Filtering)...")
+        print("[4/7] Training NMF (Collaborative Filtering)...")
         training_status["current_stage"] = "nmf_training"
         training_status["progress"] = 60
         training_status["stages_completed"].append("nmf_training")
@@ -420,10 +421,10 @@ async def train_clustering_model_with_progress(db: Session):
         nmf_model = NMF(n_components=rank, init="nndsvda", random_state=42, max_iter=500)
         nmf_model.fit_transform(np.maximum(user_product_matrix, 0))
         
-        print(f"   ✅ NMF trained: rank={rank}, error={nmf_model.reconstruction_err_:.4f}")
+        print(f"   [OK] NMF trained: rank={rank}, error={nmf_model.reconstruction_err_:.4f}")
         
         # Stage 5: TF-IDF Processing (75%)
-        print("5️⃣  Processing TF-IDF (Content-Based Filtering)...")
+        print("[5/7] Processing TF-IDF (Content-Based Filtering)...")
         training_status["current_stage"] = "tfidf_processing"
         training_status["progress"] = 75
         training_status["stages_completed"].append("tfidf_processing")
@@ -443,10 +444,10 @@ async def train_clustering_model_with_progress(db: Session):
         tfidf_model = TfidfVectorizer()
         tfidf_model.fit_transform(prod_text)
         
-        print(f"   ✅ TF-IDF processed: {len(tfidf_model.vocabulary_)} terms")
+        print(f"   [OK] TF-IDF processed: {len(tfidf_model.vocabulary_)} terms")
         
         # Stage 6: Hybrid Fusion (90%)
-        print("6️⃣  Creating Hybrid Model...")
+        print("[6/7] Creating Hybrid Model...")
         training_status["current_stage"] = "hybrid_fusion"
         training_status["progress"] = 90
         training_status["stages_completed"].append("hybrid_fusion")
@@ -461,7 +462,7 @@ async def train_clustering_model_with_progress(db: Session):
         }))
         
         # Stage 7: Saving Models (100%)
-        print("7️⃣  Saving Models...")
+        print("[7/7] Saving Models...")
         training_status["current_stage"] = "model_saving"
         training_status["progress"] = 100
         training_status["stages_completed"].append("model_saving")
@@ -534,7 +535,7 @@ async def train_clustering_model_with_progress(db: Session):
             "timestamp": datetime.utcnow().isoformat()
         }))
         
-        print("✅ Training completed successfully!")
+        print("[SUCCESS] Training completed successfully!")
         print(f"   - Silhouette Score: {best_score:.4f}")
         print(f"   - Clusters: {best_k}")
         print(f"   - NMF Rank: {rank}")
@@ -562,7 +563,7 @@ async def train_clustering_model_with_progress(db: Session):
             "timestamp": datetime.utcnow().isoformat()
         }))
         
-        print(f"❌ Training failed: {e}")
+        print(f"[ERROR] Training failed: {e}")
         raise
 
 # Global variable to track training status
@@ -624,7 +625,7 @@ def get_recommendations_for_user(user: User, db: Session) -> List[dict]:
     
     # If models aren't loaded, fall back to simple recommendations
     if not all([nmf_model, tfidf_model, clustering_model, scaler, feature_store]):
-        print("⚠️  Hybrid models not loaded, using simple recommendations")
+        print("[WARNING] Hybrid models not loaded, using simple recommendations")
         return get_simple_recommendations(user, db, active_groups)
     
     try:
@@ -633,14 +634,14 @@ def get_recommendations_for_user(user: User, db: Session) -> List[dict]:
         product_ids = feature_store.get('product_ids', [])
         
         if user.id not in user_ids:
-            print(f"⚠️  User {user.id} not in training data, checking transaction history")
+            print(f"[WARNING] User {user.id} not in training data, checking transaction history")
             # Check if user has any transaction history
             user_transactions = db.query(Transaction).filter(Transaction.user_id == user.id).count()
             if user_transactions == 0:
-                print(f"⚠️  User {user.id} has no transaction history, using similarity-based recommendations")
+                print(f"[WARNING] User {user.id} has no transaction history, using similarity-based recommendations")
                 return get_similarity_based_recommendations(user, db, active_groups)
             else:
-                print(f"⚠️  User {user.id} has transaction history but not in training data, using simple recommendations")
+                print(f"[WARNING] User {user.id} has transaction history but not in training data, using simple recommendations")
                 return get_simple_recommendations(user, db, active_groups)
         
         n_products = len(product_ids)
@@ -716,37 +717,64 @@ def get_recommendations_for_user(user: User, db: Session) -> List[dict]:
         # Get user's purchased products for personalization
         seen_products = set(tx.product_id for tx in transactions)
         
+        # Initialize Cold Start Handler
+        cold_start_handler = ColdStartHandler()
+        
+        # Detect products not in trained model
+        all_group_product_ids = [gb.product_id for gb in available_groups if gb.product_id]
+        new_product_ids = cold_start_handler.detect_new_products(all_group_product_ids, feature_store)
+        
         # Now create final recommendations directly from GroupBuy groups
         final_recommendations = []
         for gb in available_groups[:10]:  # Limit to top 10 groups
-            # Calculate score for each group
-            score = 0.5  # Default score
-            reasons = ["Available group buy"]
             
-            # Boost score based on group metrics
+            # Check if this is a new product (not in trained model)
+            is_new_product = gb.product_id in new_product_ids
+            
+            if is_new_product and gb.product:
+                # Use cold start handler for new products (includes all bonuses)
+                cold_start_result = cold_start_handler.calculate_cold_start_score(
+                    user, gb.product, gb, db
+                )
+                score = cold_start_result['total_score']
+                reasons = [cold_start_result['reason']]
+                
+                # Check if user has purchased this product before (unlikely for new products)
+                if gb.product_id in seen_products:
+                    score = min(score + 0.2, 1.0)
+                    reasons.append("You've purchased this before")
+            else:
+                # Calculate score for each group (existing products)
+                score = 0.5  # Default score
+                reasons = ["Available group buy"]
+                
+                # Boost score based on group metrics
+                moq_progress = gb.moq_progress
+                if moq_progress >= 75:
+                    score += 0.1
+                    reasons.append("Almost at target quantity")
+                elif moq_progress >= 50:
+                    score += 0.05
+                
+                days_remaining = (gb.deadline - datetime.utcnow()).days
+                if days_remaining <= 3:
+                    score += 0.05
+                    reasons.append("Ending soon")
+                
+                savings = gb.product.savings_factor * 100 if gb.product else 0
+                if savings >= 20:
+                    score += 0.1
+                    reasons.append(f"{savings:.0f}% savings")
+                
+                # Check if user has purchased this product before
+                if gb.product_id in seen_products:
+                    score += 0.2
+                    reasons.append("You've purchased this before")
+                
+                score = min(score, 1.0)
+            
+            # Get moq_progress for display (needed for both paths)
             moq_progress = gb.moq_progress
-            if moq_progress >= 75:
-                score += 0.1
-                reasons.append("Almost at target quantity")
-            elif moq_progress >= 50:
-                score += 0.05
-            
-            days_remaining = (gb.deadline - datetime.utcnow()).days
-            if days_remaining <= 3:
-                score += 0.05
-                reasons.append("Ending soon")
-            
-            savings = gb.product.savings_factor * 100 if gb.product else 0
-            if savings >= 20:
-                score += 0.1
-                reasons.append(f"{savings:.0f}% savings")
-            
-            # Check if user has purchased this product before
-            if gb.product_id in seen_products:
-                score += 0.2
-                reasons.append("You've purchased this before")
-            
-            score = min(score, 1.0)
             
             final_recommendations.append({
                 "group_buy_id": gb.id,
@@ -790,7 +818,7 @@ def get_recommendations_for_user(user: User, db: Session) -> List[dict]:
         return final_recommendations
         
     except Exception as e:
-        print(f"⚠️  Error in hybrid recommendations: {e}")
+        print(f"[WARNING] Error in hybrid recommendations: {e}")
         # Fallback to AdminGroups
         admin_groups = db.query(AdminGroup).filter(AdminGroup.is_active).all()
         return get_admin_group_recommendations(user, admin_groups, db)
@@ -822,35 +850,55 @@ def get_simple_recommendations(user: User, db: Session, active_groups) -> List[d
     # Filter active groups to exclude joined ones
     available_groups = [g for g in active_groups if g.id not in user_joined_group_ids]
     
+    # Initialize Cold Start Handler for new products
+    cold_start_handler = ColdStartHandler()
+    all_group_product_ids = [gb.product_id for gb in available_groups if gb.product_id]
+    new_product_ids = cold_start_handler.detect_new_products(all_group_product_ids, feature_store)
+    
     recommendations = []
     for gb in available_groups:
-        score = 0.0
-        reasons = []
+        # Check if this is a new product
+        is_new_product = gb.product_id in new_product_ids
         
-        if gb.product_id in user_product_ids:
-            score += 0.3
-            reasons.append("You've purchased this before")
-        
-        if gb.product_id in cluster_product_ids:
-            score += 0.3
-            reasons.append("Popular in your group")
+        if is_new_product and gb.product:
+            # Use cold start handler
+            cold_start_result = cold_start_handler.calculate_cold_start_score(
+                user, gb.product, gb, db
+            )
+            score = cold_start_result['total_score']
+            reasons = [cold_start_result['reason']]
+        else:
+            # Regular scoring for established products
+            score = 0.0
+            reasons = []
+            
+            if gb.product_id in user_product_ids:
+                score += 0.3
+                reasons.append("You've purchased this before")
+            
+            if gb.product_id in cluster_product_ids:
+                score += 0.3
+                reasons.append("Popular in your group")
+            
+            moq_progress = gb.moq_progress
+            if moq_progress >= 75:
+                score += 0.2
+                reasons.append("Almost at target quantity")
+            elif moq_progress >= 50:
+                score += 0.1
+            
+            days_remaining = (gb.deadline - datetime.utcnow()).days
+            if days_remaining <= 3:
+                score += 0.1
+                reasons.append("Ending soon")
+            
+            savings = gb.product.savings_factor * 100
+            if savings >= 20:
+                score += 0.1
+                reasons.append(f"{savings:.0f}% savings")
         
         moq_progress = gb.moq_progress
-        if moq_progress >= 75:
-            score += 0.2
-            reasons.append("Almost at target quantity")
-        elif moq_progress >= 50:
-            score += 0.1
-        
-        days_remaining = (gb.deadline - datetime.utcnow()).days
-        if days_remaining <= 3:
-            score += 0.1
-            reasons.append("Ending soon")
-        
         savings = gb.product.savings_factor * 100
-        if savings >= 20:
-            score += 0.1
-            reasons.append(f"{savings:.0f}% savings")
         
         if score > 0:
             recommendations.append({
@@ -1317,9 +1365,11 @@ async def model_health_check():
             "nmf_collaborative_filtering": nmf_model is not None,
             "tfidf_content_based": tfidf_model is not None,
             "scaler": scaler is not None,
-            "feature_store": feature_store is not None
+            "feature_store": feature_store is not None,
+            "cold_start_handler": True  # Always available
         },
-        "model_details": {}
+        "model_details": {},
+        "recommendation_mode": "hybrid_with_cold_start"
     }
     
     if clustering_model:
@@ -2001,7 +2051,7 @@ async def explain_group_buy_with_lime(
         raise HTTPException(status_code=500, detail=f"Failed to generate LIME explanation: {str(e)}")
 
 def get_admin_group_recommendations(user: User, admin_groups: List[AdminGroup], db: Session) -> List[dict]:
-    """Fallback recommendations using AdminGroups when ML models fail"""
+    """Fallback recommendations using AdminGroups with Cold Start Handler support"""
     
     # Filter out admin groups the user has already joined
     user_joined_admin_group_ids = set()
@@ -2013,37 +2063,71 @@ def get_admin_group_recommendations(user: User, admin_groups: List[AdminGroup], 
     # Filter admin groups to exclude joined ones
     available_admin_groups = [g for g in admin_groups if g.id not in user_joined_admin_group_ids]
     
+    # Initialize Cold Start Handler
+    cold_start_handler = ColdStartHandler()
+    
+    # Detect new admin groups not in trained model
+    all_admin_group_ids = [g.id for g in available_admin_groups]
+    new_admin_group_ids = cold_start_handler.detect_new_admin_groups(all_admin_group_ids, feature_store or {})
+    
     recommendations = []
     
     for admin_group in available_admin_groups:
-        score = 0.5  # Default score
-        reasons = ["Admin-created group buy"]
+        # Check if this is a new admin group (not in trained model)
+        is_new_admin_group = admin_group.id in new_admin_group_ids
         
-        # Boost score based on user preferences
-        if user.preferred_categories and admin_group.category.lower() in [cat.lower() for cat in user.preferred_categories]:
-            score += 0.2
-            reasons.append(f"Matches your interest in {admin_group.category}")
+        if is_new_admin_group:
+            # Use cold start handler for new admin groups
+            cold_start_result = cold_start_handler.calculate_admin_group_cold_start_score(
+                user, admin_group, db
+            )
+            score = cold_start_result['total_score']
+            reasons = [cold_start_result['reason']]
+            ml_scores = cold_start_result.get('ml_scores', {
+                "collaborative_filtering": 0.0,
+                "content_based": 0.0,
+                "cold_start": score,
+                "hybrid": score
+            })
+        else:
+            # Regular scoring for established admin groups
+            score = 0.5  # Default score
+            reasons = ["Admin-created group buy"]
+            
+            # Boost score based on user preferences
+            if user.preferred_categories and admin_group.category.lower() in [cat.lower() for cat in user.preferred_categories]:
+                score += 0.2
+                reasons.append(f"Matches your interest in {admin_group.category}")
+            
+            # Boost for groups with good participation
+            moq_progress = (admin_group.participants / admin_group.max_participants) * 100
+            if moq_progress >= 75:
+                score += 0.1
+                reasons.append("Almost at target quantity")
+            elif moq_progress >= 50:
+                score += 0.05
+            
+            # Boost for ending soon
+            days_remaining = (admin_group.end_date - datetime.utcnow()).days
+            if days_remaining <= 3:
+                score += 0.05
+                reasons.append("Ending soon")
+            
+            # Boost for high savings
+            if admin_group.discount_percentage >= 20:
+                score += 0.1
+                reasons.append(f"{admin_group.discount_percentage}% savings")
+            
+            score = min(score, 1.0)
+            ml_scores = {
+                "collaborative_filtering": 0.3,
+                "content_based": 0.4,
+                "popularity": 0.3,
+                "hybrid": score
+            }
         
-        # Boost for groups with good participation
+        # Calculate moq_progress for display
         moq_progress = (admin_group.participants / admin_group.max_participants) * 100
-        if moq_progress >= 75:
-            score += 0.1
-            reasons.append("Almost at target quantity")
-        elif moq_progress >= 50:
-            score += 0.05
-        
-        # Boost for ending soon
-        days_remaining = (admin_group.end_date - datetime.utcnow()).days
-        if days_remaining <= 3:
-            score += 0.05
-            reasons.append("Ending soon")
-        
-        # Boost for high savings
-        if admin_group.discount_percentage >= 20:
-            score += 0.1
-            reasons.append(f"{admin_group.discount_percentage}% savings")
-        
-        score = min(score, 1.0)
         
         recommendations.append({
             "group_buy_id": admin_group.id,
@@ -2061,13 +2145,8 @@ def get_admin_group_recommendations(user: User, admin_groups: List[AdminGroup], 
             "moq_progress": moq_progress,
             "participants_count": admin_group.participants,
             "recommendation_score": score,
-            "reason": ", ".join(reasons),
-            "ml_scores": {
-                "collaborative_filtering": 0.3,
-                "content_based": 0.4,
-                "popularity": 0.3,
-                "hybrid": score
-            },
+            "reason": ", ".join(reasons) if isinstance(reasons, list) else reasons,
+            "ml_scores": ml_scores,
             "description": admin_group.description,
             "long_description": admin_group.long_description or admin_group.description,
             "category": admin_group.category,
@@ -2078,7 +2157,8 @@ def get_admin_group_recommendations(user: User, admin_groups: List[AdminGroup], 
             "shipping_info": admin_group.shipping_info,
             "estimated_delivery": admin_group.estimated_delivery,
             "features": admin_group.features or [],
-            "requirements": admin_group.requirements or []
+            "requirements": admin_group.requirements or [],
+            "is_cold_start": is_new_admin_group  # Flag to indicate cold start
         })
     
     recommendations.sort(key=lambda x: x["recommendation_score"], reverse=True)
