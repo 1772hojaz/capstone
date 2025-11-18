@@ -8,113 +8,114 @@ export default {
   theme: {
     extend: {
       colors: {
-        primary: {
-          50: '#f0f4f8',
-          100: '#d9e3f0',
-          200: '#b5c8e0',
-          300: '#8aa7d0',
-          400: '#6d8bc3',
-          500: '#4a6bb5',
-          600: '#3a5aa5',
-          700: '#2e4a8f',
-          800: '#253d75',
-          900: '#1a2a4a',
+        // shadcn/ui compatibility colors
+        border: '#e5e7eb', // gray-200
+        input: '#e5e7eb', // gray-200
+        ring: '#3b82f6', // primary-500
+        background: '#ffffff',
+        foreground: '#111827', // gray-900
+        muted: {
+          DEFAULT: '#f3f4f6', // gray-100
+          foreground: '#6b7280', // gray-500
         },
-        secondary: {
-          50: '#fdf8f0',
-          100: '#fbeed9',
-          200: '#f7d9b3',
-          300: '#f2be82',
-          400: '#eca04d',
-          500: '#e78c2b',
-          600: '#d97b1f',
-          700: '#b8651a',
-          800: '#935119',
-          900: '#5a3210',
-        },
-        // Quince-inspired color palette
         accent: {
-          DEFAULT: '#4a6c8b',
-          50: '#f5f7f9',
-          100: '#e8edf2',
-          200: '#d1dce6',
-          300: '#a9bfd3',
-          400: '#7da0bd',
-          500: '#4a6c8b',
-          600: '#3d5a73',
-          700: '#33485d',
-          800: '#2c3a4a',
-          900: '#1f2a36',
-        },
-        // Semantic Colors
-        success: {
-          DEFAULT: '#22C55E',
-          light: '#86EFAC',
-          dark: '#15803D',
-        },
-        warning: {
-          DEFAULT: '#F59E0B',
-          light: '#FDE047',
-          dark: '#B45309',
-        },
-        error: {
-          DEFAULT: '#EF4444',
-          light: '#FCA5A5',
-          dark: '#B91C1C',
-        },
-        info: {
-          DEFAULT: '#3B82F6',
-          light: '#93C5FD',
-          dark: '#1E40AF',
-        },
-        // Neutral Palette - Premium Grays
-        neutral: {
-          50: '#FAFAFA',
-          100: '#F4F4F5',
-          200: '#E4E4E7',
-          300: '#D4D4D8',
-          400: '#A1A1AA',
-          500: '#71717A',
-          600: '#52525B',
-          700: '#3F3F46',
-          800: '#27272A',
-          900: '#18181B',
-          950: '#09090B',
-        },
-        // Background variations
-        background: {
-          DEFAULT: '#FFFFFF',
-          secondary: '#F8FAFC',
-          tertiary: '#F1F5F9',
-          dark: '#0F172A',
-        },
-        // Border colors
-        border: {
-          DEFAULT: 'rgb(var(--color-border))',
-          light: '#F1F5F9',
-          dark: '#CBD5E1',
-        },
-        // Semantic colors for design system
-        foreground: 'rgb(var(--color-foreground))',
-        background: 'rgb(var(--color-background))',
-        card: {
-          DEFAULT: 'rgb(var(--color-card))',
-          foreground: 'rgb(var(--color-card-foreground))',
+          50: '#faf5ff',
+          100: '#f3e8ff',
+          200: '#e9d5ff',
+          300: '#d8b4fe',
+          400: '#c084fc',
+          500: '#a855f7',
+          600: '#9333ea',
+          700: '#7e22ce',
+          800: '#6b21a8',
+          900: '#581c87',
+          DEFAULT: '#a855f7', // accent-500
+          foreground: '#ffffff',
         },
         popover: {
-          DEFAULT: 'rgb(var(--color-popover))',
-          foreground: 'rgb(var(--color-popover-foreground))',
+          DEFAULT: '#ffffff',
+          foreground: '#111827', // gray-900
         },
-        muted: {
-          DEFAULT: 'rgb(var(--color-muted))',
-          foreground: 'rgb(var(--color-muted-foreground))',
+        card: {
+          DEFAULT: '#ffffff',
+          foreground: '#111827', // gray-900
         },
-        destructive: {
-          DEFAULT: 'rgb(var(--color-destructive))',
-          foreground: 'rgb(var(--color-destructive-foreground))',
+        
+        // Primary - Blue (Design System Standard)
+        primary: {
+          50: '#eff6ff',
+          100: '#dbeafe',
+          200: '#bfdbfe',
+          300: '#93c5fd',
+          400: '#60a5fa',
+          500: '#3b82f6',
+          600: '#2563eb',
+          700: '#1d4ed8',
+          800: '#1e40af',
+          900: '#1e3a8a',
         },
-        input: 'rgb(var(--color-input))',
-        ring: 'rgb(var(--color-ring))',
+        // Secondary - Purple
+        secondary: {
+          50: '#faf5ff',
+          100: '#f3e8ff',
+          200: '#e9d5ff',
+          300: '#d8b4fe',
+          400: '#c084fc',
+          500: '#a855f7',
+          600: '#9333ea',
+          700: '#7e22ce',
+          800: '#6b21a8',
+          900: '#581c87',
+        },
+        // Semantic Colors (standardized)
+        success: {
+          50: '#f0fdf4',
+          100: '#dcfce7',
+          200: '#bbf7d0',
+          300: '#86efac',
+          400: '#4ade80',
+          500: '#22c55e',
+          600: '#16a34a',
+          700: '#15803d',
+          800: '#166534',
+          900: '#14532d',
+        },
+        warning: {
+          50: '#fefce8',
+          100: '#fef9c3',
+          200: '#fef08a',
+          300: '#fde047',
+          400: '#facc15',
+          500: '#eab308',
+          600: '#ca8a04',
+          700: '#a16207',
+          800: '#854d0e',
+          900: '#713f12',
+        },
+        danger: {
+          50: '#fef2f2',
+          100: '#fee2e2',
+          200: '#fecaca',
+          300: '#fca5a5',
+          400: '#f87171',
+          500: '#ef4444',
+          600: '#dc2626',
+          700: '#b91c1c',
+          800: '#991b1b',
+          900: '#7f1d1d',
+        },
+        info: {
+          50: '#ecfeff',
+          100: '#cffafe',
+          200: '#a5f3fc',
+          300: '#67e8f9',
+          400: '#22d3ee',
+          500: '#06b6d4',
+          600: '#0891b2',
+          700: '#0e7490',
+          800: '#155e75',
+          900: '#164e63',
+        },
       },
       fontFamily: {
         sans: ['"Open Sans"', 'Inter var', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
@@ -169,13 +170,15 @@ export default {
         '160': '40rem',
       },
       borderRadius: {
-        'sm': '0.25rem',
-        'DEFAULT': '0.375rem',
-        'md': '0.5rem',
-        'lg': '0.75rem',
-        'xl': '1rem',
-        '2xl': '1.5rem',
+        'none': '0',
+        'sm': '0.25rem',    // 4px
+        'DEFAULT': '0.5rem', // 8px (md)
+        'md': '0.5rem',      // 8px
+        'lg': '0.75rem',     // 12px
+        'xl': '1rem',        // 16px
+        '2xl': '1.5rem',     // 24px
         '3xl': '2rem',
+        'full': '9999px',
         'inherit': 'inherit',
       },
       boxShadow: {
@@ -291,6 +294,18 @@ export default {
         'smooth': 'cubic-bezier(0.4, 0, 0.2, 1)',
         'smooth-out': 'cubic-bezier(0, 0, 0.2, 1)',
         'smooth-in': 'cubic-bezier(0.4, 0, 1, 1)',
+      },
+      // Max widths for consistent content containers
+      maxWidth: {
+        'content': '1280px',
+        'prose': '65ch',
+      },
+      // Min touch target size
+      minHeight: {
+        'touch': '44px',
+      },
+      minWidth: {
+        'touch': '44px',
       },
     },
   },
