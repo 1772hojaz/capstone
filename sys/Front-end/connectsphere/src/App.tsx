@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import MainLayout from './layouts/MainLayout';
 import { Spinner } from './components/feedback/Spinner';
+import MockDataIndicator from './components/MockDataIndicator';
 
 // Lazy load all pages
 const LandingPage = lazy(() => import('./pages/LandingPage'));
@@ -46,6 +47,7 @@ const PageLoader = () => (
 function App() {
   return (
     <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <MockDataIndicator />
       <Suspense fallback={<PageLoader />}>
         <Routes>
           <Route path="/" element={

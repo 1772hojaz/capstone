@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Filter, Grid3x3, List, Eye, ShoppingCart } from 'lucide-react';
-import apiService from '../services/api';
+import apiService from '../services/apiWithMock';
 import analyticsService from '../services/analytics';
 import TopNavigation from '../components/navigation/TopNavigation';
 import MobileBottomNav from '../components/navigation/MobileBottomNav';
@@ -98,7 +98,7 @@ export default function AllGroups() {
 
   const handleViewGroup = (group: any) => {
     analyticsService.trackGroupView(group.id, { ...group, source: 'browse' });
-    navigate(`/group/${group.id}`, { state: { group, mode: 'view' } });
+    navigate(`/group/${group.id}`, { state: { group, mode: 'view', source: 'all-groups' } });
   };
 
   return (
@@ -278,15 +278,18 @@ export default function AllGroups() {
                     {/* Progress */}
                     <div className="space-y-1">
                       <div className="flex justify-between text-xs text-gray-600">
-                        <span>{group.participants} joined</span>
-                        <span>{group.moq} needed</span>
+                        <span>${(group.current_amount || 0).toFixed(0)} raised</span>
+                        <span>${(group.target_amount || 0).toFixed(0)} target</span>
                       </div>
                       <div className="w-full bg-gray-200 rounded-full h-2">
                         <div 
                           className="bg-primary-600 h-2 rounded-full transition-all"
-                          style={{ width: `${Math.min((group.participants / group.moq) * 100, 100)}%` }}
+                          style={{ width: `${Math.min((group.current_amount || 0) / (group.target_amount || 1) * 100, 100)}%` }}
                         />
                       </div>
+                      <p className="text-xs text-gray-500 text-center">
+                        {group.participants} people joined
+                      </p>
                     </div>
 
                     {/* Actions */}
@@ -354,15 +357,18 @@ export default function AllGroups() {
                       {/* Progress */}
                       <div className="mb-3">
                         <div className="flex justify-between text-xs text-gray-600 mb-1">
-                          <span>{group.participants} joined</span>
-                          <span>{group.moq} needed</span>
+                          <span>${(group.current_amount || 0).toFixed(0)} raised</span>
+                          <span>${(group.target_amount || 0).toFixed(0)} target</span>
                         </div>
                         <div className="w-full bg-gray-200 rounded-full h-2">
                           <div 
                             className="bg-primary-600 h-2 rounded-full transition-all"
-                            style={{ width: `${Math.min((group.participants / group.moq) * 100, 100)}%` }}
+                            style={{ width: `${Math.min((group.current_amount || 0) / (group.target_amount || 1) * 100, 100)}%` }}
                           />
                         </div>
+                        <p className="text-xs text-gray-500 text-center mt-1">
+                          {group.participants} people joined
+                        </p>
                       </div>
 
                       {/* Actions */}

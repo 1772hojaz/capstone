@@ -4,6 +4,7 @@ import { ChevronRight, Home } from 'lucide-react';
 interface BreadcrumbItem {
   label: string;
   path?: string;
+  state?: any; // Navigation state to pass
 }
 
 interface BreadcrumbsProps {
@@ -38,6 +39,7 @@ const Breadcrumbs = ({ items }: BreadcrumbsProps) => {
             ) : (
               <Link
                 to={item.path}
+                state={item.state}
                 className="hover:text-gray-900 transition-colors"
               >
                 {item.label}
@@ -51,4 +53,3 @@ const Breadcrumbs = ({ items }: BreadcrumbsProps) => {
 };
 
 export default Breadcrumbs;
-

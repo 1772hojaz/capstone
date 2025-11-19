@@ -1,7 +1,7 @@
-import { Zap, ShoppingCart } from 'lucide-react';
+import { ShoppingCart } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import apiService from '../services/api';
+import apiService from '../services/apiWithMock';
 import TopNavigation from '../components/navigation/TopNavigation';
 import MobileBottomNav from '../components/navigation/MobileBottomNav';
 import { PageContainer, PageHeader } from '../components/layout/index';
@@ -41,14 +41,14 @@ const TraderDashboard = () => {
   // View group handler
   const handleViewGroup = (recommendation: any) => {
     navigate(`/group/${recommendation.group_buy_id}`, { 
-      state: { recommendation, mode: 'view' } 
+      state: { recommendation, mode: 'view', source: 'dashboard' } 
     });
   };
 
   // Join group handler
   const handleJoinGroup = (recommendation: any) => {
     navigate(`/group/${recommendation.group_buy_id}`, { 
-      state: { recommendation, mode: 'join' } 
+      state: { recommendation, mode: 'join', source: 'dashboard' } 
     });
   };
 
@@ -64,18 +64,13 @@ const TraderDashboard = () => {
             { label: 'Home' }
           ]}
           actions={
-            <div className="flex items-center gap-2">
-              <Badge variant="info" leftIcon={<Zap className="h-3 w-3" />}>
-                AI Powered
-              </Badge>
-              <Button
-                variant="outline"
-                onClick={() => navigate('/all-groups')}
-                leftIcon={<ShoppingCart className="h-4 w-4" />}
-              >
-                Browse All
-              </Button>
-            </div>
+            <Button
+              variant="outline"
+              onClick={() => navigate('/all-groups')}
+              leftIcon={<ShoppingCart className="h-4 w-4" />}
+            >
+              Browse All
+            </Button>
           }
         />
 
@@ -163,15 +158,18 @@ const TraderDashboard = () => {
                     {/* Progress */}
                     <div className="space-y-1">
                       <div className="flex items-center justify-between text-xs text-gray-600">
-                        <span>{product.participants_count} joined</span>
-                        <span>{product.moq} needed</span>
+                        <span>${(product.current_amount || 0).toFixed(0)} raised</span>
+                        <span>${(product.target_amount || 0).toFixed(0)} target</span>
                       </div>
                       <div className="w-full bg-gray-200 rounded-full h-2">
                         <div 
                           className="bg-primary-600 h-2 rounded-full transition-all"
-                          style={{ width: `${Math.min(product.moq_progress, 100)}%` }}
+                          style={{ width: `${Math.min(product.amount_progress || product.moq_progress || 0, 100)}%` }}
                         />
                       </div>
+                      <p className="text-xs text-gray-500 text-center">
+                        {product.participants_count} people joined
+                      </p>
                     </div>
 
                     {/* Actions */}
@@ -196,59 +194,6 @@ const TraderDashboard = () => {
                 </Card>
               ))}
             </div>
-
-            {/* How It Works Section */}
-            <Card variant="filled" padding="lg" className="border border-primary-200">
-              <div className="flex items-start gap-4 mb-6">
-                <div className="h-12 w-12 rounded-full bg-primary-600 flex items-center justify-center flex-shrink-0">
-                  <span className="text-2xl">💡</span>
-                </div>
-                <div>
-                  <h2 className="heading-3 mb-2">How Group Buying Works</h2>
-                  <p className="body-sm text-gray-600">Save money by buying together</p>
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="text-center space-y-3">
-                  <div className="h-16 w-16 rounded-full bg-primary-100 flex items-center justify-center mx-auto">
-                    <span className="text-3xl">👥</span>
-                  </div>
-                  <h3 className="heading-6">1. Join a Group</h3>
-                  <p className="body-sm text-gray-600">
-                    Browse deals and join groups for products you want
-                  </p>
-                </div>
-                
-                <div className="text-center space-y-3">
-                  <div className="h-16 w-16 rounded-full bg-success-100 flex items-center justify-center mx-auto">
-                    <span className="text-3xl">⏱️</span>
-                  </div>
-                  <h3 className="heading-6">2. Wait for Goal</h3>
-                  <p className="body-sm text-gray-600">
-                    More people join, bigger the discount gets
-                  </p>
-                </div>
-                
-                <div className="text-center space-y-3">
-                  <div className="h-16 w-16 rounded-full bg-secondary-100 flex items-center justify-center mx-auto">
-                    <span className="text-3xl">🎉</span>
-                  </div>
-                  <h3 className="heading-6">3. Deal Unlocked</h3>
-                  <p className="body-sm text-gray-600">
-                    Everyone gets the discounted price and product ships
-                  </p>
-                </div>
-              </div>
-              
-              <div className="mt-6 p-4 bg-white rounded-lg border border-primary-200">
-                <p className="body-sm text-gray-700">
-                  <strong>💰 Example:</strong> A $100 item can drop to $70 when 50 people join. 
-                  The more participants, the lower the price for everyone! 
-                  <strong className="text-primary-600"> No risk</strong> - you only pay if the group reaches its goal.
-                </p>
-              </div>
-            </Card>
           </>
         )}
       </PageContainer>

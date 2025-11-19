@@ -221,6 +221,11 @@ class AnalyticsService {
     });
   }
 
+  // Alias for trackGroupJoinComplete
+  trackJoinGroup(groupId, groupData = {}) {
+    return this.trackGroupJoinComplete(groupId, groupData);
+  }
+
   trackQuantityIncrease(groupId, oldQty, newQty, delta, price) {
     return this.track('quantity_increase_click', {
       group_id: groupId,

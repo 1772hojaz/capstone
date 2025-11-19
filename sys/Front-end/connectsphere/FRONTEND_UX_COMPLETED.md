@@ -404,3 +404,4 @@ The foundation enables:
 **Next steps:** Apply the same refactoring pattern to remaining pages (AllGroups, GroupDetail, Profile, Admin, Supplier dashboards, etc.)
 
 
+

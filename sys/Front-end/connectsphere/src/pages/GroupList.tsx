@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Package, Clock, CheckCircle, Eye, RefreshCw } from 'lucide-react';
-import apiService from '../services/api';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { Package, Clock, CheckCircle, Eye } from 'lucide-react';
+import apiService from '../services/apiWithMock';
 import TopNavigation from '../components/navigation/TopNavigation';
 import MobileBottomNav from '../components/navigation/MobileBottomNav';
 import { PageContainer, PageHeader } from '../components/layout/index';
@@ -20,10 +20,10 @@ interface Group {
   product_image_url?: string;
   bulk_price: number;
   quantity: number;
-  total_paid: number;
+  total_paid?: number; // Optional since it might be undefined
   participants_count: number;
   moq: number;
-  moq_progress: number;
+  moq_progress?: number; // Optional since it might be undefined
   status: string;
   is_completed: boolean;
   delivery_location?: string;
@@ -32,10 +32,27 @@ interface Group {
 
 export default function GroupList() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<TabType>('active');
+  const location = useLocation();
+  
+  // Check if we're returning from a group detail page with a specific tab
+  // Otherwise, check localStorage for the last viewed tab
+  const getInitialTab = (): TabType => {
+    if (location.state?.activeTab) {
+      return location.state.activeTab as TabType;
+    }
+    const savedTab = localStorage.getItem('myGroups_activeTab');
+    return (savedTab as TabType) || 'active';
+  };
+  
+  const [activeTab, setActiveTab] = useState<TabType>(getInitialTab());
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Save active tab to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('myGroups_activeTab', activeTab);
+  }, [activeTab]);
 
   // Fetch user's groups
   useEffect(() => {
@@ -59,21 +76,25 @@ export default function GroupList() {
   // Filter groups based on active tab
   const filteredGroups = groups.filter((group) => {
     if (activeTab === 'active') {
-      return !group.is_completed && group.status === 'active';
+      // Show groups that are active (includes full groups waiting to be ready)
+      return group.status === 'active';
     } else if (activeTab === 'ready') {
-      return group.is_completed && group.status === 'ready_for_pickup';
+      return group.status === 'ready_for_pickup';
     } else {
       // past
       return group.status === 'completed' || group.status === 'delivered';
     }
   });
 
-  const handleViewGroup = (groupId: number) => {
-    navigate(`/group/${groupId}`);
-  };
-
-  const handleRefresh = () => {
-    window.location.reload();
+  const handleViewGroup = (group: Group) => {
+    navigate(`/group/${group.id}`, { 
+      state: { 
+        group: group,
+        mode: 'view',
+        source: 'my-groups',
+        activeTab: activeTab // Pass current tab so we can return to it
+      } 
+    });
   };
 
   return (
@@ -88,15 +109,6 @@ export default function GroupList() {
             { label: 'Home', path: '/trader' },
             { label: 'My Groups' }
           ]}
-          actions={
-            <Button
-              variant="outline"
-              onClick={handleRefresh}
-              leftIcon={<RefreshCw className="h-4 w-4" />}
-            >
-              Refresh
-            </Button>
-          }
         />
 
         {/* Tabs */}
@@ -138,7 +150,6 @@ export default function GroupList() {
           <ErrorAlert
             title="Unable to load groups"
             message={error}
-            onRetry={handleRefresh}
             variant="card"
           />
         )}
@@ -180,7 +191,15 @@ export default function GroupList() {
                   {/* Status Badge */}
                   <div className="absolute top-3 right-3">
                     {activeTab === 'active' && (
-                      <Badge variant="info" size="sm">Active</Badge>
+                      <>
+                        {(group.amount_progress || group.moq_progress || 0) >= 100 ? (
+                          <Badge variant="success" size="sm" leftIcon={<CheckCircle className="h-3 w-3" />}>
+                            Goal Reached
+                          </Badge>
+                        ) : (
+                          <Badge variant="info" size="sm">Active</Badge>
+                        )}
+                      </>
                     )}
                     {activeTab === 'ready' && (
                       <Badge variant="success" size="sm">Ready</Badge>
@@ -204,13 +223,13 @@ export default function GroupList() {
                     <div className="flex justify-between">
                       <span className="text-gray-600">Amount paid:</span>
                       <span className="font-medium text-green-600">
-                        ${group.total_paid.toFixed(2)}
+                        ${(group.total_paid || 0).toFixed(2)}
                       </span>
                     </div>
                     {activeTab === 'active' && (
                       <div className="flex justify-between">
                         <span className="text-gray-600">Progress:</span>
-                        <span className="font-medium">{group.moq_progress}%</span>
+                        <span className="font-medium">{group.moq_progress || 0}%</span>
                       </div>
                     )}
                     {group.delivery_location && activeTab === 'ready' && (
@@ -225,15 +244,22 @@ export default function GroupList() {
                   {activeTab === 'active' && (
                     <div className="space-y-1">
                       <div className="flex justify-between text-xs text-gray-600">
-                        <span>{group.participants_count} joined</span>
-                        <span>{group.moq} needed</span>
+                        <span>${(group.current_amount || 0).toFixed(0)} raised</span>
+                        <span>${(group.target_amount || 0).toFixed(0)} target</span>
                       </div>
                       <div className="w-full bg-gray-200 rounded-full h-2">
                         <div 
-                          className="bg-primary-600 h-2 rounded-full transition-all"
-                          style={{ width: `${Math.min(group.moq_progress, 100)}%` }}
+                          className={`h-2 rounded-full transition-all ${
+                            (group.amount_progress || group.moq_progress || 0) >= 100 
+                              ? 'bg-success-600' 
+                              : 'bg-primary-600'
+                          }`}
+                          style={{ width: `${Math.min(group.amount_progress || group.moq_progress || 0, 100)}%` }}
                         />
                       </div>
+                      <p className="text-xs text-gray-500 text-center">
+                        {group.participants_count || group.participants} people joined
+                      </p>
                     </div>
                   )}
 
@@ -241,7 +267,7 @@ export default function GroupList() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => handleViewGroup(group.id)}
+                    onClick={() => handleViewGroup(group)}
                     leftIcon={<Eye className="h-4 w-4" />}
                     fullWidth
                   >

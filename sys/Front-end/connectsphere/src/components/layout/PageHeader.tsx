@@ -5,6 +5,7 @@ import Breadcrumbs from '../navigation/Breadcrumbs';
 interface BreadcrumbItem {
   label: string;
   path?: string;
+  state?: any; // Navigation state to pass
 }
 
 interface PageHeaderProps {
@@ -54,4 +55,3 @@ const PageHeader = ({
 };
 
 export default PageHeader;
-
