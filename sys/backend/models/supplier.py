@@ -1009,6 +1009,91 @@ async def get_payment_dashboard(
         print(f"Error getting payment dashboard: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve payment dashboard")
 
+
+# Group Buy Management
+@router.get("/groups")
+async def get_supplier_groups(
+    status_filter: Optional[str] = None,
+    supplier: User = Depends(verify_supplier),
+    db: Session = Depends(get_db)
+):
+    """
+    Get all group buys for the supplier
+    Status filter: active, completed, cancelled
+    """
+    try:
+        # Get both GroupBuy and AdminGroup that belong to this supplier
+        groups = []
+        
+        # Get GroupBuy instances where supplier is the creator
+        group_buys = db.query(GroupBuy).filter(
+            GroupBuy.supplier_id == supplier.id
+        ).all()
+        
+        for gb in group_buys:
+            if status_filter and gb.status != status_filter:
+                continue
+                
+            # Get product details
+            product = db.query(Product).filter(Product.id == gb.product_id).first()
+            
+            # Count participants
+            participants_count = db.query(AdminGroupJoin).filter(
+                AdminGroupJoin.group_id == gb.id
+            ).count()
+            
+            groups.append({
+                "id": gb.id,
+                "name": gb.name or (product.name if product else "Unnamed Group"),
+                "category": product.category if product else "Unknown",
+                "price": float(gb.bulk_price) if gb.bulk_price else 0.0,
+                "original_price": float(product.unit_price) if product and product.unit_price else 0.0,
+                "participants": participants_count,
+                "max_participants": gb.max_participants or 50,
+                "status": gb.status,
+                "end_date": gb.end_date.isoformat() if gb.end_date else None,
+                "created_at": gb.created_at.isoformat() if gb.created_at else None
+            })
+        
+        # Get AdminGroup instances where supplier is the creator
+        admin_groups = db.query(AdminGroup).filter(
+            AdminGroup.supplier_id == supplier.id
+        ).all()
+        
+        for ag in admin_groups:
+            if status_filter and ag.status != status_filter:
+                continue
+                
+            # Get product details
+            product = db.query(Product).filter(Product.id == ag.product_id).first()
+            
+            # Count participants
+            participants_count = db.query(AdminGroupJoin).filter(
+                AdminGroupJoin.admin_group_id == ag.id
+            ).count()
+            
+            groups.append({
+                "id": ag.id,
+                "name": ag.name,
+                "category": ag.category or (product.category if product else "Unknown"),
+                "price": float(ag.price) if ag.price else 0.0,
+                "original_price": float(ag.original_price) if ag.original_price else 0.0,
+                "participants": participants_count,
+                "max_participants": ag.max_participants or 50,
+                "status": ag.status,
+                "end_date": ag.end_date.isoformat() if ag.end_date else None,
+                "created_at": ag.created_at.isoformat() if ag.created_at else None
+            })
+        
+        # Sort by created_at (newest first)
+        groups.sort(key=lambda x: x['created_at'] if x['created_at'] else '', reverse=True)
+        
+        return groups
+        
+    except Exception as e:
+        logger.error(f"Error getting supplier groups: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve groups")
+
 # Notification Management
 @router.get("/notifications", response_model=List[NotificationResponse])
 async def get_supplier_notifications(

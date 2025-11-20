@@ -18,6 +18,22 @@ const TraderDashboard = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Check if user is admin and redirect them
+  useEffect(() => {
+    const checkRole = async () => {
+      try {
+        const user = await apiService.getCurrentUser();
+        if (user?.is_admin) {
+          navigate('/admin', { replace: true });
+        }
+      } catch (err) {
+        console.error('Failed to check user role:', err);
+      }
+    };
+    
+    checkRole();
+  }, [navigate]);
+
   // Load recommendations on component mount
   useEffect(() => {
     const loadRecommendations = async () => {

@@ -58,286 +58,62 @@ interface Payment {
   expected_transfer_date?: string;
 }
 
-// Mock data for supplier dashboard
-const MOCK_METRICS: DashboardMetrics = {
-  pending_orders: 8,
-  active_groups: 12,
-  monthly_revenue: 15480,
-  total_savings_generated: 8920
-};
-
-const MOCK_ORDERS: Order[] = [
-  {
-    id: 1,
-    order_number: "ORD-2024-001",
-    group_name: "Organic Tomatoes - Group Buy",
-    trader_count: 15,
-    total_value: 525.00,
-    status: "pending",
-    created_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()
-  },
-  {
-    id: 2,
-    order_number: "ORD-2024-002",
-    group_name: "Fresh Spinach - Group Buy",
-    trader_count: 12,
-    total_value: 504.00,
-    status: "pending",
-    created_at: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString()
-  },
-  {
-    id: 3,
-    order_number: "ORD-2024-003",
-    group_name: "Sweet Potatoes - Group Buy",
-    trader_count: 20,
-    total_value: 700.00,
-    status: "pending",
-    created_at: new Date(Date.now() - 8 * 60 * 60 * 1000).toISOString()
-  },
-  {
-    id: 4,
-    order_number: "ORD-2024-004",
-    group_name: "Mixed Bell Peppers - Group Buy",
-    trader_count: 10,
-    total_value: 560.00,
-    status: "accepted",
-    created_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-  },
-  {
-    id: 5,
-    order_number: "ORD-2024-005",
-    group_name: "Fresh Carrots - Group Buy",
-    trader_count: 18,
-    total_value: 378.00,
-    status: "accepted",
-    created_at: new Date(Date.now() - 36 * 60 * 60 * 1000).toISOString()
-  },
-  {
-    id: 6,
-    order_number: "ORD-2024-006",
-    group_name: "Fresh Lettuce Bundle - Group Buy",
-    trader_count: 14,
-    total_value: 392.00,
-    status: "completed",
-    created_at: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString()
-  },
-  {
-    id: 7,
-    order_number: "ORD-2024-007",
-    group_name: "Butternut Squash - Group Buy",
-    trader_count: 9,
-    total_value: 283.50,
-    status: "completed",
-    created_at: new Date(Date.now() - 60 * 60 * 60 * 1000).toISOString()
-  },
-  {
-    id: 8,
-    order_number: "ORD-2024-008",
-    group_name: "Fresh Broccoli - Group Buy",
-    trader_count: 11,
-    total_value: 539.00,
-    status: "pending",
-    created_at: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString()
-  }
-];
-
-const MOCK_GROUPS: Group[] = [
-  {
-    id: 1,
-    name: "Organic Tomatoes - Group Buy",
-    category: "Vegetables",
-    price: 3.50,
-    original_price: 5.00,
-    participants: 45,
-    max_participants: 50,
-    status: "active",
-    end_date: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
-    created_at: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-  },
-  {
-    id: 2,
-    name: "Fresh Spinach - Group Buy",
-    category: "Vegetables",
-    price: 4.20,
-    original_price: 6.00,
-    participants: 38,
-    max_participants: 50,
-    status: "active",
-    end_date: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
-    created_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString()
-  },
-  {
-    id: 3,
-    name: "Sweet Potatoes - Group Buy",
-    category: "Vegetables",
-    price: 2.50,
-    original_price: 3.50,
-    participants: 50,
-    max_participants: 50,
-    status: "completed",
-    end_date: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-    created_at: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString()
-  },
-  {
-    id: 4,
-    name: "Mixed Bell Peppers - Group Buy",
-    category: "Vegetables",
-    price: 5.60,
-    original_price: 8.00,
-    participants: 42,
-    max_participants: 50,
-    status: "active",
-    end_date: new Date(Date.now() + 4 * 24 * 60 * 60 * 1000).toISOString(),
-    created_at: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString()
-  },
-  {
-    id: 5,
-    name: "Fresh Carrots - Group Buy",
-    category: "Vegetables",
-    price: 2.10,
-    original_price: 3.00,
-    participants: 48,
-    max_participants: 50,
-    status: "active",
-    end_date: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
-    created_at: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString()
-  },
-  {
-    id: 6,
-    name: "Fresh Lettuce Bundle - Group Buy",
-    category: "Vegetables",
-    price: 2.80,
-    original_price: 4.00,
-    participants: 50,
-    max_participants: 50,
-    status: "completed",
-    end_date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-    created_at: new Date(Date.now() - 12 * 24 * 60 * 60 * 1000).toISOString()
-  },
-  {
-    id: 7,
-    name: "Fresh Green Beans - Group Buy",
-    category: "Vegetables",
-    price: 3.85,
-    original_price: 5.50,
-    participants: 32,
-    max_participants: 50,
-    status: "active",
-    end_date: new Date(Date.now() + 6 * 24 * 60 * 60 * 1000).toISOString(),
-    created_at: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString()
-  },
-  {
-    id: 8,
-    name: "Butternut Squash - Group Buy",
-    category: "Vegetables",
-    price: 3.15,
-    original_price: 4.50,
-    participants: 28,
-    max_participants: 50,
-    status: "active",
-    end_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-    created_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString()
-  },
-  {
-    id: 9,
-    name: "Fresh Cucumbers - Group Buy",
-    category: "Vegetables",
-    price: 2.45,
-    original_price: 3.50,
-    participants: 40,
-    max_participants: 50,
-    status: "active",
-    end_date: new Date(Date.now() + 4 * 24 * 60 * 60 * 1000).toISOString(),
-    created_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString()
-  },
-  {
-    id: 10,
-    name: "Fresh Broccoli - Group Buy",
-    category: "Vegetables",
-    price: 4.90,
-    original_price: 7.00,
-    participants: 35,
-    max_participants: 50,
-    status: "active",
-    end_date: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
-    created_at: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString()
-  }
-];
-
-const MOCK_PAYMENTS: Payment[] = [
-  {
-    id: 1,
-    payment_reference: "PAY-2024-001",
-    order_number: "ORD-2024-006",
-    amount: 392.00,
-    status: "completed",
-    payment_method: "Bank Transfer",
-    processed_at: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString()
-  },
-  {
-    id: 2,
-    payment_reference: "PAY-2024-002",
-    order_number: "ORD-2024-007",
-    amount: 283.50,
-    status: "completed",
-    payment_method: "Bank Transfer",
-    processed_at: new Date(Date.now() - 60 * 60 * 60 * 1000).toISOString()
-  },
-  {
-    id: 3,
-    payment_reference: "PAY-2024-003",
-    order_number: "ORD-2024-004",
-    amount: 560.00,
-    status: "pending",
-    payment_method: "Bank Transfer",
-    processed_at: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(),
-    expected_transfer_date: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString()
-  },
-  {
-    id: 4,
-    payment_reference: "PAY-2024-004",
-    order_number: "ORD-2024-005",
-    amount: 378.00,
-    status: "processing",
-    payment_method: "Bank Transfer",
-    processed_at: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(),
-    expected_transfer_date: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000).toISOString()
-  },
-  {
-    id: 5,
-    payment_reference: "PAY-2024-005",
-    order_number: "ORD-2024-003",
-    amount: 700.00,
-    status: "pending",
-    payment_method: "Bank Transfer",
-    processed_at: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
-    expected_transfer_date: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString()
-  }
-];
 
 export default function SupplierDashboard() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<TabType>('overview');
-  const [metrics, setMetrics] = useState<DashboardMetrics | null>(MOCK_METRICS);
-  const [orders, setOrders] = useState<Order[]>(MOCK_ORDERS);
-  const [groups, setGroups] = useState<Group[]>(MOCK_GROUPS);
-  const [payments, setPayments] = useState<Payment[]>(MOCK_PAYMENTS);
-  const [loading, setLoading] = useState(false); // Set to false to show mock data immediately
+  const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
   const [showGroupDetails, setShowGroupDetails] = useState(false);
 
-  // Use mock data instead of API calls
+  // Fetch dashboard data from API
   useEffect(() => {
-    // Simulate loading for better UX
-    setLoading(true);
-    setTimeout(() => {
-      setMetrics(MOCK_METRICS);
-      setOrders(MOCK_ORDERS);
-      setGroups(MOCK_GROUPS);
-      setPayments(MOCK_PAYMENTS);
-      setLoading(false);
-    }, 500);
+    const fetchDashboardData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        // Fetch all data in parallel
+        const [metricsData, ordersData, groupsData, paymentsData] = await Promise.all([
+          apiService.get('/api/supplier/dashboard/metrics'),
+          apiService.get('/api/supplier/orders'),
+          apiService.get('/api/supplier/groups'),
+          apiService.get('/api/supplier/payments')
+        ]);
+
+        setMetrics(metricsData || {
+          pending_orders: 0,
+          active_groups: 0,
+          monthly_revenue: 0,
+          total_savings_generated: 0
+        });
+        setOrders(ordersData || []);
+        setGroups(groupsData || []);
+        setPayments(paymentsData || []);
+      } catch (err: any) {
+        console.error('Error fetching dashboard data:', err);
+        setError(err.response?.data?.detail || 'Failed to load dashboard data');
+        // Initialize with empty data on error
+        setMetrics({
+          pending_orders: 0,
+          active_groups: 0,
+          monthly_revenue: 0,
+          total_savings_generated: 0
+        });
+        setOrders([]);
+        setGroups([]);
+        setPayments([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDashboardData();
   }, []);
 
   const handleOrderAction = async (orderId: number, action: 'accept' | 'reject') => {

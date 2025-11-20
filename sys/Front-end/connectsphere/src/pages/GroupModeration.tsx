@@ -116,156 +116,17 @@ const GroupModeration = () => {
         console.warn('No completed groups received from API');
       }
 
-      // Use mock data if API returns empty arrays
-      const mockReadyGroups = [
-        {
-          id: 101,
-          name: 'Exercise Books (48 Pages) - Bulk for Schools',
-          description: 'Quality exercise books for schools. Group target reached, ready for payment processing.',
-          category: 'Stationery & Books',
-          dueDate: '2025-11-22',
-          members: 25,
-          targetMembers: 25,
-          totalAmount: '$625.00',
-          creator: 'ZimPapers',
-          creator_type: 'Supplier',
-          status: 'ready_for_payment',
-          product: {
-            name: 'Exercise Books 48 Pages',
-            description: 'School exercise books',
-            regularPrice: '$0.65',
-            bulkPrice: '$0.50',
-            totalStock: '5000',
-            manufacturer: 'ZimPapers',
-            image: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=400'
-          }
-        },
-        {
-          id: 102,
-          name: 'Geisha Bath Soap - 100g Bars',
-          description: 'Popular bath soap. Group target reached, ready for payment.',
-          category: 'Household Items',
-          dueDate: '2025-11-23',
-          members: 30,
-          targetMembers: 30,
-          totalAmount: '$720.00',
-          creator: 'Unilever Zimbabwe',
-          creator_type: 'Supplier',
-          status: 'ready_for_payment',
-          product: {
-            name: 'Geisha Bath Soap 100g',
-            description: 'Quality bath soap',
-            regularPrice: '$1.20',
-            bulkPrice: '$0.95',
-            totalStock: '1000',
-            manufacturer: 'Unilever Zimbabwe',
-            image: 'https://images.unsplash.com/photo-1585229598949-79301e4a5249?w=400'
-          }
-        },
-        {
-          id: 103,
-          name: 'Sugar 2kg Packets - Ready',
-          description: 'White sugar packets, group complete and ready for payment.',
-          category: 'Cooking Essentials',
-          dueDate: '2025-11-21',
-          members: 20,
-          targetMembers: 20,
-          totalAmount: '$500.00',
-          creator: 'Admin',
-          creator_type: 'Admin',
-          status: 'ready_for_payment',
-          product: {
-            name: 'Sugar 2kg Packets',
-            description: 'Premium white sugar',
-            regularPrice: '$2.80',
-            bulkPrice: '$2.50',
-            totalStock: '200',
-            manufacturer: 'Zimbabwe Sugar',
-            image: 'https://images.unsplash.com/photo-1587735243615-c03f25aaff15?w=400'
-          }
-        }
-      ];
-
-      const mockCompletedGroups = [
-        {
-          id: 201,
-          name: 'Kapenta (Dried Fish) - 5kg Packs',
-          description: 'High-quality dried kapenta from Lake Kariba. Bulk order successfully completed.',
-          category: 'Fish & Kapenta',
-          dueDate: '2025-11-15',
-          members: 30,
-          targetMembers: 30,
-          totalAmount: '$1,200.00',
-          creator: 'Kariba Fishing Co-op',
-          creator_type: 'Supplier',
-          status: 'completed',
-          product: {
-            name: 'Dried Kapenta 5kg Pack',
-            description: 'Lake Kariba kapenta',
-            regularPrice: '$45.00',
-            bulkPrice: '$40.00',
-            totalStock: '200',
-            manufacturer: 'Kariba Fishing Co-op',
-            image: 'https://images.unsplash.com/photo-1559181567-c3190ca9959b?w=400'
-          }
-        },
-        {
-          id: 202,
-          name: 'Charcoal - 20kg Bags',
-          description: 'Quality hardwood charcoal. Group buy completed successfully.',
-          category: 'Fuel & Energy',
-          dueDate: '2025-11-10',
-          members: 40,
-          targetMembers: 40,
-          totalAmount: '$1,200.00',
-          creator: 'Charcoal Producers',
-          creator_type: 'Supplier',
-          status: 'completed',
-          product: {
-            name: 'Hardwood Charcoal 20kg',
-            description: 'Quality cooking charcoal',
-            regularPrice: '$32.00',
-            bulkPrice: '$30.00',
-            totalStock: '400',
-            manufacturer: 'Charcoal Producers',
-            image: 'https://images.unsplash.com/photo-1605731414904-e0b4c74c6551?w=400'
-          }
-        },
-        {
-          id: 203,
-          name: 'Mazoe Orange Crush - Completed Batch',
-          description: 'Zimbabwe\'s favorite orange concentrate. Successfully completed and delivered.',
-          category: 'Beverages',
-          dueDate: '2025-11-05',
-          members: 35,
-          targetMembers: 30,
-          totalAmount: '$840.00',
-          creator: 'Schweppes Zimbabwe',
-          creator_type: 'Supplier',
-          status: 'completed',
-          product: {
-            name: 'Mazoe Orange Crush 2L',
-            description: 'Original orange concentrate',
-            regularPrice: '$5.50',
-            bulkPrice: '$4.80',
-            totalStock: '175',
-            manufacturer: 'Schweppes Zimbabwe',
-            image: 'https://images.unsplash.com/photo-1600271886742-f049cd451bba?w=400'
-          }
-        }
-      ];
-
       setStats(statsData || {
         active_groups: activeData?.length || 0,
         total_members: 0,
-        ready_for_payment: mockReadyGroups.length,
-        required_action: mockReadyGroups.length,
-        completed_groups: mockCompletedGroups.length
+        ready_for_payment: readyData?.length || 0,
+        required_action: readyData?.length || 0,
+        completed_groups: completedData?.length || 0
       });
       
       setActiveGroups(activeData || []);
-      setReadyGroups(readyData && readyData.length > 0 ? readyData : mockReadyGroups);
-      setCompletedGroups(completedData && completedData.length > 0 ? completedData : mockCompletedGroups);
+      setReadyGroups(readyData || []);
+      setCompletedGroups(completedData || []);
     } catch (err: any) {
       console.error('Failed to load moderation data:', err);
       setError('Failed to load moderation data. Please try again.');

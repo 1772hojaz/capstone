@@ -83,6 +83,22 @@ export default function GroupDetail() {
   const [deliveryMethod, setDeliveryMethod] = useState('pickup');
   const [agreeToTerms, setAgreeToTerms] = useState(false);
 
+  // Check if user is admin and redirect them
+  useEffect(() => {
+    const checkRole = async () => {
+      try {
+        const user = await apiService.getCurrentUser();
+        if (user?.is_admin) {
+          navigate('/admin', { replace: true });
+        }
+      } catch (err) {
+        console.error('Failed to check user role:', err);
+      }
+    };
+    
+    checkRole();
+  }, [navigate]);
+
   // Calculate derived values
   const groupId = groupData?.group_buy_id || groupData?.id;
   const progressPercentage = useMemo(() => {

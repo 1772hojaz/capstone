@@ -37,20 +37,13 @@ const AnalyticsDashboard = () => {
     </div>
   );
 
-  // Mock data for demonstration
-  const mockData = {
-    alerts: [],
-    performance: {
-      dates: ['2025-01-01', '2025-01-02', '2025-01-03', '2025-01-04', '2025-01-05'],
-      score_lift: [1.1, 1.15, 1.08, 1.22, 1.18]
-    },
-    segmentation: {
-      segments: ['High Engagement', 'Medium Engagement', 'Low Engagement'],
-      user_count: [150, 300, 75]
-    }
-  };
+  if (!data) return (
+    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+      <p className="text-gray-700">No analytics data available</p>
+    </div>
+  );
 
-  const displayData = data || mockData;
+  const displayData = data;
   const COLORS = ['#0088FE', '#00C49F', '#FFBB28'];
 
   return (

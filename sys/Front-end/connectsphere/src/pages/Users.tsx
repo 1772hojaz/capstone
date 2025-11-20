@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Users as UsersIcon, Search, Edit, Trash2, Shield, UserCheck, UserX, Plus, Filter, Download, Eye, ChevronLeft, ChevronRight, Ban, CheckCircle } from 'lucide-react';
-import Layout from '../components/Layout';
+import TopNavigation from '../components/navigation/TopNavigation';
+import MobileBottomNav from '../components/navigation/MobileBottomNav';
+import { PageContainer, PageHeader } from '../components/layout/index';
 import apiService from '../services/api';
 
 interface User {
@@ -204,17 +206,23 @@ const Users = () => {
 
   if (loading) {
     return (
-      <Layout>
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
-        </div>
-      </Layout>
+      <>
+        <TopNavigation userRole="admin" />
+        <PageContainer>
+          <div className="flex items-center justify-center h-64">
+            <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary-600"></div>
+          </div>
+        </PageContainer>
+        <MobileBottomNav userRole="admin" />
+      </>
     );
   }
 
   return (
-    <Layout>
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <>
+      <TopNavigation userRole="admin" />
+      <PageContainer>
+        <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="flex justify-between items-center mb-8">
           <div>
@@ -639,7 +647,9 @@ const Users = () => {
           </div>
         )}
       </div>
-    </Layout>
+      </PageContainer>
+      <MobileBottomNav userRole="admin" />
+    </>
   );
 };
 

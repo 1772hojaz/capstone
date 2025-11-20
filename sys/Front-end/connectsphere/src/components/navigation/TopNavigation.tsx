@@ -62,7 +62,6 @@ const TopNavigation = ({ userRole }: TopNavigationProps) => {
     if (role === 'supplier') {
       return [
         { label: 'Dashboard', path: '/supplier/dashboard', icon: Home },
-        { label: 'All Groups', path: '/all-groups', icon: Package },
       ];
     }
 
