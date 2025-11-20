@@ -418,16 +418,12 @@ export default function Products() {
                 className="cursor-pointer overflow-hidden"
               >
                 <div className="aspect-video bg-gray-100 relative overflow-hidden">
-                  {product.image_url ? (
+                  {product.image_url && (
                     <img
                       src={product.image_url}
                       alt={product.name}
                       className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
                     />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-gray-400">
-                      <span className="text-4xl">📦</span>
-                    </div>
                   )}
                   <Badge variant="primary" className="absolute top-2 right-2">
                     {product.category}
@@ -470,16 +466,12 @@ export default function Products() {
               >
                 <div className="flex flex-col md:flex-row gap-4">
                   <div className="w-full md:w-48 h-48 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0">
-                    {product.image_url ? (
+                    {product.image_url && (
                       <img
                         src={product.image_url}
                         alt={product.name}
                         className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
                       />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-gray-400">
-                        <span className="text-5xl">📦</span>
-                      </div>
                     )}
                   </div>
                   

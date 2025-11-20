@@ -36,9 +36,28 @@ interface GroupFormData {
 }
 
 const CATEGORIES = [
-  'Vegetables', 'Fruits', 'Grains & Cereals', 'Dairy Products',
-  'Meat & Poultry', 'Seafood', 'Bakery', 'Beverages', 
-  'Spices & Herbs', 'Others'
+  'Grocery',
+  'Vegetables',
+  'Fruits',
+  'Grains & Cereals',
+  'Cooking Essentials',
+  'Meat & Poultry',
+  'Fish & Kapenta',
+  'Dairy Products',
+  'Beverages',
+  'Tobacco & Cash Crops',
+  'Livestock',
+  'Seeds & Fertilizers',
+  'Traditional Medicines',
+  'Arts & Crafts',
+  'Building Materials',
+  'Hardware & Tools',
+  'Household Items',
+  'Clothing & Textiles',
+  'Stationery & Books',
+  'Electronics & Appliances',
+  'Fuel & Energy',
+  'Others'
 ];
 
 const DELIVERY_METHODS = [
@@ -57,7 +76,7 @@ export default function CreateGroup() {
   const [formData, setFormData] = useState<GroupFormData>({
     product_name: '',
     description: '',
-    category: 'Vegetables',
+    category: '',
     base_price: '',
     target_quantity: '',
     min_participants: '1',

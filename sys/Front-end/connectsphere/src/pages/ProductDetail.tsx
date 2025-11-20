@@ -69,8 +69,6 @@ const ProductDetail = () => {
                   alt={product.name} 
                   className="h-full w-full object-contain" 
                 />
-              ) : (
-                <span className="text-7xl text-gray-400">📦</span>
               )}
             </div>
 

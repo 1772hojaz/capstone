@@ -509,7 +509,7 @@ export default function GroupDetail() {
                 }`}
                 onClick={() => setImageZoomed(!imageZoomed)}
               >
-                {groupData.product_image_url || groupData.image_url ? (
+                {(groupData.product_image_url || groupData.image_url) && (
                   <img 
                     src={groupData.product_image_url || groupData.image_url} 
                     alt={productName} 
@@ -517,8 +517,6 @@ export default function GroupDetail() {
                       imageZoomed ? 'object-contain' : 'object-cover'
                     }`}
                   />
-                ) : (
-                  <span className="text-8xl text-gray-400">📦</span>
                 )}
 
                 {/* Status Badge */}

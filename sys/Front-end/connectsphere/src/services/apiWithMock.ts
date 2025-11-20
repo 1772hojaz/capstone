@@ -9,7 +9,7 @@ import apiService from './api.js';
 import mockData, { simulateDelay, getMockGroupById } from './mockData';
 
 // 🔧 TOGGLE THIS TO SWITCH BETWEEN MOCK AND REAL DATA
-export const USE_MOCK_DATA = true;
+export const USE_MOCK_DATA = false;
 
 /**
  * API Service Wrapper
@@ -64,7 +64,7 @@ class ApiServiceWithMock {
 
   async getRecommendations() {
     if (USE_MOCK_DATA) {
-      console.log('📊 Using mock recommendations data');
+      console.log('Using mock recommendations data');
       await simulateDelay(600);
       return mockData.recommendations;
     }
@@ -73,7 +73,7 @@ class ApiServiceWithMock {
 
   async getAllGroups() {
     if (USE_MOCK_DATA) {
-      console.log('📊 Using mock groups data');
+      console.log('Using mock groups data');
       await simulateDelay(500);
       return mockData.groups;
     }
@@ -82,7 +82,7 @@ class ApiServiceWithMock {
 
   async getGroupById(id: number) {
     if (USE_MOCK_DATA) {
-      console.log('📊 Using mock group detail data for ID:', id);
+      console.log('Using mock group detail data for ID:', id);
       await simulateDelay(400);
       const group = getMockGroupById(id);
       if (!group) {
@@ -95,7 +95,7 @@ class ApiServiceWithMock {
 
   async getMyGroups() {
     if (USE_MOCK_DATA) {
-      console.log('📊 Using mock my groups data');
+      console.log('Using mock my groups data');
       await simulateDelay(500);
       return mockData.myGroups;
     }
@@ -104,7 +104,7 @@ class ApiServiceWithMock {
 
   async joinGroup(groupId: number, data: any) {
     if (USE_MOCK_DATA) {
-      console.log('📊 Mock: Joining group', groupId, 'with data:', data);
+      console.log('Mock: Joining group', groupId, 'with data:', data);
       await simulateDelay(800);
       return {
         success: true,
@@ -124,7 +124,7 @@ class ApiServiceWithMock {
 
   async initializePayment(paymentData: any) {
     if (USE_MOCK_DATA) {
-      console.log('💳 Mock: Initializing payment', paymentData);
+      console.log('Mock: Initializing payment', paymentData);
       await simulateDelay(1000);
       return {
         data: {
@@ -150,7 +150,7 @@ class ApiServiceWithMock {
 
   async updateProfile(data: any) {
     if (USE_MOCK_DATA) {
-      console.log('👤 Mock: Updating profile', data);
+      console.log('Mock: Updating profile', data);
       await simulateDelay(700);
       return {
         ...mockData.user,
@@ -162,7 +162,7 @@ class ApiServiceWithMock {
 
   async changePassword(data: any) {
     if (USE_MOCK_DATA) {
-      console.log('🔐 Mock: Changing password');
+      console.log('Mock: Changing password');
       await simulateDelay(800);
       return { success: true, message: 'Password updated successfully' };
     }
@@ -173,7 +173,7 @@ class ApiServiceWithMock {
 
   async getProducts() {
     if (USE_MOCK_DATA) {
-      console.log('📦 Using mock products data');
+      console.log('Using mock products data');
       await simulateDelay(500);
       return mockData.groups;
     }
@@ -184,7 +184,7 @@ class ApiServiceWithMock {
 
   async searchGroups(query: string) {
     if (USE_MOCK_DATA) {
-      console.log('🔍 Mock: Searching groups for:', query);
+      console.log('Mock: Searching groups for:', query);
       await simulateDelay(300);
       return mockData.searchMockGroups(query);
     }
@@ -219,7 +219,7 @@ const createApiProxy = () => {
       
       // Otherwise, forward to real API
       if (USE_MOCK_DATA) {
-        console.warn(`⚠️ Method ${prop} not mocked, falling back to real API`);
+        console.warn(`Method ${prop} not mocked, falling back to real API`);
       }
       
       return typeof apiService[prop] === 'function'

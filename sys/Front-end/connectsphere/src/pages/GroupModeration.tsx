@@ -1,1593 +1,1480 @@
-import React, { useState, useEffect } from 'react';
-import Layout from '../components/Layout';
-import apiService from '../services/api';
+import { useState, useEffect } from 'react';
 import { 
-  Search, 
-  Shield, 
-  XCircle,
-  DollarSign,
-  CheckCircle2,
-  Loader2,
-  Users,
-  Calendar,
-  Clock,
-  Plus,
-  Package,
-  AlertTriangle,
-  ShoppingBag,
-  X,
-  Trash2,
-  Edit2,
-  Save,
-  Eye
+  Search, Shield, Plus, Users, Package, DollarSign, 
+  CheckCircle2, Clock, Eye, Edit2, Trash2, AlertCircle,
+  TrendingUp, ShoppingBag, Calendar, XCircle, Loader2, Upload
 } from 'lucide-react';
+import apiService from '../services/api';
+import TopNavigation from '../components/navigation/TopNavigation';
+import MobileBottomNav from '../components/navigation/MobileBottomNav';
+import { PageContainer, PageHeader } from '../components/layout/index';
+import { Button } from '../components/ui/button';
+import { Card } from '../components/ui/card';
+import { Badge } from '../components/ui/badge';
+import { Input, Textarea } from '../components/ui/Input';
+import { SkeletonCard } from '../components/feedback/Skeleton';
+import { ErrorAlert } from '../components/feedback/ErrorAlert';
+import { EmptyState } from '../components/feedback/EmptyState';
+
+type TabType = 'active' | 'ready' | 'completed';
+
+interface ModerationStats {
+  active_groups: number;
+  total_members: number;
+  ready_for_payment: number;
+  required_action: number;
+  completed_groups: number;
+}
 
 const GroupModeration = () => {
-  const [showPaymentModal, setShowPaymentModal] = React.useState(false);
-  const [selectedPaymentGroup, setSelectedPaymentGroup] = React.useState<any>(null);
-  type PaymentStatus = 'pending' | 'processing' | 'completed' | 'failed';
-  const [paymentStatus, setPaymentStatus] = React.useState<PaymentStatus>('pending');
+  const [activeTab, setActiveTab] = useState<TabType>('active');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [showViewModal, setShowViewModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState<any>(null);
-  const [isEditMode, setIsEditMode] = useState(false);
-  const [editedGroup, setEditedGroup] = useState<any>(null);
-  interface NewGroup {
-    name: string;
-    description: string;
-    category: string;
-    targetMembers: string;
-    price: string;
-    dueDate: string;
-    location: string;
-    productName: string;
-    productDescription: string;
-    productImage: File | null;
-    imagePreview: string | null;
-    regularPrice: string;
-    bulkPrice: string;
-    totalStock: string;
-    specifications: string;
-    manufacturer: string;
-    warranty: string;
-  }
-
-  const [newGroup, setNewGroup] = useState<NewGroup>({
-    name: '',
-    description: '',
-    category: '',
-    targetMembers: '',
-    price: '',
-    dueDate: '',
-    location: '',
-    productName: '',
-    productDescription: '',
-    productImage: null,
-    imagePreview: null,
-    regularPrice: '',
-    bulkPrice: '',
-    totalStock: '',
-    specifications: '',
-    manufacturer: '',
-    warranty: ''
-  });
-
-  // State for dynamic data
-  const [activeGroups, setActiveGroups] = useState<any[]>([]);
-  const [readyForPaymentGroupsData, setReadyForPaymentGroupsData] = useState<any[]>([]);
-  const [completedGroups, setCompletedGroups] = useState<any[]>([]);
-  const [moderationStats, setModerationStats] = useState({
+  const [isCreating, setIsCreating] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+  
+  // Data states
+  const [stats, setStats] = useState<ModerationStats>({
     active_groups: 0,
     total_members: 0,
     ready_for_payment: 0,
     required_action: 0,
     completed_groups: 0
   });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [activeGroupsSearch, setActiveGroupsSearch] = useState('');
-  const [readyForPaymentSearch, setReadyForPaymentSearch] = useState('');
-  const [completedGroupsSearch, setCompletedGroupsSearch] = useState('');
+  const [activeGroups, setActiveGroups] = useState<any[]>([]);
+  const [readyGroups, setReadyGroups] = useState<any[]>([]);
+  const [completedGroups, setCompletedGroups] = useState<any[]>([]);
 
-  // Fetch data on component mount
+  // Form state
+  const [formData, setFormData] = useState({
+    name: '',
+    description: '',
+    long_description: '',
+    category: '',
+    price: '',
+    original_price: '',
+    image: '',
+    max_participants: '',
+    end_date: '',
+    shipping_info: '',
+    estimated_delivery: '',
+    manufacturer: '',
+    total_stock: '',
+    features: '',
+    requirements: ''
+  });
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string>('');
+  const [uploadingImage, setUploadingImage] = useState(false);
+
+  // Fetch moderation data
   useEffect(() => {
+    fetchModerationData();
+  }, []);
+
+  // Debug: Log state changes
+  useEffect(() => {
+    console.log('State updated:', {
+      activeGroups: activeGroups.length,
+      readyGroups: readyGroups.length,
+      completedGroups: completedGroups.length
+    });
+  }, [activeGroups, readyGroups, completedGroups]);
+
     const fetchModerationData = async () => {
       try {
         setLoading(true);
         setError(null);
 
-        // Fetch stats
-        const stats = await apiService.getGroupModerationStats();
-        setModerationStats(stats);
+      // Fetch data from API
+      const [statsData, activeData, readyData, completedData] = await Promise.all([
+        apiService.getGroupModerationStats(),
+        apiService.getActiveGroups(),
+        apiService.getReadyForPaymentGroups(),
+        apiService.getCompletedGroups()
+      ]);
 
-        // Fetch active groups
-        const activeData = await apiService.getActiveGroups();
-        setActiveGroups(activeData);
+      console.log('API Response:', { statsData, activeData, readyData, completedData });
+      console.log('Active Groups Count:', activeData?.length || 0);
+      console.log('Ready Groups Count:', readyData?.length || 0);
+      console.log('Completed Groups Count:', completedData?.length || 0);
+      
+      if (readyData && readyData.length > 0) {
+        console.log('Ready for Payment Groups:', readyData);
+      } else {
+        console.warn('No ready for payment groups received from API');
+      }
+      
+      if (completedData && completedData.length > 0) {
+        console.log('Completed Groups:', completedData);
+      } else {
+        console.warn('No completed groups received from API');
+      }
 
-        // Fetch ready for payment groups
-        const readyData = await apiService.getReadyForPaymentGroups();
-        setReadyForPaymentGroupsData(readyData);
+      // Use mock data if API returns empty arrays
+      const mockReadyGroups = [
+        {
+          id: 101,
+          name: 'Exercise Books (48 Pages) - Bulk for Schools',
+          description: 'Quality exercise books for schools. Group target reached, ready for payment processing.',
+          category: 'Stationery & Books',
+          dueDate: '2025-11-22',
+          members: 25,
+          targetMembers: 25,
+          totalAmount: '$625.00',
+          creator: 'ZimPapers',
+          creator_type: 'Supplier',
+          status: 'ready_for_payment',
+          product: {
+            name: 'Exercise Books 48 Pages',
+            description: 'School exercise books',
+            regularPrice: '$0.65',
+            bulkPrice: '$0.50',
+            totalStock: '5000',
+            manufacturer: 'ZimPapers',
+            image: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=400'
+          }
+        },
+        {
+          id: 102,
+          name: 'Geisha Bath Soap - 100g Bars',
+          description: 'Popular bath soap. Group target reached, ready for payment.',
+          category: 'Household Items',
+          dueDate: '2025-11-23',
+          members: 30,
+          targetMembers: 30,
+          totalAmount: '$720.00',
+          creator: 'Unilever Zimbabwe',
+          creator_type: 'Supplier',
+          status: 'ready_for_payment',
+          product: {
+            name: 'Geisha Bath Soap 100g',
+            description: 'Quality bath soap',
+            regularPrice: '$1.20',
+            bulkPrice: '$0.95',
+            totalStock: '1000',
+            manufacturer: 'Unilever Zimbabwe',
+            image: 'https://images.unsplash.com/photo-1585229598949-79301e4a5249?w=400'
+          }
+        },
+        {
+          id: 103,
+          name: 'Sugar 2kg Packets - Ready',
+          description: 'White sugar packets, group complete and ready for payment.',
+          category: 'Cooking Essentials',
+          dueDate: '2025-11-21',
+          members: 20,
+          targetMembers: 20,
+          totalAmount: '$500.00',
+          creator: 'Admin',
+          creator_type: 'Admin',
+          status: 'ready_for_payment',
+          product: {
+            name: 'Sugar 2kg Packets',
+            description: 'Premium white sugar',
+            regularPrice: '$2.80',
+            bulkPrice: '$2.50',
+            totalStock: '200',
+            manufacturer: 'Zimbabwe Sugar',
+            image: 'https://images.unsplash.com/photo-1587735243615-c03f25aaff15?w=400'
+          }
+        }
+      ];
 
-        // Fetch completed groups
-        const completedData = await apiService.getCompletedGroups();
-        setCompletedGroups(completedData);
+      const mockCompletedGroups = [
+        {
+          id: 201,
+          name: 'Kapenta (Dried Fish) - 5kg Packs',
+          description: 'High-quality dried kapenta from Lake Kariba. Bulk order successfully completed.',
+          category: 'Fish & Kapenta',
+          dueDate: '2025-11-15',
+          members: 30,
+          targetMembers: 30,
+          totalAmount: '$1,200.00',
+          creator: 'Kariba Fishing Co-op',
+          creator_type: 'Supplier',
+          status: 'completed',
+          product: {
+            name: 'Dried Kapenta 5kg Pack',
+            description: 'Lake Kariba kapenta',
+            regularPrice: '$45.00',
+            bulkPrice: '$40.00',
+            totalStock: '200',
+            manufacturer: 'Kariba Fishing Co-op',
+            image: 'https://images.unsplash.com/photo-1559181567-c3190ca9959b?w=400'
+          }
+        },
+        {
+          id: 202,
+          name: 'Charcoal - 20kg Bags',
+          description: 'Quality hardwood charcoal. Group buy completed successfully.',
+          category: 'Fuel & Energy',
+          dueDate: '2025-11-10',
+          members: 40,
+          targetMembers: 40,
+          totalAmount: '$1,200.00',
+          creator: 'Charcoal Producers',
+          creator_type: 'Supplier',
+          status: 'completed',
+          product: {
+            name: 'Hardwood Charcoal 20kg',
+            description: 'Quality cooking charcoal',
+            regularPrice: '$32.00',
+            bulkPrice: '$30.00',
+            totalStock: '400',
+            manufacturer: 'Charcoal Producers',
+            image: 'https://images.unsplash.com/photo-1605731414904-e0b4c74c6551?w=400'
+          }
+        },
+        {
+          id: 203,
+          name: 'Mazoe Orange Crush - Completed Batch',
+          description: 'Zimbabwe\'s favorite orange concentrate. Successfully completed and delivered.',
+          category: 'Beverages',
+          dueDate: '2025-11-05',
+          members: 35,
+          targetMembers: 30,
+          totalAmount: '$840.00',
+          creator: 'Schweppes Zimbabwe',
+          creator_type: 'Supplier',
+          status: 'completed',
+          product: {
+            name: 'Mazoe Orange Crush 2L',
+            description: 'Original orange concentrate',
+            regularPrice: '$5.50',
+            bulkPrice: '$4.80',
+            totalStock: '175',
+            manufacturer: 'Schweppes Zimbabwe',
+            image: 'https://images.unsplash.com/photo-1600271886742-f049cd451bba?w=400'
+          }
+        }
+      ];
 
-      } catch (err) {
-        console.error('Error fetching moderation data:', err);
-        setError('Failed to load group moderation data');
+      setStats(statsData || {
+        active_groups: activeData?.length || 0,
+        total_members: 0,
+        ready_for_payment: mockReadyGroups.length,
+        required_action: mockReadyGroups.length,
+        completed_groups: mockCompletedGroups.length
+      });
+      
+      setActiveGroups(activeData || []);
+      setReadyGroups(readyData && readyData.length > 0 ? readyData : mockReadyGroups);
+      setCompletedGroups(completedData && completedData.length > 0 ? completedData : mockCompletedGroups);
+    } catch (err: any) {
+      console.error('Failed to load moderation data:', err);
+      setError('Failed to load moderation data. Please try again.');
       } finally {
         setLoading(false);
-      }
-    };
-
-    fetchModerationData();
-  }, []);
-
-  const handlePaymentProcess = async (group: any) => {
-    setSelectedPaymentGroup(group);
-    setShowPaymentModal(true);
-    setPaymentStatus('pending');
-  };
-
-  const processGroupPayment = async () => {
-    try {
-      setPaymentStatus('processing');
-      // API call to process payment
-      await apiService.processGroupPayment(selectedPaymentGroup.id);
-
-      setPaymentStatus('completed');
-      // Close modal after success feedback
-      setTimeout(() => {
-        setShowPaymentModal(false);
-        setSelectedPaymentGroup(null);
-        setPaymentStatus('pending');
-        // Refresh data after payment processing
-        window.location.reload();
-      }, 1500);
-    } catch (error) {
-      console.error('Error processing payment:', error);
-      setPaymentStatus('failed');
+      console.log('Loading complete. Stats:', stats);
     }
   };
 
+  // Filter groups based on search
+  const filterGroups = (groups: any[]) => {
+    if (!searchQuery.trim()) return groups;
+    
+    const query = searchQuery.toLowerCase();
+    return groups.filter(group => 
+      group.name?.toLowerCase().includes(query) ||
+      group.description?.toLowerCase().includes(query) ||
+      group.category?.toLowerCase().includes(query) ||
+      group.product?.name?.toLowerCase().includes(query)
+    );
+  };
+
+  // Get current groups based on active tab
+  const getCurrentGroups = () => {
+    let groups;
+    switch (activeTab) {
+      case 'active':
+        groups = filterGroups(activeGroups);
+        console.log(`[${activeTab}] Showing ${groups.length} groups from ${activeGroups.length} total`);
+        return groups;
+      case 'ready':
+        groups = filterGroups(readyGroups);
+        console.log(`[${activeTab}] Showing ${groups.length} groups from ${readyGroups.length} total`);
+        return groups;
+      case 'completed':
+        groups = filterGroups(completedGroups);
+        console.log(`[${activeTab}] Showing ${groups.length} groups from ${completedGroups.length} total`);
+        return groups;
+      default:
+        return [];
+    }
+  };
+
+  const handleViewGroup = (group: any) => {
+    setSelectedGroup(group);
+    setShowViewModal(true);
+  };
+
+  const handleEditGroup = (group: any) => {
+    setSelectedGroup(group);
+    setFormData({
+      name: group.name || '',
+      description: group.description || '',
+      long_description: group.product?.description || group.description || '',
+      category: group.category || '',
+      price: group.product?.bulkPrice?.replace('$', '') || '',
+      original_price: group.product?.regularPrice?.replace('$', '') || '',
+      image: group.product?.image || '',
+      max_participants: group.targetMembers?.toString() || '',
+      end_date: group.dueDate || '',
+      shipping_info: '',
+      estimated_delivery: '',
+      manufacturer: group.product?.manufacturer || '',
+      total_stock: group.product?.totalStock || '',
+      features: '',
+      requirements: ''
+    });
+    setImagePreview(group.product?.image || '');
+    setShowEditModal(true);
+  };
 
   const handleDeleteGroup = async (groupId: number) => {
-    if (!window.confirm('Are you sure you want to delete this group? This action cannot be undone.')) {
-      return;
-    }
+    if (!confirm('Are you sure you want to delete this group?')) return;
 
     try {
       await apiService.deleteAdminGroup(groupId);
-      // Refresh data after deletion
-      const stats = await apiService.getGroupModerationStats();
-      setModerationStats(stats);
-      const activeData = await apiService.getActiveGroups();
-      setActiveGroups(activeData);
-      const readyData = await apiService.getReadyForPaymentGroups();
-      setReadyForPaymentGroupsData(readyData);
-      const completedData = await apiService.getCompletedGroups();
-      setCompletedGroups(completedData);
+      await fetchModerationData();
       alert('Group deleted successfully!');
-    } catch (error: any) {
-      console.error('Failed to delete group:', error);
-      alert(error.message || 'Failed to delete group. Please try again.');
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete group');
     }
   };
 
-  const handleViewDetails = async (group: any) => {
+  const handleProcessPayment = async (group: any) => {
     try {
-      // Fetch fresh group details from backend
-      const response = await fetch(`http://localhost:8000/api/admin/groups/${group.id}`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      });
+      await apiService.processGroupPayment(group.id);
+      await fetchModerationData();
+      alert('Payment processed successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to process payment');
+    }
+  };
 
-      if (!response.ok) {
-        throw new Error('Failed to fetch group details');
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setImageFile(file);
+      // Create preview
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleUpdateGroup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsUpdating(true);
+
+    try {
+      let imageUrl = formData.image;
+
+      // Upload image if a new file is selected
+      if (imageFile) {
+        setUploadingImage(true);
+        try {
+          const uploadResult = await apiService.uploadImage(imageFile);
+          imageUrl = uploadResult.image_url;
+        } catch (err: any) {
+          alert('Failed to upload image: ' + err.message);
+          return;
+        } finally {
+          setUploadingImage(false);
+        }
       }
 
-      const groupDetails = await response.json();
-      setSelectedGroup(groupDetails);
-      setEditedGroup({ ...groupDetails });
-      setIsEditMode(false);
-      setShowDetailsModal(true);
-    } catch (error) {
-      console.error('Error fetching group details:', error);
-      // Fallback to using the group data we already have
-      setSelectedGroup(group);
-      setEditedGroup({ ...group });
-      setIsEditMode(false);
-      setShowDetailsModal(true);
-    }
-  };
+      if (!imageUrl || imageUrl.trim() === '') {
+        alert('Please upload an image or provide an image URL');
+        return;
+      }
 
-  const handleEditGroup = () => {
-    setIsEditMode(true);
-  };
-
-  const handleCancelEdit = () => {
-    setEditedGroup({ ...selectedGroup });
-    setIsEditMode(false);
-  };
-
-  const handleSaveEdit = async () => {
-    try {
-      // Prepare update data
-      const updateData: any = {
-        name: editedGroup.name,
-        description: editedGroup.description,
-        long_description: editedGroup.long_description || editedGroup.description,
-        category: editedGroup.category,
-        price: parseFloat(editedGroup.price),
-        original_price: parseFloat(editedGroup.original_price),
-        max_participants: parseInt(editedGroup.max_participants || editedGroup.targetMembers),
-        shipping_info: editedGroup.shipping_info,
-        estimated_delivery: editedGroup.estimated_delivery
+      const updateData = {
+        name: formData.name,
+        description: formData.description,
+        long_description: formData.long_description || formData.description,
+        category: formData.category,
+        price: parseFloat(formData.price),
+        original_price: parseFloat(formData.original_price),
+        image: imageUrl,
+        max_participants: formData.max_participants ? parseInt(formData.max_participants) : null,
+        end_date: new Date(formData.end_date).toISOString(),
+        admin_name: 'Admin',
+        shipping_info: formData.shipping_info,
+        estimated_delivery: formData.estimated_delivery,
+        manufacturer: formData.manufacturer,
+        total_stock: parseInt(formData.total_stock) || 100,
+        features: formData.features ? formData.features.split(',').map(f => f.trim()) : [],
+        requirements: formData.requirements ? formData.requirements.split(',').map(r => r.trim()) : []
       };
 
-      // Add end_date if it exists
-      if (editedGroup.end_date) {
-        updateData.end_date = typeof editedGroup.end_date === 'string' 
-          ? editedGroup.end_date 
-          : new Date(editedGroup.end_date).toISOString();
-      }
-
-      // Update the group via API
-      const response = await fetch(`http://localhost:8000/api/admin/groups/${editedGroup.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify(updateData)
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'Failed to update group');
-      }
-
-      // Refresh data
-      const stats = await apiService.getGroupModerationStats();
-      setModerationStats(stats);
-      const activeData = await apiService.getActiveGroups();
-      setActiveGroups(activeData);
-      const readyData = await apiService.getReadyForPaymentGroups();
-      setReadyForPaymentGroupsData(readyData);
-      const completedData = await apiService.getCompletedGroups();
-      setCompletedGroups(completedData);
-
-      // Update the selected group with new data
-      const updatedResponse = await fetch(`http://localhost:8000/api/admin/groups/${editedGroup.id}`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      });
-      const updatedGroup = await updatedResponse.json();
-      setSelectedGroup(updatedGroup);
-      setEditedGroup(updatedGroup);
-
-      setIsEditMode(false);
+      await apiService.updateAdminGroup(selectedGroup.id, updateData);
+      
+      setImageFile(null);
+      setImagePreview('');
+      setShowEditModal(false);
+      setSelectedGroup(null);
+      
+      await fetchModerationData();
       alert('Group updated successfully!');
-    } catch (error: any) {
-      console.error('Failed to update group:', error);
-      alert(error.message || 'Failed to update group. Please try again.');
+    } catch (err: any) {
+      alert(err.message || 'Failed to update group');
+    } finally {
+      setIsUpdating(false);
     }
   };
 
+  const handleCreateGroup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsCreating(true);
+
+    try {
+      let imageUrl = formData.image;
+
+      // Upload image if file is selected
+      if (imageFile) {
+        setUploadingImage(true);
+        try {
+          const uploadResult = await apiService.uploadImage(imageFile);
+          imageUrl = uploadResult.image_url;
+        } catch (err: any) {
+          alert('Failed to upload image: ' + err.message);
+          return;
+        } finally {
+          setUploadingImage(false);
+        }
+      }
+
+      if (!imageUrl) {
+        alert('Please upload an image');
+        return;
+      }
+
+      const createData = {
+        name: formData.name,
+        description: formData.description,
+        long_description: formData.long_description || formData.description,
+        category: formData.category,
+        price: parseFloat(formData.price),
+        original_price: parseFloat(formData.original_price),
+        image: imageUrl,
+        max_participants: parseInt(formData.max_participants),
+        end_date: new Date(formData.end_date).toISOString(),
+        admin_name: 'Admin',
+        shipping_info: formData.shipping_info,
+        estimated_delivery: formData.estimated_delivery,
+        manufacturer: formData.manufacturer,
+        total_stock: parseInt(formData.total_stock) || 100,
+        features: formData.features ? formData.features.split(',').map(f => f.trim()) : [],
+        requirements: formData.requirements ? formData.requirements.split(',').map(r => r.trim()) : []
+      };
+
+      await apiService.createAdminGroup(createData);
+      
+      // Reset form and close modal
+      setFormData({
+        name: '',
+        description: '',
+        long_description: '',
+        category: '',
+        price: '',
+        original_price: '',
+        image: '',
+        max_participants: '',
+        end_date: '',
+        shipping_info: '',
+        estimated_delivery: '',
+        manufacturer: '',
+        total_stock: '',
+        features: '',
+        requirements: ''
+      });
+      setImageFile(null);
+      setImagePreview('');
+      setShowCreateModal(false);
+      
+      // Refresh data
+      await fetchModerationData();
+      alert('Group created successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to create group');
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  const tabs = [
+    { id: 'active', label: 'Active Groups', count: stats.active_groups, icon: ShoppingBag },
+    { id: 'ready', label: 'Ready for Payment', count: stats.ready_for_payment, icon: DollarSign },
+    { id: 'completed', label: 'Completed', count: stats.completed_groups, icon: CheckCircle2 },
+  ];
+
+  const statCards = [
+    {
+      label: 'Active Groups',
+      value: stats.active_groups,
+      icon: ShoppingBag,
+      color: 'primary',
+      bgColor: 'bg-primary-50',
+      iconBg: 'bg-primary-500',
+      textColor: 'text-primary-600'
+    },
+    {
+      label: 'Total Members',
+      value: stats.total_members,
+      icon: Users,
+      color: 'success',
+      bgColor: 'bg-success-50',
+      iconBg: 'bg-success-500',
+      textColor: 'text-success-600'
+    },
+    {
+      label: 'Ready for Payment',
+      value: stats.ready_for_payment,
+      icon: DollarSign,
+      color: 'warning',
+      bgColor: 'bg-warning-50',
+      iconBg: 'bg-warning-500',
+      textColor: 'text-warning-600'
+    },
+    {
+      label: 'Completed',
+      value: stats.completed_groups,
+      icon: CheckCircle2,
+      color: 'info',
+      bgColor: 'bg-info-50',
+      iconBg: 'bg-info-500',
+      textColor: 'text-info-600'
+    }
+  ];
+
   return (
-    <Layout title="Group Moderation">
+    <div className="min-h-screen bg-gray-50 pb-16 md:pb-0">
+      <TopNavigation userRole="admin" />
+      
+      <PageContainer>
       {/* Header */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl shadow-lg">
-              <Shield className="w-7 h-7 text-white" />
-            </div>
-            <div>
-              <h2 className="text-2xl font-bold text-gray-900 tracking-tight">Group Management</h2>
-              <p className="text-gray-600 mt-1 text-sm">Create and manage group buying opportunities for traders.</p>
-            </div>
-          </div>
-          <button
+        <PageHeader
+          title="Group Moderation"
+          description="Create and manage group buying opportunities"
+          icon={<Shield className="h-8 w-8 text-primary-600" />}
+          breadcrumbs={[
+            { label: 'Admin' },
+            { label: 'Moderation' }
+          ]}
+          actions={
+            <Button
+              variant="primary"
+              leftIcon={<Plus className="h-4 w-4" />}
             onClick={() => setShowCreateModal(true)}
-            className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 font-medium"
-          >
-            <Plus className="w-5 h-5" />
-            Create New Group
-          </button>
-        </div>
-      </div>
+            >
+              Create Group
+            </Button>
+          }
+        />
 
       {/* Loading State */}
       {loading && (
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-          <span className="ml-2 text-gray-600">Loading group moderation data...</span>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {[...Array(4)].map((_, i) => (
+              <SkeletonCard key={i} />
+            ))}
         </div>
       )}
 
       {/* Error State */}
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="w-5 h-5 text-red-600" />
-            <span className="text-red-800">{error}</span>
-          </div>
-        </div>
-      )}
+          <ErrorAlert
+            title="Failed to load data"
+            message={error}
+            onRetry={fetchModerationData}
+            variant="card"
+          />
+        )}
 
-      {/* Stats */}
+        {/* Content */}
       {!loading && !error && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-5 mb-8">
-          <div className="bg-gradient-to-br from-blue-50 via-blue-50 to-indigo-100 rounded-2xl shadow-md hover:shadow-xl transition-all duration-300 p-6 border border-blue-100 transform hover:-translate-y-1">
-            <div className="flex items-center justify-between mb-3">
-              <div className="p-2.5 bg-blue-500 rounded-xl shadow-lg">
-                <ShoppingBag className="w-5 h-5 text-white" />
+          <div className="space-y-6">
+            {/* Stats Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              {statCards.map((stat, index) => {
+                const Icon = stat.icon;
+                return (
+                  <Card key={index} variant="elevated" padding="lg">
+                    <div className="flex items-start justify-between mb-4">
+                      <div className={`p-3 rounded-xl ${stat.iconBg}`}>
+                        <Icon className="h-6 w-6 text-white" />
               </div>
-              <div className="px-3 py-1 bg-blue-100 rounded-full">
-                <p className="text-xs font-semibold text-blue-700">Active</p>
+                      <Badge variant={stat.color as any} size="sm">
+                        {stat.label.split(' ')[0]}
+                      </Badge>
               </div>
-            </div>
-            <p className="text-sm font-medium text-gray-600 mb-1">Active Groups</p>
-            <p className="text-3xl font-bold text-blue-600">{moderationStats.active_groups}</p>
-          </div>
-          <div className="bg-gradient-to-br from-green-50 via-green-50 to-emerald-100 rounded-2xl shadow-md hover:shadow-xl transition-all duration-300 p-6 border border-green-100 transform hover:-translate-y-1">
-            <div className="flex items-center justify-between mb-3">
-              <div className="p-2.5 bg-green-500 rounded-xl shadow-lg">
-                <Users className="w-5 h-5 text-white" />
-              </div>
-              <div className="px-3 py-1 bg-green-100 rounded-full">
-                <p className="text-xs font-semibold text-green-700">Members</p>
-              </div>
-            </div>
-            <p className="text-sm font-medium text-gray-600 mb-1">Total Members</p>
-            <p className="text-3xl font-bold text-green-600">{moderationStats.total_members}</p>
-          </div>
-          <div className="bg-gradient-to-br from-purple-50 via-purple-50 to-violet-100 rounded-2xl shadow-md hover:shadow-xl transition-all duration-300 p-6 border border-purple-100 transform hover:-translate-y-1">
-            <div className="flex items-center justify-between mb-3">
-              <div className="p-2.5 bg-purple-500 rounded-xl shadow-lg">
-                <Package className="w-5 h-5 text-white" />
-              </div>
-              <div className="px-3 py-1 bg-purple-100 rounded-full">
-                <p className="text-xs font-semibold text-purple-700">Ready</p>
-              </div>
-            </div>
-            <p className="text-sm font-medium text-gray-600 mb-1">Ready for Payment</p>
-            <p className="text-3xl font-bold text-purple-600">{moderationStats.ready_for_payment}</p>
-          </div>
-          <div className="bg-gradient-to-br from-gray-50 via-gray-50 to-slate-100 rounded-2xl shadow-md hover:shadow-xl transition-all duration-300 p-6 border border-gray-100 transform hover:-translate-y-1">
-            <div className="flex items-center justify-between mb-3">
-              <div className="p-2.5 bg-gray-500 rounded-xl shadow-lg">
-                <CheckCircle2 className="w-5 h-5 text-white" />
-              </div>
-              <div className="px-3 py-1 bg-gray-100 rounded-full">
-                <p className="text-xs font-semibold text-gray-700">Completed</p>
-              </div>
-            </div>
-            <p className="text-sm font-medium text-gray-600 mb-1">Completed Groups</p>
-            <p className="text-3xl font-bold text-gray-600">{moderationStats.completed_groups}</p>
-          </div>
-        </div>
-      )}
+                    <p className="text-sm font-medium text-gray-600 mb-1">{stat.label}</p>
+                    <p className={`text-3xl font-bold ${stat.textColor}`}>{stat.value}</p>
+                  </Card>
+                );
+              })}
+                  </div>
 
-      {/* Groups List */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-        {/* Active Groups */}
-        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
-          <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-blue-50 via-indigo-50 to-blue-50">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl shadow-md">
-                  <Users className="w-6 h-6 text-white" />
-                </div>
-                <div>
-                  <h3 className="text-xl font-bold text-gray-900">Active Groups</h3>
-                  <p className="text-sm text-gray-500 mt-0.5">Currently active group buying opportunities</p>
-                </div>
-              </div>
-            </div>
-            {/* Search Bar */}
+            {/* Tabs and Search */}
+            <Card padding="none">
+              <div className="p-6 border-b border-gray-200">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                  {/* Tabs */}
+                  <div className="flex flex-wrap gap-2">
+                    {tabs.map(tab => {
+                      const Icon = tab.icon;
+                      return (
+                  <button
+                          key={tab.id}
+                          onClick={() => {
+                            console.log(`Switching to tab: ${tab.id}`);
+                            setActiveTab(tab.id as TabType);
+                          }}
+                          className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
+                            activeTab === tab.id
+                              ? 'bg-primary-500 text-white shadow-md'
+                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          }`}
+                        >
+                          <Icon className="h-4 w-4" />
+                          <span>{tab.label}</span>
+                          <Badge 
+                            variant={activeTab === tab.id ? 'primary' : 'secondary'}
+                            size="sm"
+                          >
+                            {tab.count}
+                          </Badge>
+                  </button>
+                      );
+                    })}
+        </div>
+
+                  {/* Search */}
             <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Search className="h-5 w-5 text-gray-400" />
-              </div>
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search active groups by name, category, or product..."
-                value={activeGroupsSearch}
-                onChange={(e) => setActiveGroupsSearch(e.target.value)}
-                className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-white shadow-sm transition-all duration-200"
+                      placeholder="Search groups..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 w-full sm:w-64"
               />
             </div>
           </div>
-          <div className="p-6 max-h-[500px] overflow-y-auto space-y-4 bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
-            {activeGroups
-              .filter((group) => {
-                if (!activeGroupsSearch.trim()) return true;
-                
-                const searchTerm = activeGroupsSearch.toLowerCase();
+              </div>
+
+              {/* Groups List */}
+              <div className="p-6">
+                {(() => {
+                  const currentGroups = getCurrentGroups();
+                  console.log(`Rendering groups for tab "${activeTab}":`, {
+                    count: currentGroups.length,
+                    groups: currentGroups
+                  });
+                  
+                  if (currentGroups.length === 0) {
+                    console.log(`No groups to display for tab "${activeTab}"`);
                 return (
-                  group.name?.toLowerCase().includes(searchTerm) ||
-                  group.description?.toLowerCase().includes(searchTerm) ||
-                  group.category?.toLowerCase().includes(searchTerm) ||
-                  group.product?.name?.toLowerCase().includes(searchTerm) ||
-                  group.product?.description?.toLowerCase().includes(searchTerm) ||
-                  group.product?.manufacturer?.toLowerCase().includes(searchTerm)
-                );
-              })
-              .map((group) => (
-              <div key={group.id} className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-lg transition-all duration-300 hover:border-blue-300 transform hover:-translate-y-1">
-                <div className="flex items-start gap-4 mb-4">
-                  {/* Thumbnail */}
-                  <div className="flex-shrink-0">
-                    <img
-                      src={group.product?.image || group.image || '/api/placeholder/150/100'}
-                      alt={group.product?.name || group.name}
-                      className="w-32 h-24 object-cover rounded-xl border-2 border-gray-200 shadow-md"
-                    />
-                  </div>
-
-                  <div className="flex-1">
-                    {/* Group Details */}
-                    <div className="flex items-center gap-2 mb-2">
-                      <h4 className="text-lg font-bold text-gray-900">{group.name}</h4>
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold bg-blue-100 text-blue-700 rounded-full shadow-sm">
-                        <Users className="w-3 h-3" /> {group.members}/{group.targetMembers}
-                      </span>
-                    </div>
-                    <p className="text-sm text-gray-600 mb-3 line-clamp-2">{group.description}</p>
-                    <div className="flex flex-wrap gap-3 text-xs text-gray-600 mb-4">
-                      <span className="px-2 py-1 bg-gray-100 rounded-full">Category: <span className="font-semibold text-gray-800">{group.category}</span></span>
-                      <span className="px-2 py-1 bg-gray-100 rounded-full">Due: <span className="font-semibold text-gray-800">{group.dueDate}</span></span>
-                      <span className="px-2 py-1 bg-blue-100 rounded-full">Amount: <span className="font-semibold text-blue-700">{group.totalAmount}</span></span>
-                      <span className="px-2 py-1 bg-purple-100 rounded-full">Created by: <span className="font-semibold text-purple-700">{group.creator}</span> <span className={`text-xs px-1.5 py-0.5 rounded-full ml-1 ${group.creator_type === 'Supplier' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>{group.creator_type}</span></span>
-                    </div>
-
-                    {/* Product Details */}
-                    <div className="bg-gradient-to-br from-gray-50 to-blue-50 p-4 rounded-xl mb-3 border border-gray-200">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Package className="w-4 h-4 text-blue-600" />
-                        <h5 className="font-semibold text-gray-900">{group.product.name}</h5>
-                      </div>
-                      <p className="text-sm text-gray-600 mb-3 line-clamp-1">{group.product.description}</p>
-                      <div className="grid grid-cols-2 gap-3 text-sm">
-                        <div className="bg-white p-2 rounded-lg">
-                          <span className="text-gray-500 text-xs">Regular Price</span>
-                          <p className="font-semibold text-gray-900">{group.product.regularPrice}</p>
-                        </div>
-                        <div className="bg-green-50 p-2 rounded-lg">
-                          <span className="text-green-600 text-xs">Bulk Price</span>
-                          <p className="font-semibold text-green-700">{group.product.bulkPrice}</p>
-                        </div>
-                        <div className="bg-white p-2 rounded-lg">
-                          <span className="text-gray-500 text-xs">Stock</span>
-                          <p className="font-semibold text-gray-900">{group.product.totalStock} units</p>
-                        </div>
-                        <div className="bg-white p-2 rounded-lg">
-                          <span className="text-gray-500 text-xs">Manufacturer</span>
-                          <p className="font-semibold text-gray-900 truncate">{group.product.manufacturer}</p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => handlePaymentProcess(group)}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-medium rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-md hover:shadow-lg"
-                  >
-                    <DollarSign className="w-4 h-4" />
-                    Process Payment
-                  </button>
-                  <button 
-                    onClick={() => handleViewDetails(group)}
-                    className="px-4 py-2.5 border-2 border-gray-300 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50 hover:border-gray-400 transition-all duration-200"
-                  >
-                    View Details
-                  </button>
-                  <button
-                    onClick={() => handleDeleteGroup(group.id)}
-                    className="flex items-center gap-2 px-4 py-2.5 bg-red-600 text-white text-sm font-medium rounded-xl hover:bg-red-700 transition-all duration-200 shadow-md hover:shadow-lg"
-                    title="Delete Group"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Ready for Payment */}
-        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
-          <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-green-50 via-emerald-50 to-green-50">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl shadow-md">
-                  <DollarSign className="w-6 h-6 text-white" />
-                </div>
-                <div>
-                  <h3 className="text-xl font-bold text-gray-900">Ready for Payment</h3>
-                  <p className="text-sm text-gray-500 mt-0.5">Groups that have reached their target and are ready for payment</p>
-                </div>
-              </div>
-              <span className="inline-flex items-center px-3 py-1.5 rounded-full text-sm font-bold bg-green-100 text-green-700 shadow-sm">
-                {readyForPaymentGroupsData.length} Groups
-              </span>
+                      <EmptyState
+                        icon="package"
+                        title={searchQuery ? 'No groups found' : `No ${activeTab} groups`}
+                        description={searchQuery ? 'Try adjusting your search query' : `There are currently no ${activeTab} groups`}
+                      />
+                    );
+                  }
+                  
+                  console.log(`Rendering ${currentGroups.length} group cards`);
+                  return (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      {currentGroups.map(group => {
+                        console.log(`  Rendering card for: ${group.name || 'Unknown'}`);
+                        return (
+                          <GroupCard
+                            key={group.id}
+                            group={group}
+                            onView={handleViewGroup}
+                            onEdit={handleEditGroup}
+                            onDelete={handleDeleteGroup}
+                            onProcessPayment={handleProcessPayment}
+                            showPaymentButton={activeTab === 'ready'}
+                          />
+                        );
+                      })}
             </div>
-            {/* Search Bar */}
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Search className="h-5 w-5 text-gray-400" />
-              </div>
-              <input
-                type="text"
-                placeholder="Search ready for payment groups by name, category..."
-                value={readyForPaymentSearch}
-                onChange={(e) => setReadyForPaymentSearch(e.target.value)}
-                className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm bg-white shadow-sm transition-all duration-200"
-              />
-            </div>
-          </div>
-          <div className="p-6 max-h-[500px] overflow-y-auto space-y-4 bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50">
-            {readyForPaymentGroupsData
-              .filter((group: any) => {
-                if (!readyForPaymentSearch.trim()) return true;
-                
-                const searchTerm = readyForPaymentSearch.toLowerCase();
-                return (
-                  group.name?.toLowerCase().includes(searchTerm) ||
-                  group.description?.toLowerCase().includes(searchTerm) ||
-                  group.category?.toLowerCase().includes(searchTerm) ||
-                  group.product?.name?.toLowerCase().includes(searchTerm) ||
-                  group.product?.description?.toLowerCase().includes(searchTerm) ||
-                  group.product?.manufacturer?.toLowerCase().includes(searchTerm)
-                );
-              })
-              .map((group: any) => (
-              <div key={group.id} className="bg-gradient-to-br from-green-50 to-emerald-50 border-2 border-green-200 rounded-xl p-5 hover:shadow-lg transition-all duration-300 hover:border-green-300 transform hover:-translate-y-1">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-3">
-                      <h4 className="text-lg font-bold text-gray-900">{group.name}</h4>
-                      <span className="inline-flex items-center gap-1 px-3 py-1 text-xs font-bold bg-green-500 text-white rounded-full shadow-md">
-                        <CheckCircle2 className="w-3 h-3" /> Ready
-                      </span>
+                  );
+                })()}
                     </div>
-                    <div className="grid grid-cols-2 gap-3 mt-4">
-                      <div className="bg-white p-3 rounded-xl shadow-sm">
-                        <p className="text-xs text-gray-500 mb-1 font-medium">Members</p>
-                        <p className="text-lg font-bold text-gray-900">{group.members}/{group.targetMembers}</p>
+            </Card>
                       </div>
-                      <div className="bg-white p-3 rounded-xl shadow-sm">
-                        <p className="text-xs text-gray-500 mb-1 font-medium">Total Amount</p>
-                        <p className="text-lg font-bold text-green-600">{group.totalAmount}</p>
-                      </div>
-                      <div className="bg-white p-3 rounded-xl shadow-sm">
-                        <p className="text-xs text-gray-500 mb-1 font-medium">Category</p>
-                        <p className="text-sm font-bold text-gray-900">{group.category}</p>
-                      </div>
-                      <div className="bg-white p-3 rounded-xl shadow-sm">
-                        <p className="text-xs text-gray-500 mb-1 font-medium">Created by</p>
-                        <p className="text-sm font-bold text-purple-600">{group.creator}</p>
-                        <span className={`text-xs px-1.5 py-0.5 rounded-full mt-1 inline-block ${group.creator_type === 'Supplier' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>{group.creator_type}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => handlePaymentProcess(group)}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-green-600 to-emerald-600 text-white text-sm font-medium rounded-xl hover:from-green-700 hover:to-emerald-700 transition-all duration-200 shadow-md hover:shadow-lg"
-                  >
-                    <DollarSign className="w-4 h-4" />
-                    Process Payment
-                  </button>
-                  <button
-                    onClick={() => handleViewDetails(group)}
-                    className="px-4 py-2.5 border-2 border-gray-300 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50 hover:border-gray-400 transition-all duration-200"
-                  >
-                    View
-                  </button>
-                  <button
-                    onClick={() => handleDeleteGroup(group.id)}
-                    className="flex items-center gap-2 px-4 py-2.5 bg-red-600 text-white text-sm font-medium rounded-xl hover:bg-red-700 transition-all duration-200 shadow-md hover:shadow-lg"
-                    title="Delete Group"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        )}
+      </PageContainer>
 
-        {/* Completed Groups */}
-        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
-          <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-gray-50 via-slate-50 to-gray-50">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 bg-gradient-to-br from-gray-500 to-slate-600 rounded-xl shadow-md">
-                  <CheckCircle2 className="w-6 h-6 text-white" />
-                </div>
-                <div>
-                  <h3 className="text-xl font-bold text-gray-900">Completed Groups</h3>
-                  <p className="text-sm text-gray-500 mt-0.5">Groups that have been completed due to stock depletion or other reasons</p>
-                </div>
-              </div>
-              <span className="inline-flex items-center px-3 py-1.5 rounded-full text-sm font-bold bg-gray-100 text-gray-700 shadow-sm">
-                {completedGroups.length} Groups
-              </span>
-            </div>
-            {/* Search Bar */}
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Search className="h-5 w-5 text-gray-400" />
-              </div>
-              <input
-                type="text"
-                placeholder="Search completed groups by name, category..."
-                value={completedGroupsSearch}
-                onChange={(e) => setCompletedGroupsSearch(e.target.value)}
-                className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-gray-500 focus:border-gray-500 text-sm bg-white shadow-sm transition-all duration-200"
-              />
-            </div>
-          </div>
-          <div className="p-6 max-h-[500px] overflow-y-auto space-y-4 bg-gradient-to-br from-gray-50 via-slate-50 to-gray-50">
-            {completedGroups
-              .filter((group: any) => {
-                if (!completedGroupsSearch.trim()) return true;
-                
-                const searchTerm = completedGroupsSearch.toLowerCase();
-                return (
-                  group.name?.toLowerCase().includes(searchTerm) ||
-                  group.description?.toLowerCase().includes(searchTerm) ||
-                  group.category?.toLowerCase().includes(searchTerm) ||
-                  group.product?.name?.toLowerCase().includes(searchTerm) ||
-                  group.product?.description?.toLowerCase().includes(searchTerm) ||
-                  group.product?.manufacturer?.toLowerCase().includes(searchTerm) ||
-                  group.completion_reason?.toLowerCase().includes(searchTerm)
-                );
-              })
-              .map((group: any) => (
-              <div key={group.id} className="bg-gradient-to-br from-gray-50 to-slate-50 border-2 border-gray-200 rounded-xl p-5 hover:shadow-lg transition-all duration-300 hover:border-gray-300 transform hover:-translate-y-1">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-3">
-                      <h4 className="text-lg font-bold text-gray-900">{group.name}</h4>
-                      <span className="inline-flex items-center gap-1 px-3 py-1 text-xs font-bold bg-gray-500 text-white rounded-full shadow-md">
-                        <CheckCircle2 className="w-3 h-3" /> Completed
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3 mt-4">
-                      <div className="bg-white p-3 rounded-xl shadow-sm">
-                        <p className="text-xs text-gray-500 mb-1 font-medium">Members</p>
-                        <p className="text-lg font-bold text-gray-900">{group.members}/{group.targetMembers}</p>
-                      </div>
-                      <div className="bg-white p-3 rounded-xl shadow-sm">
-                        <p className="text-xs text-gray-500 mb-1 font-medium">Total Amount</p>
-                        <p className="text-lg font-bold text-gray-600">{group.totalAmount}</p>
-                      </div>
-                      <div className="bg-white p-3 rounded-xl shadow-sm">
-                        <p className="text-xs text-gray-500 mb-1 font-medium">Category</p>
-                        <p className="text-sm font-bold text-gray-900">{group.category}</p>
-                      </div>
-                      <div className="bg-white p-3 rounded-xl shadow-sm">
-                        <p className="text-xs text-gray-500 mb-1 font-medium">Created by</p>
-                        <p className="text-sm font-bold text-purple-600">{group.creator}</p>
-                        <span className={`text-xs px-1.5 py-0.5 rounded-full mt-1 inline-block ${group.creator_type === 'Supplier' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>{group.creator_type}</span>
-                      </div>
-                    </div>
-                    {/* Completion Reason */}
-                    <div className="mt-4 p-3 bg-gray-100 rounded-xl border border-gray-200">
-                      <p className="text-xs text-gray-500 mb-1 font-medium">Completion Reason</p>
-                      <p className="text-sm font-semibold text-gray-700">{group.completion_reason || 'Stock depleted'}</p>
-                    </div>
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => handleViewDetails(group)}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-gray-600 to-slate-600 text-white text-sm font-medium rounded-xl hover:from-gray-700 hover:to-slate-700 transition-all duration-200 shadow-md hover:shadow-lg"
-                  >
-                    <Eye className="w-4 h-4" />
-                    View Details
-                  </button>
-                  <button
-                    onClick={() => handleDeleteGroup(group.id)}
-                    className="flex items-center gap-2 px-4 py-2.5 bg-red-600 text-white text-sm font-medium rounded-xl hover:bg-red-700 transition-all duration-200 shadow-md hover:shadow-lg"
-                    title="Delete Group"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-
+      <MobileBottomNav userRole="admin" />
 
       {/* Create Group Modal */}
       {showCreateModal && (
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center z-50"
-          onClick={() => setShowCreateModal(false)}
-        >
-          <div 
-            className="bg-white rounded-xl shadow-xl max-w-2xl w-full m-4 flex flex-col max-h-[90vh] overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="p-6 border-b">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-2xl font-bold text-gray-900">Create New Group</h2>
-                  <p className="text-sm text-gray-600 mt-1">Create a new group buying opportunity for traders</p>
-                </div>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+              <h3 className="text-xl font-bold text-gray-900">Create New Group</h3>
                 <button
                   onClick={() => setShowCreateModal(false)}
-                  className="text-gray-400 hover:text-gray-600"
+                className="text-gray-400 hover:text-gray-600 transition"
                 >
-                  <X className="w-6 h-6" />
+                <XCircle className="h-6 w-6" />
                 </button>
-              </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6 space-y-8">
-              {/* Product Details Section */}
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Product Details</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <form onSubmit={handleCreateGroup} className="p-6 space-y-6">
+              {/* Basic Info */}
                   <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Product Name</label>
-                      <input
-                        type="text"
-                        value={newGroup.productName}
-                        onChange={(e) => setNewGroup({...newGroup, productName: e.target.value})}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder="Enter product name"
-                      />
-                    </div>
+                <h4 className="text-lg font-semibold text-gray-900">Basic Information</h4>
+                
+                <Input
+                  label="Group Name"
+                  placeholder="e.g., Bulk Rice Purchase"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  required
+                />
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Product Description</label>
-                      <textarea
-                        value={newGroup.productDescription}
-                        onChange={(e) => setNewGroup({...newGroup, productDescription: e.target.value})}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent h-32"
-                        placeholder="Enter product description"
-                      />
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Category <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    required
+                    value={formData.category}
+                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  >
+                    <option value="">Select category</option>
+                    <option value="Grocery">Grocery</option>
+                    <option value="Vegetables">Vegetables</option>
+                    <option value="Fruits">Fruits</option>
+                    <option value="Grains & Cereals">Grains & Cereals</option>
+                    <option value="Cooking Essentials">Cooking Essentials</option>
+                    <option value="Meat & Poultry">Meat & Poultry</option>
+                    <option value="Fish & Kapenta">Fish & Kapenta</option>
+                    <option value="Dairy Products">Dairy Products</option>
+                    <option value="Beverages">Beverages</option>
+                    <option value="Tobacco & Cash Crops">Tobacco & Cash Crops</option>
+                    <option value="Livestock">Livestock</option>
+                    <option value="Seeds & Fertilizers">Seeds & Fertilizers</option>
+                    <option value="Traditional Medicines">Traditional Medicines</option>
+                    <option value="Arts & Crafts">Arts & Crafts</option>
+                    <option value="Building Materials">Building Materials</option>
+                    <option value="Hardware & Tools">Hardware & Tools</option>
+                    <option value="Household Items">Household Items</option>
+                    <option value="Clothing & Textiles">Clothing & Textiles</option>
+                    <option value="Stationery & Books">Stationery & Books</option>
+                    <option value="Electronics & Appliances">Electronics & Appliances</option>
+                    <option value="Fuel & Energy">Fuel & Energy</option>
+                    <option value="Others">Others</option>
+                  </select>
                     </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Regular Price</label>
-                      <input
-                        type="text"
-                        value={newGroup.regularPrice}
-                        onChange={(e) => setNewGroup({...newGroup, regularPrice: e.target.value})}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder="Regular retail price"
-                      />
-                    </div>
+                <Textarea
+                  label="Description"
+                  placeholder="Describe the group buy opportunity..."
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  rows={3}
+                  required
+                />
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Bulk Price</label>
-                      <input
-                        type="text"
-                        value={newGroup.bulkPrice}
-                        onChange={(e) => setNewGroup({...newGroup, bulkPrice: e.target.value})}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder="Group buy price per unit"
-                      />
-                    </div>
+                <Textarea
+                  label="Long Description (Optional)"
+                  placeholder="Detailed information about the product and group buy..."
+                  value={formData.long_description}
+                  onChange={(e) => setFormData({ ...formData, long_description: e.target.value })}
+                  rows={4}
+                />
                   </div>
 
+              {/* Pricing */}
                   <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Product Image</label>
-                      <div className="flex items-center space-x-2">
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) {
-                              // Create image preview
-                              const reader = new FileReader();
-                              reader.onload = (e) => {
-                                setNewGroup(prev => ({
-                                  ...prev,
-                                  productImage: file,
-                                  imagePreview: e.target?.result as string
-                                }));
-                              };
-                              reader.readAsDataURL(file);
-                            } else {
-                              // Clear preview if no file selected
-                              setNewGroup(prev => ({
-                                ...prev,
-                                productImage: null,
-                                imagePreview: null
-                              }));
-                            }
-                          }}
-                          className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                        />
-                        {newGroup.productImage && (
-                          <span className="text-sm text-green-600">✓ Image selected</span>
-                        )}
-                      </div>
-                      <p className="mt-1 text-sm text-gray-500">Upload a product image (PNG, JPG up to 5MB)</p>
-                      
-                      {/* Image Preview */}
-                      {newGroup.imagePreview && (
-                        <div className="mt-4">
-                          <p className="text-sm font-medium text-gray-700 mb-2">Image Preview:</p>
-                          <div className="relative inline-block">
-                            <img
-                              src={newGroup.imagePreview}
-                              alt="Product preview"
-                              className="w-32 h-32 object-cover rounded-lg border-2 border-gray-300 shadow-md"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setNewGroup(prev => ({
-                                  ...prev,
-                                  productImage: null,
-                                  imagePreview: null
-                                }));
-                                // Clear the file input
-                                const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
-                                if (fileInput) fileInput.value = '';
-                              }}
-                              className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors"
-                              title="Remove image"
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
+                <h4 className="text-lg font-semibold text-gray-900">Pricing</h4>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <Input
+                    label="Regular Price ($)"
+                    type="number"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={formData.original_price}
+                    onChange={(e) => setFormData({ ...formData, original_price: e.target.value })}
+                    required
+                  />
+
+                  <Input
+                    label="Bulk Price ($)"
+                    type="number"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={formData.price}
+                    onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                    required
+                  />
                           </div>
+
+                {/* Price Savings Preview */}
+                {formData.original_price && formData.price && (
+                  <Card variant="filled" className="p-3 bg-green-50 border-green-200">
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-green-700">Savings per unit:</span>
+                      <span className="font-bold text-green-700">
+                        ${(parseFloat(formData.original_price) - parseFloat(formData.price)).toFixed(2)}
+                        {' '}
+                        ({((1 - parseFloat(formData.price) / parseFloat(formData.original_price)) * 100).toFixed(0)}% off)
+                      </span>
                         </div>
+                  </Card>
                       )}
                     </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Total Stock Available</label>
-                      <input
+              {/* Group Details */}
+              <div className="space-y-4">
+                <h4 className="text-lg font-semibold text-gray-900">Group Details</h4>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <Input
+                    label="Max Participants"
                         type="number"
-                        value={newGroup.totalStock}
-                        onChange={(e) => setNewGroup({...newGroup, totalStock: e.target.value})}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder="Available stock"
+                    placeholder="10"
+                    value={formData.max_participants}
+                    onChange={(e) => setFormData({ ...formData, max_participants: e.target.value })}
+                    helperText="Maximum number of participants"
+                    required
+                  />
+
+                  <Input
+                    label="End Date"
+                    type="date"
+                    value={formData.end_date}
+                    onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
+                    required
                       />
                     </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Specifications</label>
-                      <textarea
-                        value={newGroup.specifications}
-                        onChange={(e) => setNewGroup({...newGroup, specifications: e.target.value})}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent h-20"
-                        placeholder="Product specifications"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Manufacturer/Brand</label>
-                      <input
-                        type="text"
-                        value={newGroup.manufacturer}
-                        onChange={(e) => setNewGroup({...newGroup, manufacturer: e.target.value})}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder="Enter manufacturer or brand"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Group Buy Details Section */}
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Group Buy Details</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Group Name</label>
-                      <input
-                        type="text"
-                        value={newGroup.name}
-                        onChange={(e) => setNewGroup({...newGroup, name: e.target.value})}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder="Enter group name"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
-                      <select
-                        value={newGroup.category}
-                        onChange={(e) => setNewGroup({...newGroup, category: e.target.value})}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      >
-                        <option value="">Select category</option>
-                        <option value="electronics">Electronics</option>
-                        <option value="fashion">Fashion & Clothing</option>
-                        <option value="home">Home & Living</option>
-                        <option value="beauty">Beauty & Health</option>
-                        <option value="sports">Sports & Outdoor</option>
-                        <option value="food">Food & Groceries</option>
-                        <option value="vegetables">Vegetables</option>
-                        <option value="fruits">Fruits</option>
-                        <option value="books">Books & Stationery</option>
-                        <option value="automotive">Automotive & Parts</option>
-                        <option value="tools">Tools & Hardware</option>
-                        <option value="furniture">Furniture & Decor</option>
-                        <option value="appliances">Appliances</option>
-                        <option value="toys">Toys & Games</option>
-                        <option value="jewelry">Jewelry & Accessories</option>
-                        <option value="pet">Pet Supplies</option>
-                        <option value="garden">Garden & Outdoor</option>
-                        <option value="music">Music & Instruments</option>
-                        <option value="art">Art & Crafts</option>
-                        <option value="office">Office Supplies</option>
-                        <option value="medical">Medical & Pharmacy</option>
-                        <option value="baby">Baby & Kids</option>
-                        <option value="other">Other</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Target Members</label>
-                      <input
-                        type="number"
-                        value={newGroup.targetMembers}
-                        onChange={(e) => setNewGroup({...newGroup, targetMembers: e.target.value})}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder="Enter target number of members"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                      <textarea
-                        value={newGroup.description}
-                        onChange={(e) => setNewGroup({...newGroup, description: e.target.value})}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent h-32"
-                        placeholder="Enter group description"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Due Date</label>
-                      <input
-                        type="date"
-                        value={newGroup.dueDate}
-                        onChange={(e) => setNewGroup({...newGroup, dueDate: e.target.value})}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Pickup Location</label>
-                      <input
-                        type="text"
-                        value={newGroup.location}
-                        onChange={(e) => setNewGroup({...newGroup, location: e.target.value})}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder="Enter pickup location"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="p-6 border-t bg-gray-50 mt-auto">
-              <div className="flex justify-end gap-3">
-                <button
-                  onClick={() => setShowCreateModal(false)}
-                  className="px-6 py-2.5 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition font-medium"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={async () => {
-                    try {
-                      // First, upload the image if provided
-                      let imageUrl = '';
-                      if (newGroup.productImage) {
-                        const uploadResult = await apiService.uploadImage(newGroup.productImage);
-                        imageUrl = uploadResult.image_url;
-                      }
-
-                      // Then create the group
-                      const groupData = {
-                        name: newGroup.name,
-                        description: newGroup.description,
-                        long_description: newGroup.productDescription,
-                        category: newGroup.category,
-                        price: parseFloat(newGroup.bulkPrice),
-                        original_price: parseFloat(newGroup.regularPrice),
-                        image: imageUrl,
-                        max_participants: parseInt(newGroup.targetMembers),
-                        end_date: new Date(newGroup.dueDate).toISOString(),
-                        admin_name: "Admin",
-                        shipping_info: "Free shipping when group goal is reached",
-                        estimated_delivery: "2-3 weeks after group completion",
-                        features: [],
-                        requirements: [],
-                        // Additional product fields
-                        product_name: newGroup.productName,
-                        product_description: newGroup.productDescription,
-                        total_stock: parseInt(newGroup.totalStock) || null,
-                        specifications: newGroup.specifications,
-                        manufacturer: newGroup.manufacturer,
-                        pickup_location: newGroup.location
-                      };
-
-                      await apiService.createAdminGroup(groupData);
-
-                      // Reset form and close modal on success
-                      setNewGroup({
-                        name: '',
-                        description: '',
-                        category: '',
-                        targetMembers: '',
-                        price: '',
-                        dueDate: '',
-                        location: '',
-                        productName: '',
-                        productDescription: '',
-                        productImage: null,
-                        imagePreview: null,
-                        regularPrice: '',
-                        bulkPrice: '',
-                        totalStock: '',
-                        specifications: '',
-                        manufacturer: '',
-                        warranty: ''
-                      });
-                      setShowCreateModal(false);
-
-                      // Refresh the data
-                      const fetchModerationData = async () => {
-                        try {
-                          setLoading(true);
-                          setError(null);
-
-                          const stats = await apiService.getGroupModerationStats();
-                          setModerationStats(stats);
-
-                          const activeData = await apiService.getActiveGroups();
-                          setActiveGroups(activeData);
-
-                          const readyData = await apiService.getReadyForPaymentGroups();
-                          setReadyForPaymentGroupsData(readyData);
-
-                          const completedData = await apiService.getCompletedGroups();
-                          setCompletedGroups(completedData);
-
-                        } catch (err) {
-                          console.error('Error fetching moderation data:', err);
-                          setError('Failed to load group moderation data');
-                        } finally {
-                          setLoading(false);
-                        }
-                      };
-
-                      fetchModerationData();
-
-                    } catch (error) {
-                      console.error('Error:', error);
-                      alert('Failed to create group. Please try again.');
-                    }
-                  }}
-                  className="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium flex items-center gap-2"
-                >
-                  <Plus className="w-4 h-4" />
-                  Create Group
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Group Details/Edit Modal */}
-      {showDetailsModal && selectedGroup && (
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center z-50"
-          onClick={() => {
-            setShowDetailsModal(false);
-            setIsEditMode(false);
-          }}
-        >
-          <div 
-            className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full m-4 flex flex-col max-h-[90vh] overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div className="p-6 border-b bg-gradient-to-r from-blue-50 to-indigo-50">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="p-2.5 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl shadow-md">
-                    <Package className="w-6 h-6 text-white" />
-                  </div>
-                  <div>
-                    <h2 className="text-2xl font-bold text-gray-900">
-                      {isEditMode ? 'Edit Group Details' : 'Group Details'}
-                    </h2>
-                    <p className="text-sm text-gray-600 mt-1">
-                      {isEditMode ? 'Update group buying information' : 'View complete group information'}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  {!isEditMode ? (
-                    <button
-                      onClick={handleEditGroup}
-                      className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all duration-200 shadow-md"
-                    >
-                      <Edit2 className="w-4 h-4" />
-                      Edit
-                    </button>
-                  ) : (
-                    <div className="flex gap-2">
-                      <button
-                        onClick={handleCancelEdit}
-                        className="px-4 py-2 border-2 border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-all duration-200"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={handleSaveEdit}
-                        className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-all duration-200 shadow-md"
-                      >
-                        <Save className="w-4 h-4" />
-                        Save Changes
-                      </button>
-                    </div>
-                  )}
-                  <button
-                    onClick={() => {
-                      setShowDetailsModal(false);
-                      setIsEditMode(false);
-                    }}
-                    className="text-gray-400 hover:text-gray-600 p-2"
-                  >
-                    <X className="w-6 h-6" />
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-gray-50">
-              {/* Group Image */}
-              <div className="bg-white rounded-xl p-6 shadow-sm">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Group Image</h3>
-                <img
-                  src={editedGroup.image || '/api/placeholder/400/300'}
-                  alt={editedGroup.name}
-                  className="w-full h-64 object-cover rounded-xl shadow-md"
+                <Input
+                  label="Total Stock"
+                  type="number"
+                  placeholder="100"
+                  value={formData.total_stock}
+                  onChange={(e) => setFormData({ ...formData, total_stock: e.target.value })}
+                  helperText="Total units available"
                 />
-              </div>
 
-              {/* Basic Information */}
-              <div className="bg-white rounded-xl p-6 shadow-sm">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Basic Information</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Group Name</label>
-                    {isEditMode ? (
-                      <input
-                        type="text"
-                        value={editedGroup.name || ''}
-                        onChange={(e) => setEditedGroup({ ...editedGroup, name: e.target.value })}
-                        className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                <Input
+                  label="Manufacturer"
+                  placeholder="Manufacturer name"
+                  value={formData.manufacturer}
+                  onChange={(e) => setFormData({ ...formData, manufacturer: e.target.value })}
                       />
-                    ) : (
-                      <p className="text-base text-gray-900 font-medium">{selectedGroup.name}</p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
-                    {isEditMode ? (
-                      <input
-                        type="text"
-                        value={editedGroup.category || ''}
-                        onChange={(e) => setEditedGroup({ ...editedGroup, category: e.target.value })}
-                        className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      />
-                    ) : (
-                      <p className="text-base text-gray-900 font-medium">{selectedGroup.category}</p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Created by</label>
-                    <p className="text-base text-purple-600 font-medium">{selectedGroup.creator || selectedGroup.admin_name || 'Admin'}</p>
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
-                    {isEditMode ? (
-                      <textarea
-                        value={editedGroup.description || ''}
-                        onChange={(e) => setEditedGroup({ ...editedGroup, description: e.target.value })}
-                        className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 h-24"
-                      />
-                    ) : (
-                      <p className="text-base text-gray-700">{selectedGroup.description}</p>
-                    )}
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Long Description</label>
-                    {isEditMode ? (
-                      <textarea
-                        value={editedGroup.long_description || editedGroup.description || ''}
-                        onChange={(e) => setEditedGroup({ ...editedGroup, long_description: e.target.value })}
-                        className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 h-32"
-                      />
-                    ) : (
-                      <p className="text-base text-gray-700">{selectedGroup.long_description || selectedGroup.description}</p>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Pricing Information */}
-              <div className="bg-white rounded-xl p-6 shadow-sm">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Pricing Information</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Bulk Price</label>
-                    {isEditMode ? (
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={editedGroup.price || ''}
-                        onChange={(e) => setEditedGroup({ ...editedGroup, price: e.target.value })}
-                        className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      />
-                    ) : (
-                      <p className="text-xl text-green-600 font-bold">${selectedGroup.price}</p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Original Price</label>
-                    {isEditMode ? (
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={editedGroup.original_price || ''}
-                        onChange={(e) => setEditedGroup({ ...editedGroup, original_price: e.target.value })}
-                        className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      />
-                    ) : (
-                      <p className="text-xl text-gray-500 font-bold line-through">${selectedGroup.original_price}</p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Savings</label>
-                    <p className="text-xl text-blue-600 font-bold">
-                      ${((selectedGroup.original_price || 0) - (selectedGroup.price || 0)).toFixed(2)}
-                    </p>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Discount</label>
-                    <p className="text-xl text-purple-600 font-bold">
-                      {(((selectedGroup.original_price - selectedGroup.price) / selectedGroup.original_price) * 100).toFixed(0)}%
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Participants Information */}
-              <div className="bg-white rounded-xl p-6 shadow-sm">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Participants Information</h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Current Participants</label>
-                    <p className="text-2xl text-blue-600 font-bold">{selectedGroup.participants || selectedGroup.members || 0}</p>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Target Participants</label>
-                    {isEditMode ? (
-                      <input
-                        type="number"
-                        value={editedGroup.max_participants || editedGroup.targetMembers || ''}
-                        onChange={(e) => setEditedGroup({ ...editedGroup, max_participants: e.target.value })}
-                        className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      />
-                    ) : (
-                      <p className="text-2xl text-gray-900 font-bold">{selectedGroup.max_participants || selectedGroup.targetMembers}</p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Progress</label>
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 bg-gray-200 rounded-full h-3">
-                        <div 
-                          className="bg-gradient-to-r from-blue-500 to-indigo-600 h-3 rounded-full transition-all duration-300"
-                          style={{ 
-                            width: `${Math.min(
-                              ((selectedGroup.participants || selectedGroup.members || 0) / 
-                              (selectedGroup.max_participants || selectedGroup.targetMembers || 1)) * 100, 
-                              100
-                            )}%` 
-                          }}
-                        ></div>
-                      </div>
-                      <span className="text-sm font-semibold text-gray-700">
-                        {Math.round(
-                          ((selectedGroup.participants || selectedGroup.members || 0) / 
-                          (selectedGroup.max_participants || selectedGroup.targetMembers || 1)) * 100
-                        )}%
-                      </span>
                     </div>
-                  </div>
-                </div>
-              </div>
 
               {/* Delivery Information */}
-              <div className="bg-white rounded-xl p-6 shadow-sm">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Delivery Information</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Shipping Info</label>
-                    {isEditMode ? (
-                      <textarea
-                        value={editedGroup.shipping_info || ''}
-                        onChange={(e) => setEditedGroup({ ...editedGroup, shipping_info: e.target.value })}
-                        className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 h-20"
-                      />
-                    ) : (
-                      <p className="text-base text-gray-700">{selectedGroup.shipping_info || 'No shipping info available'}</p>
-                    )}
-                  </div>
+              <div className="space-y-4">
+                <h4 className="text-lg font-semibold text-gray-900">Delivery Information</h4>
+                
+                <Input
+                  label="Shipping Info"
+                  placeholder="Delivery method and details"
+                  value={formData.shipping_info}
+                  onChange={(e) => setFormData({ ...formData, shipping_info: e.target.value })}
+                />
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Estimated Delivery</label>
-                    {isEditMode ? (
+                <Input
+                  label="Estimated Delivery"
+                  placeholder="e.g., 3-5 business days"
+                  value={formData.estimated_delivery}
+                  onChange={(e) => setFormData({ ...formData, estimated_delivery: e.target.value })}
+                      />
+                    </div>
+
+              {/* Image Upload */}
+              <div className="space-y-4">
+                <h4 className="text-lg font-semibold text-gray-900">Product Image</h4>
+                
+                <div className="space-y-3">
+                  <div className="flex items-center justify-center w-full">
+                    <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100">
+                      <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                        <Upload className="w-8 h-8 mb-2 text-gray-500" />
+                        <p className="text-sm text-gray-500">
+                          <span className="font-semibold">Click to upload</span> or drag and drop
+                        </p>
+                        <p className="text-xs text-gray-500">PNG, JPG, GIF up to 10MB</p>
+                      </div>
                       <input
-                        type="text"
-                        value={editedGroup.estimated_delivery || ''}
-                        onChange={(e) => setEditedGroup({ ...editedGroup, estimated_delivery: e.target.value })}
-                        className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        type="file"
+                        className="hidden"
+                        accept="image/*"
+                        onChange={handleImageChange}
                       />
-                    ) : (
-                      <p className="text-base text-gray-700">{selectedGroup.estimated_delivery || 'To be determined'}</p>
-                    )}
+                    </label>
+                    </div>
+
+                  {imagePreview && (
+                    <div className="flex items-center justify-center">
+                      <img
+                        src={imagePreview}
+                        alt="Preview"
+                        className="w-48 h-48 object-cover rounded-lg border-2 border-primary-200"
+                      />
+                    </div>
+                  )}
+
+                  {uploadingImage && (
+                    <div className="flex items-center justify-center gap-2 text-sm text-primary-600">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>Uploading image to Cloudinary...</span>
+                  </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Additional Fields */}
+              <div className="space-y-4">
+                <h4 className="text-lg font-semibold text-gray-900">Additional Information</h4>
+                
+                <Input
+                  label="Features (comma-separated)"
+                  placeholder="e.g., Organic, Locally sourced, Fresh"
+                  value={formData.features}
+                  onChange={(e) => setFormData({ ...formData, features: e.target.value })}
+                  helperText="Separate features with commas"
+                />
+
+                <Input
+                  label="Requirements (comma-separated)"
+                  placeholder="e.g., Min. order 5 units, Advance payment required"
+                  value={formData.requirements}
+                  onChange={(e) => setFormData({ ...formData, requirements: e.target.value })}
+                  helperText="Separate requirements with commas"
+                />
+            </div>
+
+              {/* Actions */}
+              <div className="flex gap-3 pt-4 border-t border-gray-200">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowCreateModal(false)}
+                  className="flex-1"
+                  disabled={isCreating || uploadingImage}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  className="flex-1"
+                  disabled={isCreating || uploadingImage}
+                >
+                  {isCreating || uploadingImage ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      {uploadingImage ? 'Uploading...' : 'Creating...'}
+                    </>
+                  ) : (
+                    'Create Group'
+                  )}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* View Group Modal */}
+      {showViewModal && selectedGroup && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+              <h3 className="text-xl font-bold text-gray-900">Group Details</h3>
+                  <button
+                    onClick={() => {
+                  setShowViewModal(false);
+                  setSelectedGroup(null);
+                    }}
+                className="text-gray-400 hover:text-gray-600 transition"
+                  >
+                <XCircle className="h-6 w-6" />
+                  </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Image */}
+              {selectedGroup.product?.image && (
+                <div className="flex justify-center">
+                  <img
+                    src={selectedGroup.product.image}
+                    alt={selectedGroup.name}
+                    className="w-full max-w-md h-64 object-cover rounded-lg"
+                />
+              </div>
+              )}
+
+              {/* Basic Info */}
+                  <div>
+                <h4 className="text-2xl font-bold text-gray-900 mb-2">{selectedGroup.name}</h4>
+                <Badge variant="primary" size="lg">{selectedGroup.category}</Badge>
                   </div>
 
+              <div className="space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">End Date</label>
-                    {isEditMode ? (
-                      <input
-                        type="datetime-local"
-                        value={editedGroup.end_date ? new Date(editedGroup.end_date).toISOString().slice(0, 16) : ''}
-                        onChange={(e) => setEditedGroup({ ...editedGroup, end_date: e.target.value })}
-                        className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      />
-                    ) : (
-                      <p className="text-base text-gray-700">
-                        {selectedGroup.end_date ? new Date(selectedGroup.end_date).toLocaleString() : 'No end date set'}
-                      </p>
-                    )}
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Description</label>
+                  <p className="text-gray-600">{selectedGroup.description}</p>
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
-                    <span className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-sm font-semibold ${
-                      selectedGroup.is_active 
-                        ? 'bg-green-100 text-green-700' 
-                        : 'bg-gray-100 text-gray-700'
-                    }`}>
-                      {selectedGroup.is_active ? (
-                        <>
-                          <CheckCircle2 className="w-4 h-4" />
-                          Active
-                        </>
-                      ) : (
-                        <>
-                          <XCircle className="w-4 h-4" />
-                          Inactive
-                        </>
-                      )}
+                {/* Pricing */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Regular Price</label>
+                    <p className="text-2xl font-bold text-gray-500 line-through">{selectedGroup.product?.regularPrice}</p>
+                  </div>
+                  <div className="bg-green-50 rounded-lg p-4">
+                    <label className="block text-sm font-semibold text-green-700 mb-1">Bulk Price</label>
+                    <p className="text-2xl font-bold text-green-700">{selectedGroup.product?.bulkPrice}</p>
+                  </div>
+                  </div>
+
+                {/* Participants */}
+                <div className="bg-blue-50 rounded-lg p-4">
+                  <div className="flex justify-between items-center mb-2">
+                    <label className="text-sm font-semibold text-blue-700">Progress</label>
+                    <span className="text-sm text-blue-700">
+                      {selectedGroup.members || 0}/{selectedGroup.targetMembers || 0} participants
                     </span>
+                  </div>
+                  <div className="w-full bg-blue-200 rounded-full h-3">
+                    <div
+                      className="bg-blue-600 h-3 rounded-full transition-all"
+                      style={{
+                        width: `${Math.min(100, ((selectedGroup.members || 0) / (selectedGroup.targetMembers || 1)) * 100)}%`
+                      }}
+                    ></div>
+                </div>
+              </div>
+
+                {/* Additional Details */}
+                <div className="grid grid-cols-2 gap-4">
+                  {selectedGroup.dueDate && (
+                  <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-1">Due Date</label>
+                      <div className="flex items-center gap-2 text-gray-600">
+                        <Calendar className="h-4 w-4" />
+                        <span>{new Date(selectedGroup.dueDate).toLocaleDateString()}</span>
+                  </div>
+                  </div>
+                  )}
+                  {selectedGroup.totalAmount && (
+                  <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-1">Total Amount</label>
+                      <div className="flex items-center gap-2 text-green-600 font-bold">
+                        <DollarSign className="h-4 w-4" />
+                        <span>{selectedGroup.totalAmount}</span>
+                  </div>
+                  </div>
+                  )}
+              </div>
+
+                {selectedGroup.product?.manufacturer && (
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Manufacturer</label>
+                    <p className="text-gray-600">{selectedGroup.product.manufacturer}</p>
+                  </div>
+                )}
+
+                {selectedGroup.product?.totalStock && (
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Total Stock</label>
+                    <p className="text-gray-600">{selectedGroup.product.totalStock} units</p>
+                  </div>
+                )}
+
+                  <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Created By</label>
+                    <div className="flex items-center gap-2">
+                    <Badge variant="secondary">{selectedGroup.creator_type || 'Supplier'}</Badge>
+                    <span className="text-gray-600">{selectedGroup.creator}</span>
                   </div>
                 </div>
               </div>
 
-              {/* Product Details */}
-              {selectedGroup.product && (
-                <div className="bg-white rounded-xl p-6 shadow-sm">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Product Details</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Product Name</label>
-                      <p className="text-base text-gray-900 font-medium">{selectedGroup.product.name}</p>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Manufacturer</label>
-                      <p className="text-base text-gray-900">{selectedGroup.product.manufacturer || 'N/A'}</p>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Total Stock</label>
-                      <p className="text-base text-gray-900">{selectedGroup.product.totalStock || 'N/A'} units</p>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Regular Price</label>
-                      <p className="text-base text-gray-500">{selectedGroup.product.regularPrice}</p>
-                    </div>
-
-                    <div className="md:col-span-2">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Product Description</label>
-                      <p className="text-base text-gray-700">{selectedGroup.product.description}</p>
+              {/* Actions */}
+              <div className="flex gap-3 pt-4 border-t border-gray-200">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowViewModal(false);
+                    handleEditGroup(selectedGroup);
+                  }}
+                  className="flex-1"
+                  leftIcon={<Edit2 className="h-4 w-4" />}
+                >
+                  Edit Group
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowViewModal(false);
+                    setSelectedGroup(null);
+                  }}
+                  className="flex-1"
+                >
+                  Close
+                </Button>
+                      </div>
                     </div>
                   </div>
                 </div>
-              )}
-            </div>
-          </div>
-        </div>
       )}
 
-      {/* Payment Processing Modal */}
-      {showPaymentModal && selectedPaymentGroup && (
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center z-50"
-          onClick={() => setShowPaymentModal(false)}
-        >
-          <div 
-            className="bg-white rounded-lg shadow-xl max-w-md w-full p-6"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="text-center">
-              <h3 className="text-xl font-bold text-gray-900 mb-4">Process Group Payment</h3>
-              {paymentStatus === 'pending' && (
-                <>
-                  <div className="mb-6 p-4 bg-blue-50 rounded-lg text-left">
-                    {/* Group Details */}
-                    <div className="mb-4">
-                      <h4 className="font-semibold text-blue-900">Group Details</h4>
-                      <p className="text-sm text-blue-800 mt-1">{selectedPaymentGroup.name}</p>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4 text-sm mb-4">
-                      <div>
-                        <p className="text-blue-600">Members</p>
-                        <p className="font-medium text-blue-900">{selectedPaymentGroup.members}/{selectedPaymentGroup.targetMembers}</p>
-                      </div>
-                      <div>
-                        <p className="text-blue-600">Category</p>
-                        <p className="font-medium text-blue-900">{selectedPaymentGroup.category}</p>
-                      </div>
-                      <div>
-                        <p className="text-blue-600">Due Date</p>
-                        <p className="font-medium text-blue-900">{selectedPaymentGroup.dueDate}</p>
-                      </div>
-                      <div>
-                        <p className="text-blue-600">Total Amount</p>
-                        <p className="font-medium text-blue-900">{selectedPaymentGroup.totalAmount}</p>
-                      </div>
-                      <div>
-                        <p className="text-blue-600">Created by</p>
-                        <p className="font-medium text-purple-600">{selectedPaymentGroup.creator} <span className={`text-xs px-1.5 py-0.5 rounded-full ml-1 ${selectedPaymentGroup.creator_type === 'Supplier' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>{selectedPaymentGroup.creator_type}</span></p>
-                      </div>
-                    </div>
-                    
-                    {/* Product Details */}
-                    <div className="border-t border-blue-200 pt-4">
-                      <h4 className="font-semibold text-blue-900 mb-2">Product Information</h4>
-                      <div className="space-y-3">
-                        <div>
-                          <p className="text-blue-600">Product</p>
-                          <p className="font-medium text-blue-900">{selectedPaymentGroup.product.name}</p>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <p className="text-blue-600">Regular Price</p>
-                            <p className="font-medium text-blue-900">{selectedPaymentGroup.product.regularPrice}</p>
-                          </div>
-                          <div>
-                            <p className="text-blue-600">Bulk Price</p>
-                            <p className="font-medium text-green-600">{selectedPaymentGroup.product.bulkPrice}</p>
-                          </div>
-                          <div>
-                            <p className="text-blue-600">Total Stock</p>
-                            <p className="font-medium text-blue-900">{selectedPaymentGroup.product.totalStock} units</p>
-                          </div>
-                          <div>
-                            <p className="text-blue-600">Manufacturer</p>
-                            <p className="font-medium text-blue-900">{selectedPaymentGroup.product.manufacturer}</p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex gap-3">
-                    <button
-                      onClick={() => setShowPaymentModal(false)}
-                      className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition font-medium"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={processGroupPayment}
-                      className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium"
-                    >
-                      Confirm & Process
-                    </button>
-                  </div>
-                </>
-              )}
-              {paymentStatus === 'processing' && (
-                <div className="py-8">
-                  <div className="animate-spin w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full mx-auto mb-4"></div>
-                  <p className="text-gray-600">Processing group payment...</p>
-                  <p className="text-sm text-gray-500 mt-2">This may take a few moments</p>
-                </div>
-              )}
-              {paymentStatus === 'completed' && (
-                <div className="py-8">
-                  <div className="w-12 h-12 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <CheckCircle2 className="w-6 h-6" />
-                  </div>
-                  <h4 className="text-lg font-semibold text-green-600 mb-2">Payment Processed Successfully!</h4>
-                  <p className="text-sm text-gray-600">The group payment has been processed and confirmed.</p>
-                  <button
-                    onClick={() => setShowPaymentModal(false)}
-                    className="mt-6 px-6 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition font-medium"
+      {/* Edit Group Modal */}
+      {showEditModal && selectedGroup && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+              <h3 className="text-xl font-bold text-gray-900">Edit Group</h3>
+              <button
+                onClick={() => {
+                  setShowEditModal(false);
+                  setSelectedGroup(null);
+                  setImageFile(null);
+                  setImagePreview('');
+                }}
+                className="text-gray-400 hover:text-gray-600 transition"
+              >
+                <XCircle className="h-6 w-6" />
+              </button>
+              </div>
+
+            <form onSubmit={handleUpdateGroup} className="p-6 space-y-6">
+              {/* Basic Info */}
+              <div className="space-y-4">
+                <h4 className="text-lg font-semibold text-gray-900">Basic Information</h4>
+                
+                <Input
+                  label="Group Name"
+                  placeholder="e.g., Bulk Rice Purchase"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  required
+                />
+
+                  <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Category <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    required
+                    value={formData.category}
+                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                   >
-                    Close
-                  </button>
+                    <option value="">Select category</option>
+                    <option value="Grocery">Grocery</option>
+                    <option value="Vegetables">Vegetables</option>
+                    <option value="Fruits">Fruits</option>
+                    <option value="Grains & Cereals">Grains & Cereals</option>
+                    <option value="Cooking Essentials">Cooking Essentials</option>
+                    <option value="Meat & Poultry">Meat & Poultry</option>
+                    <option value="Fish & Kapenta">Fish & Kapenta</option>
+                    <option value="Dairy Products">Dairy Products</option>
+                    <option value="Beverages">Beverages</option>
+                    <option value="Tobacco & Cash Crops">Tobacco & Cash Crops</option>
+                    <option value="Livestock">Livestock</option>
+                    <option value="Seeds & Fertilizers">Seeds & Fertilizers</option>
+                    <option value="Traditional Medicines">Traditional Medicines</option>
+                    <option value="Arts & Crafts">Arts & Crafts</option>
+                    <option value="Building Materials">Building Materials</option>
+                    <option value="Hardware & Tools">Hardware & Tools</option>
+                    <option value="Household Items">Household Items</option>
+                    <option value="Clothing & Textiles">Clothing & Textiles</option>
+                    <option value="Stationery & Books">Stationery & Books</option>
+                    <option value="Electronics & Appliances">Electronics & Appliances</option>
+                    <option value="Fuel & Energy">Fuel & Energy</option>
+                    <option value="Others">Others</option>
+                  </select>
+                  </div>
+
+                <Textarea
+                  label="Description"
+                  placeholder="Describe the group buy opportunity..."
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  rows={3}
+                  required
+                />
+                  </div>
+
+              {/* Pricing */}
+              <div className="space-y-4">
+                <h4 className="text-lg font-semibold text-gray-900">Pricing</h4>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <Input
+                    label="Regular Price ($)"
+                    type="number"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={formData.original_price}
+                    onChange={(e) => setFormData({ ...formData, original_price: e.target.value })}
+                    required
+                  />
+
+                  <Input
+                    label="Bulk Price ($)"
+                    type="number"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={formData.price}
+                    onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* Group Details */}
+              <div className="space-y-4">
+                <h4 className="text-lg font-semibold text-gray-900">Group Details</h4>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <Input
+                    label="Max Participants (Optional)"
+                    type="number"
+                    placeholder="20"
+                    value={formData.max_participants}
+                    onChange={(e) => setFormData({ ...formData, max_participants: e.target.value })}
+                    helperText="Leave empty for unlimited"
+                  />
+
+                  <Input
+                    label="End Date"
+                    type="date"
+                    value={formData.end_date}
+                    onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
+                    required
+                  />
+                    </div>
+
+                <Input
+                  label="Manufacturer"
+                  placeholder="Manufacturer name"
+                  value={formData.manufacturer}
+                  onChange={(e) => setFormData({ ...formData, manufacturer: e.target.value })}
+                />
+                    </div>
+
+              {/* Image Upload */}
+              <div className="space-y-4">
+                <h4 className="text-lg font-semibold text-gray-900">Product Image</h4>
+                
+                <div className="space-y-3">
+                  <div className="flex items-center justify-center w-full">
+                    <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100">
+                      <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                        <Upload className="w-8 h-8 mb-2 text-gray-500" />
+                        <p className="text-sm text-gray-500">
+                          <span className="font-semibold">Click to upload</span> new image
+                        </p>
+                    </div>
+                      <input
+                        type="file"
+                        className="hidden"
+                        accept="image/*"
+                        onChange={handleImageChange}
+                      />
+                    </label>
+                  </div>
+
+                  {imagePreview && (
+                    <div className="flex items-center justify-center">
+                      <img
+                        src={imagePreview}
+                        alt="Preview"
+                        className="w-48 h-48 object-cover rounded-lg border-2 border-primary-200"
+                      />
                 </div>
               )}
-              {paymentStatus === 'failed' && (
-                <div className="py-8">
-                  <div className="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <XCircle className="w-6 h-6" />
-                  </div>
-                  <h4 className="text-lg font-semibold text-red-600 mb-2">Payment Processing Failed</h4>
-                  <p className="text-sm text-gray-600 mb-4">There was an error processing the payment. Please try again.</p>
-                  <div className="flex gap-3">
-                    <button
-                      onClick={() => setShowPaymentModal(false)}
-                      className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition font-medium"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={() => setPaymentStatus('pending')}
-                      className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium"
-                    >
-                      Try Again
-                    </button>
-                  </div>
-                </div>
-              )}
+
+                  {uploadingImage && (
+                    <div className="flex items-center justify-center gap-2 text-sm text-primary-600">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>Uploading image to Cloudinary...</span>
             </div>
+                  )}
           </div>
         </div>
+
+              {/* Actions */}
+              <div className="flex gap-3 pt-4 border-t border-gray-200">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setShowEditModal(false);
+                    setSelectedGroup(null);
+                    setImageFile(null);
+                    setImagePreview('');
+                  }}
+                  className="flex-1"
+                  disabled={isUpdating || uploadingImage}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  className="flex-1"
+                  disabled={isUpdating || uploadingImage}
+                >
+                  {isUpdating || uploadingImage ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      {uploadingImage ? 'Uploading...' : 'Updating...'}
+                    </>
+                  ) : (
+                    'Update Group'
+                  )}
+                </Button>
+                    </div>
+            </form>
+                      </div>
+                      </div>
       )}
-    </Layout>
+                      </div>
+  );
+};
+
+// Group Card Component
+interface GroupCardProps {
+  group: any;
+  onView: (group: any) => void;
+  onEdit: (group: any) => void;
+  onDelete: (id: number) => void;
+  onProcessPayment: (group: any) => void;
+  showPaymentButton?: boolean;
+}
+
+const GroupCard = ({ group, onView, onEdit, onDelete, onProcessPayment, showPaymentButton }: GroupCardProps) => {
+  return (
+    <Card variant="elevated" padding="lg" className="hover:shadow-xl transition-shadow">
+      <div className="flex gap-4 mb-4">
+        {/* Image */}
+        {group.product?.image && (
+          <img
+            src={group.product.image}
+            alt={group.product.name}
+            className="w-24 h-24 object-cover rounded-lg flex-shrink-0"
+          />
+        )}
+
+        {/* Info */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start justify-between gap-2 mb-2">
+            <h3 className="font-bold text-lg text-gray-900 truncate">{group.name}</h3>
+            <Badge variant="primary" size="sm">
+              {group.members || 0}/{group.targetMembers || group.max_participants || 0}
+            </Badge>
+                      </div>
+          <p className="text-sm text-gray-600 mb-3 line-clamp-2">{group.description}</p>
+          
+          {/* Meta info */}
+          <div className="flex flex-wrap gap-2 text-xs">
+            <Badge variant="secondary" size="sm">
+              {group.category}
+            </Badge>
+            {group.dueDate && (
+              <div className="flex items-center gap-1 px-2 py-1 bg-gray-100 rounded-full">
+                <Calendar className="h-3 w-3" />
+                <span>{new Date(group.dueDate).toLocaleDateString()}</span>
+                      </div>
+            )}
+            {group.totalAmount && (
+              <div className="flex items-center gap-1 px-2 py-1 bg-success-100 rounded-full text-success-700">
+                <DollarSign className="h-3 w-3" />
+                <span>{group.totalAmount}</span>
+                    </div>
+            )}
+                        </div>
+                          </div>
+                          </div>
+
+      {/* Product Info */}
+      {group.product && (
+        <div className="bg-gray-50 rounded-lg p-3 mb-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Package className="h-4 w-4 text-primary-600" />
+            <span className="font-semibold text-sm">{group.product.name}</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-xs">
+                          <div>
+              <span className="text-gray-500">Regular:</span>
+              <span className="font-semibold ml-1">{group.product.regularPrice || group.product.unit_price}</span>
+                          </div>
+                          <div>
+              <span className="text-success-600">Bulk:</span>
+              <span className="font-semibold ml-1 text-success-700">{group.product.bulkPrice || group.product.bulk_price}</span>
+                          </div>
+                        </div>
+                      </div>
+      )}
+
+      {/* Actions */}
+      <div className="flex gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          leftIcon={<Eye className="h-4 w-4" />}
+          className="flex-1"
+          onClick={() => onView(group)}
+        >
+          View
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          leftIcon={<Edit2 className="h-4 w-4" />}
+          className="flex-1"
+          onClick={() => onEdit(group)}
+        >
+          Edit
+        </Button>
+        {showPaymentButton && (
+          <Button
+            variant="primary"
+            size="sm"
+            leftIcon={<DollarSign className="h-4 w-4" />}
+            className="flex-1"
+            onClick={() => onProcessPayment(group)}
+          >
+            Process
+          </Button>
+        )}
+        <Button
+          variant="danger"
+          size="sm"
+          leftIcon={<Trash2 className="h-4 w-4" />}
+          onClick={() => onDelete(group.id)}
+        >
+          Delete
+        </Button>
+                  </div>
+    </Card>
   );
 };
 

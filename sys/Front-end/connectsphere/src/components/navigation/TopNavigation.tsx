@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { Menu, X, Home, Users, Package, Settings, BarChart3, ShoppingCart } from 'lucide-react';
+import { Menu, X, Home, Users, Package, Settings, BarChart3, ShoppingCart, Shield, QrCode, Brain } from 'lucide-react';
 import UserMenu from './UserMenu';
 import apiService from '../../services/api';
 
@@ -52,8 +52,9 @@ const TopNavigation = ({ userRole }: TopNavigationProps) => {
       return [
         { label: 'Dashboard', path: '/admin', icon: Home },
         { label: 'Users', path: '/users', icon: Users },
-        { label: 'All Groups', path: '/all-groups', icon: Package },
-        { label: 'Analytics', path: '/analytics', icon: BarChart3 },
+        { label: 'Moderation', path: '/moderation', icon: Shield },
+        { label: 'ML Analytics', path: '/admin/ml-analytics', icon: Brain },
+        { label: 'QR Scanner', path: '/admin/qr-scanner', icon: QrCode },
         { label: 'Settings', path: '/settings', icon: Settings },
       ];
     }

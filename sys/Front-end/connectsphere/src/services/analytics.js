@@ -78,7 +78,7 @@ class AnalyticsService {
       context: this.getContext()
     };
 
-    console.log('📊 Tracking event:', eventType, properties);
+    console.log('Tracking event:', eventType, properties);
     
     // Add to queue
     this.eventQueue.push(event);
@@ -118,9 +118,9 @@ class AnalyticsService {
         keepalive: true
       });
       
-      console.log(`✅ Flushed ${eventsToSend.length} analytics events`);
+      console.log(`Flushed ${eventsToSend.length} analytics events`);
     } catch (error) {
-      console.warn('❌ Failed to send analytics events:', error);
+      console.warn('Failed to send analytics events:', error);
       // Re-queue failed events (with limit)
       this.eventQueue = [...eventsToSend.slice(-5), ...this.eventQueue];
     }

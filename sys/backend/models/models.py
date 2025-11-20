@@ -54,6 +54,7 @@ class User(Base):
     # Additional preferences
     show_recommendations = Column(Boolean, default=True)
     auto_join_groups = Column(Boolean, default=True)
+    price_alerts = Column(Boolean, default=False)  # Frontend naming compatibility
     
     created_at = Column(DateTime, default=datetime.utcnow)
     
@@ -106,6 +107,12 @@ class GroupBuy(Base):
     total_quantity = Column(Integer, default=0)
     total_contributions = Column(Float, default=0.0)
     total_paid = Column(Float, default=0.0)
+    
+    # Money-based progress tracking (primary display)
+    current_amount = Column(Float, default=0.0)  # Total money collected so far
+    target_amount = Column(Float, default=0.0)  # Target amount needed
+    amount_progress = Column(Float, default=0.0)  # Percentage (0-100)
+    
     status = Column(String, default="active")  # active, completed, cancelled
     created_at = Column(DateTime, default=datetime.utcnow)
     completed_at = Column(DateTime, nullable=True)
@@ -140,6 +147,7 @@ class GroupBuy(Base):
         Index("idx_group_buys_location_status", "location_zone", "status"),
         Index("idx_group_buys_product", "product_id"),
         Index("idx_group_buys_creator", "creator_id"),
+        Index("idx_group_buys_amount_progress", "amount_progress"),
     )
 
 class Contribution(Base):
@@ -560,4 +568,11 @@ class UserProductPurchaseInfo(BaseModel):
     total_amount: float
     purchase_date: datetime
     pickup_location: str
+
+# Import analytics models after all base models are defined to avoid circular dependencies
+try:
+    from models.analytics_models import GroupPerformanceMetrics, UserGroupInteractionMatrix
+except ImportError:
+    # Analytics models may not be available in all configurations
+    pass
 

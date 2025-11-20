@@ -58,7 +58,7 @@ const TraderDashboard = () => {
       
       <PageContainer>
         <PageHeader
-          title="Recommended For You"
+          title="Recommendations"
           description="Personalized group buys based on your interests - Save up to 40%"
           breadcrumbs={[
             { label: 'Home' }
@@ -118,14 +118,12 @@ const TraderDashboard = () => {
                 >
                   {/* Product Image */}
                   <div className="relative h-48 bg-gray-100 flex items-center justify-center">
-                    {product.product_image_url ? (
+                    {product.product_image_url && (
                       <img 
                         src={product.product_image_url} 
                         alt={product.product_name} 
                         className="h-full w-full object-cover" 
                       />
-                    ) : (
-                      <span className="text-5xl text-gray-400">📦</span>
                     )}
                     
                     {/* Badges */}
@@ -182,13 +180,32 @@ const TraderDashboard = () => {
                       >
                         View
                       </Button>
-                      <Button
-                        size="sm"
-                        onClick={() => handleJoinGroup(product)}
-                        fullWidth
-                      >
-                        Join Group
-                      </Button>
+                      {product.joined ? (
+                        <Button
+                          size="sm"
+                          variant="success"
+                          disabled
+                          fullWidth
+                        >
+                          Joined
+                        </Button>
+                      ) : (product.current_amount || 0) >= (product.target_amount || 1) ? (
+                        <Button
+                          size="sm"
+                          disabled
+                          fullWidth
+                        >
+                          Full
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          onClick={() => handleJoinGroup(product)}
+                          fullWidth
+                        >
+                          Join Group
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </Card>

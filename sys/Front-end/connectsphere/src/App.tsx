@@ -13,6 +13,7 @@ const SupplierLoginPage = lazy(() => import('./pages/SupplierLoginPage'));
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
 const TraderDashboard = lazy(() => import('./pages/TraderDashboard'));
 const SupplierDashboard = lazy(() => import('./pages/SupplierDashboard'));
+const QRScanner = lazy(() => import('./pages/QRScanner'));
 const GroupList = lazy(() => import('./pages/GroupList'));
 const AllGroups = lazy(() => import('./pages/AllGroups'));
 const GroupDetail = lazy(() => import('./pages/GroupDetail'));
@@ -21,6 +22,7 @@ const GroupModeration = lazy(() => import('./pages/GroupModeration'));
 const Users = lazy(() => import('./pages/Users'));
 const SystemSettings = lazy(() => import('./pages/SystemSettings'));
 const MLBenchmarking = lazy(() => import('./pages/admin/MLBenchmarking'));
+const MLAnalytics = lazy(() => import('./pages/admin/MLAnalytics'));
 const PaymentSuccess = lazy(() => import('./pages/PaymentSuccess'));
 const PaymentFailure = lazy(() => import('./pages/PaymentFailure'));
 const PaymentPage = lazy(() => import('./pages/PaymentPage'));
@@ -107,6 +109,12 @@ function App() {
           <Route path="/admin" element={
             <MainLayout>
               <AdminDashboard />
+            </MainLayout>
+          } />
+
+          <Route path="/admin/qr-scanner" element={
+            <MainLayout>
+              <QRScanner />
             </MainLayout>
           } />
 
@@ -203,6 +211,12 @@ function App() {
           <Route path="/admin/ml-benchmarking" element={
             <MainLayout>
               <MLBenchmarking />
+            </MainLayout>
+          } />
+
+          <Route path="/admin/ml-analytics" element={
+            <MainLayout>
+              <MLAnalytics />
             </MainLayout>
           } />
 

@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Home, ShoppingCart, Package } from 'lucide-react';
+import { Home, ShoppingCart, Package, User, Settings, Shield, QrCode, Brain } from 'lucide-react';
 
 interface NavItem {
   label: string;
@@ -19,8 +19,10 @@ const MobileBottomNav = ({ userRole = 'trader' }: MobileBottomNavProps) => {
       return [
         { label: 'Dashboard', path: '/admin', icon: Home },
         { label: 'Users', path: '/users', icon: User },
-        { label: 'Groups', path: '/all-groups', icon: Package },
-        { label: 'Settings', path: '/settings', icon: User },
+        { label: 'Moderation', path: '/moderation', icon: Shield },
+        { label: 'ML', path: '/admin/ml-analytics', icon: Brain },
+        { label: 'QR Scanner', path: '/admin/qr-scanner', icon: QrCode },
+        { label: 'Settings', path: '/settings', icon: Settings },
       ];
     }
 
@@ -48,7 +50,7 @@ const MobileBottomNav = ({ userRole = 'trader' }: MobileBottomNavProps) => {
 
   return (
     <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] safe-area-pb">
-      <div className="grid grid-cols-3 h-16">
+      <div className={`grid h-16 ${userRole === 'admin' ? 'grid-cols-6' : 'grid-cols-3'}`}>
         {navItems.map((item) => {
           const Icon = item.icon;
           const active = isActive(item.path);

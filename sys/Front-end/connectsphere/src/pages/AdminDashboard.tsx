@@ -35,16 +35,43 @@ export default function AdminDashboard() {
         setLoading(true);
         setError(null);
         
-        const [metricsData, revenueData] = await Promise.all([
-          apiService.get('/api/admin/dashboard/metrics'),
-          apiService.get('/api/admin/analytics/revenue')
-        ]);
+        console.log('Fetching admin dashboard data...');
         
-        setMetrics(metricsData);
-        setChartData(revenueData);
-      } catch (err) {
+        // Fetch dashboard data from the correct backend endpoint
+        const dashboardData = await apiService.get('/api/admin/dashboard');
+        
+        console.log('Dashboard data received:', dashboardData);
+        
+        // Map backend response to frontend interface
+        const mappedMetrics: AdminMetrics = {
+          total_users: dashboardData.total_users || 0,
+          active_groups: dashboardData.active_group_buys || 0,
+          total_revenue: dashboardData.total_revenue || 0,
+          pending_orders: 0 // TODO: Add pending orders to backend
+        };
+        
+        console.log('Mapped metrics:', mappedMetrics);
+        
+        setMetrics(mappedMetrics);
+        
+        // Generate mock chart data for now
+        // TODO: Add proper revenue analytics endpoint to backend
+        setChartData([
+          { month: 'Jan', revenue: 4000 },
+          { month: 'Feb', revenue: 3000 },
+          { month: 'Mar', revenue: 5000 },
+          { month: 'Apr', revenue: 4500 },
+          { month: 'May', revenue: 6000 },
+          { month: 'Jun', revenue: 5500 },
+        ]);
+      } catch (err: any) {
         console.error('Failed to fetch dashboard data:', err);
-        setError('Failed to load dashboard data. Please try again.');
+        console.error('Error details:', {
+          message: err.message,
+          status: err.status,
+          details: err.details
+        });
+        setError(`Failed to load dashboard data: ${err.message || 'Unknown error'}`);
       } finally {
         setLoading(false);
       }
@@ -67,9 +94,9 @@ export default function AdminDashboard() {
       <PageContainer>
         <PageHeader
           title="Admin Dashboard"
-          description="Monitor platform activity and manage operations"
+          description="Monitor platform activity and manage operations (ADMIN ONLY)"
           breadcrumbs={[
-            { label: 'Home' }
+            { label: 'Admin Home' }
           ]}
           actions={
             <Button

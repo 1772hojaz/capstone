@@ -72,7 +72,7 @@ const AnalyticsDashboard = () => {
           ))
         ) : (
           <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-            <p className="text-green-700">✅ No active alerts</p>
+            <p className="text-green-700">No active alerts</p>
           </div>
         )}
       </div>

@@ -22,7 +22,7 @@ class GroupResponse(BaseModel):
     id: int
     name: str
     price: float
-    image: str
+    image_url: str
     description: str
     participants: int
     moq: Optional[int] = None
@@ -58,7 +58,7 @@ class GroupDetailResponse(BaseModel):
     name: str
     price: float
     originalPrice: float
-    image: str
+    image_url: str
     description: str
     longDescription: str
     participants: int
@@ -79,6 +79,9 @@ class GroupDetailResponse(BaseModel):
     product: ProductInfo
     progressPercentage: Optional[float] = None
     remainingNeeded: Optional[int] = None
+    current_amount: Optional[float] = None
+    target_amount: Optional[float] = None
+    amount_progress: Optional[float] = None
 
 class GroupCreateRequest(BaseModel):
     name: str
@@ -86,7 +89,7 @@ class GroupCreateRequest(BaseModel):
     category: str
     price: float
     originalPrice: float
-    image: str
+    image_url: str
     maxParticipants: int
     endDate: str
     longDescription: str
@@ -460,6 +463,8 @@ async def get_my_groups(
                 group_data = {
                     "id": group_buy.id,
                     "name": group_buy.product.name,
+                    "product_name": group_buy.product.name,  # Add for frontend compatibility
+                    "product_image_url": group_buy.product.image_url,  # Add for frontend compatibility
                     "description": group_buy.product.description or f"Group buy for {group_buy.product.name}",
                     "price": f"${group_buy.product.bulk_price:.2f}",
                     "originalPrice": f"${group_buy.product.unit_price:.2f}",
@@ -486,6 +491,11 @@ async def get_my_groups(
                     "category": group_buy.product.category or "General",
                     "endDate": group_buy.deadline.strftime("%Y-%m-%dT%H:%M:%SZ") if group_buy.deadline else None,
                     "quantity": contrib.quantity,  # Add user's quantity
+                    "total_paid": round(contrib.paid_amount or 0, 2),  # User's contribution amount
+                    # Money tracking (primary)
+                    "current_amount": round(group_buy.current_amount, 2),
+                    "target_amount": round(group_buy.target_amount, 2),
+                    "amount_progress": round(group_buy.amount_progress, 1),
                     # Supplier workflow fields
                     "supplierStatus": group_buy.supplier_status,
                     "supplierResponseAt": group_buy.supplier_response_at.isoformat() if group_buy.supplier_response_at else None,
@@ -532,6 +542,8 @@ async def get_my_groups(
                 group_data = {
                     "id": admin_group.id,
                     "name": admin_group.name,
+                    "product_name": admin_group.name,  # Add for frontend compatibility
+                    "product_image_url": admin_group.image,  # Add for frontend compatibility
                     "description": admin_group.description or f"Admin group buy for {admin_group.name}",
                     "price": f"${admin_group.price:.2f}",
                     "originalPrice": f"${admin_group.original_price:.2f}",
@@ -557,7 +569,8 @@ async def get_my_groups(
                     "longDescription": admin_group.long_description or admin_group.description,
                     "category": admin_group.category or "General",
                     "endDate": admin_group.end_date.strftime("%Y-%m-%dT%H:%M:%SZ") if admin_group.end_date else None,
-                    "quantity": join.quantity  # Add user's quantity
+                    "quantity": join.quantity,  # Add user's quantity
+                    "total_paid": round(join.paid_amount or admin_group.price * join.quantity, 2)  # User's contribution amount
                 }
                 groups_data.append(group_data)
         
@@ -617,7 +630,11 @@ async def get_my_groups(
                     "requirements": [f"Minimum {group_buy.product.moq} participants required"],
                     "longDescription": group_buy.product.description or f"Join this group buy to get {group_buy.product.name} at discounted bulk pricing.",
                     "category": group_buy.product.category or "General",
-                    "endDate": group_buy.deadline.strftime("%Y-%m-%dT%H:%M:%SZ") if group_buy.deadline else None
+                    "endDate": group_buy.deadline.strftime("%Y-%m-%dT%H:%M:%SZ") if group_buy.deadline else None,
+                    # Money tracking (primary)
+                    "current_amount": round(group_buy.current_amount, 2),
+                    "target_amount": round(group_buy.target_amount, 2),
+                    "amount_progress": round(group_buy.amount_progress, 1)
                 }
                 groups_data.append(group_data)
         
@@ -727,7 +744,7 @@ async def get_all_groups(
             id=group.id,
             name=group.name,
             price=group.price,
-            image=group.image,
+            image_url=group.image,
             description=group.description,
             participants=group.participants,
             moq=group.max_participants,
@@ -774,7 +791,7 @@ async def get_all_groups(
             id=group.id,
             name=group.product.name if group.product else f"Group Buy #{group.id}",
             price=group.product.bulk_price if group.product else 0,
-            image=group.product.image_url if group.product and group.product.image_url else "https://via.placeholder.com/300x200?text=Product",
+            image_url=group.product.image_url if group.product and group.product.image_url else "https://via.placeholder.com/300x200?text=Product",
             description=group.product.description if group.product else "User-created group buy",
             participants=participants_count,
             moq=group.product.moq if group.product else 10,
@@ -863,7 +880,7 @@ async def get_group_detail(
             name=admin_group.name,
             price=admin_group.price,
             originalPrice=admin_group.original_price,
-            image=admin_group.image,
+            image_url=admin_group.image,
             description=admin_group.description,
             longDescription=admin_group.long_description or admin_group.description,
             participants=admin_group.participants,
@@ -907,7 +924,7 @@ async def get_group_detail(
             name=group_buy.product.name if group_buy.product else f"Group Buy #{group_buy.id}",
             price=group_buy.product.bulk_price if group_buy.product else 0,
             originalPrice=group_buy.product.unit_price if group_buy.product else 0,
-            image=group_buy.product.image_url if group_buy.product and group_buy.product.image_url else "https://via.placeholder.com/300x200?text=Product",
+            image_url=group_buy.product.image_url if group_buy.product and group_buy.product.image_url else "https://via.placeholder.com/300x200?text=Product",
             description=group_buy.product.description if group_buy.product else "User-created group buy",
             longDescription=group_buy.product.description if group_buy.product else "Join this community group buy for quality products at bulk prices.",
             participants=participants_count,
@@ -933,7 +950,10 @@ async def get_group_detail(
                 regularPrice=group_buy.product.unit_price if group_buy.product else 0
             ),
             progressPercentage=progress_percentage,
-            remainingNeeded=remaining_needed
+            remainingNeeded=remaining_needed,
+            current_amount=round(group_buy.current_amount, 2),
+            target_amount=round(group_buy.target_amount, 2),
+            amount_progress=round(group_buy.amount_progress, 1)
         )
     
     # If neither found
@@ -1253,9 +1273,15 @@ async def join_group(
             group_buy.total_quantity += request.quantity
             group_buy.total_contributions += contribution_amount
             group_buy.total_paid += payment_amount
+            
+            # Update money tracking
+            group_buy.current_amount += payment_amount
+            # target_amount is already set at group creation
+            if group_buy.target_amount > 0:
+                group_buy.amount_progress = (group_buy.current_amount / group_buy.target_amount) * 100
 
-            # Check if group should be completed (reached MOQ)
-            if group_buy.moq_progress >= 100 and group_buy.status == "active":
+            # Check if group should be completed (reached MOQ or target amount)
+            if (group_buy.moq_progress >= 100 or group_buy.amount_progress >= 100) and group_buy.status == "active":
                 group_buy.status = "completed"
                 group_buy.completed_at = datetime.utcnow()
                 group_buy.supplier_status = "pending_supplier"
@@ -1439,6 +1465,11 @@ async def update_group_quantity(
             # Update group totals
             group_buy.total_quantity += request.quantity_increase
             group_buy.total_contributions += additional_amount
+            
+            # Update money tracking
+            group_buy.current_amount += additional_amount
+            if group_buy.target_amount > 0:
+                group_buy.amount_progress = (group_buy.current_amount / group_buy.target_amount) * 100
 
             # Create transaction record for the additional quantity
             from models.models import Transaction
@@ -1779,7 +1810,8 @@ async def create_supplier_group(
             db.add(product)
             db.flush()  # Get the product ID
 
-        # Create the GroupBuy
+        # Create the GroupBuy with money tracking
+        target_amount = product.moq * product.bulk_price
         group_buy = GroupBuy(
             product_id=product.id,
             creator_id=user.id,
@@ -1787,6 +1819,9 @@ async def create_supplier_group(
             status="active",
             total_quantity=0,
             total_contributions=0.0,
+            current_amount=0.0,
+            target_amount=target_amount,
+            amount_progress=0.0,
             location_zone=user.location_zone or "Default"
         )
 

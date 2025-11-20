@@ -46,6 +46,37 @@ class ApiService {
     return localStorage.getItem('token');
   }
 
+  // Generic HTTP methods for convenience
+  async get(endpoint, options = {}) {
+    return this.request(endpoint, {
+      method: 'GET',
+      ...options
+    });
+  }
+
+  async post(endpoint, data, options = {}) {
+    return this.request(endpoint, {
+      method: 'POST',
+      body: JSON.stringify(data),
+      ...options
+    });
+  }
+
+  async put(endpoint, data, options = {}) {
+    return this.request(endpoint, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+      ...options
+    });
+  }
+
+  async delete(endpoint, options = {}) {
+    return this.request(endpoint, {
+      method: 'DELETE',
+      ...options
+    });
+  }
+
   // Sleep helper for retry delays
   sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
@@ -432,6 +463,13 @@ class ApiService {
   }
 
 
+  async updateAdminGroup(groupId, groupData) {
+    return this.request(`/api/admin/groups/${groupId}`, {
+      method: 'PUT',
+      body: JSON.stringify(groupData),
+    });
+  }
+
   async deleteAdminGroup(groupId) {
     return this.request(`/api/admin/groups/${groupId}`, {
       method: 'DELETE',
@@ -814,53 +852,53 @@ class ApiService {
     // Connect to backend WebSocket endpoint (port 8000)
     const backendUrl = this.baseURL.replace('http://', 'ws://').replace('https://', 'wss://');
     const wsUrl = `${backendUrl}/ws/qr-updates?token=${token}`;
-    console.log('🔗 Connecting to WebSocket:', wsUrl);
+    console.log('Connecting to WebSocket:', wsUrl);
     this.websocket = new WebSocket(wsUrl);
 
     this.websocket.onopen = () => {
-      console.log('🔗 WebSocket connected for real-time QR updates');
+      console.log('WebSocket connected for real-time QR updates');
       this.websocketConnected = true;
     };
 
     this.websocket.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        console.log('📨 WebSocket message received:', data);
-        console.log('🔍 Message type:', data.type);
-        console.log('🎯 Full message data:', JSON.stringify(data, null, 2));
+        console.log('WebSocket message received:', data);
+        console.log('Message type:', data.type);
+        console.log('Full message data:', JSON.stringify(data, null, 2));
 
         // Handle QR status updates
         if (data.type === 'qr_status_update') {
-          console.log('🎯 QR status update received:', data);
-          console.log('🔄 Dispatching qrStatusUpdate event with data:', data);
+          console.log('QR status update received:', data);
+          console.log('Dispatching qrStatusUpdate event with data:', data);
           // Dispatch custom event that components can listen to
           window.dispatchEvent(new CustomEvent('qrStatusUpdate', {
             detail: data
           }));
-          console.log('✅ qrStatusUpdate event dispatched');
+          console.log('qrStatusUpdate event dispatched');
         } else {
-          console.log('⚠️ Unknown message type:', data.type);
+          console.log('Unknown message type:', data.type);
         }
       } catch (error) {
-        console.error('❌ Error parsing WebSocket message:', error);
-        console.error('❌ Raw message:', event.data);
+        console.error('Error parsing WebSocket message:', error);
+        console.error('Raw message:', event.data);
       }
     };
 
     this.websocket.onclose = () => {
-      console.log('🔌 WebSocket disconnected');
+      console.log('WebSocket disconnected');
       this.websocketConnected = false;
       // Auto-reconnect after 5 seconds
       setTimeout(() => {
         if (this.websocketConnected === false) {
-          console.log('🔄 Attempting to reconnect WebSocket...');
+          console.log('Attempting to reconnect WebSocket...');
           this.connectWebSocket(token);
         }
       }, 5000);
     };
 
     this.websocket.onerror = (error) => {
-      console.error('❌ WebSocket error:', error);
+      console.error('WebSocket error:', error);
     };
   }
 

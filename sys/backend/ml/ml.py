@@ -102,10 +102,13 @@ ALPHA, BETA, GAMMA = 0.6, 0.3, 0.1
 
 # Pydantic Models
 class MLScores(BaseModel):
-    collaborative_filtering: float
-    content_based: float
-    popularity: float
-    hybrid: float
+    collaborative_filtering: float = 0.0
+    content_based: float = 0.0
+    popularity: float = 0.0
+    hybrid: float = 0.0
+    
+    class Config:
+        extra = "allow"  # Allow additional fields for flexibility
 
 class RecommendationResponse(BaseModel):
     group_buy_id: int
@@ -594,12 +597,20 @@ def get_recommendations_for_user(user: User, db: Session) -> List[dict]:
                          if user_behavior else []
     }
     
-    # Get active group-buys in Mbare zone for category matching
+    # Get active group-buys in user's zone or all zones for category matching
+    user_location = user.location_zone or "Harare"
     active_groups = db.query(GroupBuy).filter(
-        GroupBuy.location_zone == "Mbare",
+        GroupBuy.location_zone == user_location,
         GroupBuy.status == "active",
         GroupBuy.deadline > datetime.utcnow()
     ).all()
+    
+    # If no groups in user's zone, get all active groups
+    if not active_groups:
+        active_groups = db.query(GroupBuy).filter(
+            GroupBuy.status == "active",
+            GroupBuy.deadline > datetime.utcnow()
+        ).all()
     
     if not active_groups:
         # Fallback to all AdminGroups if no Mbare GroupBuys
@@ -1815,6 +1826,88 @@ def get_user_similarity_based_recommendations(user_id: int, db: Session, limit: 
         logger.error(f"Error getting similarity-based recommendations: {str(e)}")
         return []
 
+def get_fallback_recommendations(user: User, db: Session, limit: int = 10) -> List[Dict[str, Any]]:
+    """Fallback recommendations: return all active groups for new users"""
+    try:
+        # Get user's location or default to Harare
+        user_location = user.location_zone or "Harare"
+        
+        # Get groups user has already joined
+        user_joined_group_ids = set()
+        user_contributions = db.query(Contribution.group_buy_id).filter(
+            Contribution.user_id == user.id
+        ).all()
+        user_joined_group_ids = {contrib.group_buy_id for contrib in user_contributions}
+        
+        # Get active groups in user's location first
+        active_groups = db.query(GroupBuy).filter(
+            GroupBuy.location_zone == user_location,
+            GroupBuy.status == "active",
+            GroupBuy.deadline > datetime.utcnow()
+        ).limit(limit).all()
+        
+        # If not enough groups in user's location, get from all locations
+        if len(active_groups) < limit:
+            additional_groups = db.query(GroupBuy).filter(
+                GroupBuy.location_zone != user_location,
+                GroupBuy.status == "active",
+                GroupBuy.deadline > datetime.utcnow()
+            ).limit(limit - len(active_groups)).all()
+            active_groups.extend(additional_groups)
+        
+        # Filter out groups user has already joined
+        available_groups = [g for g in active_groups if g.id not in user_joined_group_ids]
+        
+        # Format recommendations
+        recommendations = []
+        for group in available_groups[:limit]:
+            participants_count = db.query(Contribution).filter(
+                Contribution.group_buy_id == group.id
+            ).count()
+            
+            recommendations.append({
+                'group_buy_id': group.id,
+                'product_id': group.product_id,
+                'product_name': group.product.name if group.product else 'Unknown Product',
+                'product_image_url': group.product.image_url if group.product else None,
+                'unit_price': group.product.unit_price if group.product else 0,
+                'bulk_price': group.product.bulk_price if group.product else 0,
+                'moq': group.product.moq if group.product else 10,
+                'savings_factor': group.product.savings_factor if group.product else 0.1,
+                'savings': (group.product.unit_price - group.product.bulk_price) if group.product else 0,
+                'location_zone': group.location_zone,
+                'deadline': group.deadline,
+                'total_quantity': group.total_quantity,
+                'moq_progress': group.moq_progress,
+                'participants_count': participants_count,
+                'recommendation_score': 0.5,  # Default score
+                'reason': f"Popular in {group.location_zone}",
+                'ml_scores': {
+                    'collaborative_filtering': 0.0,
+                    'content_based': 0.0,
+                    'popularity': 0.5,
+                    'hybrid': 0.5
+                },
+                'description': group.product.description if group.product else "High-quality product available at bulk pricing",
+                'long_description': group.product.description if group.product else f"Join this group buy to get quality products at discounted prices.",
+                'category': group.product.category if group.product else 'General',
+                'created_at': group.created_at,
+                'admin_created': False,
+                'admin_name': f"{group.creator.full_name}" if group.creator else "Admin",
+                'discount_percentage': round((group.product.savings_factor * 100) if group.product else 10, 1),
+                'shipping_info': "Free shipping when group goal is reached",
+                'estimated_delivery': "2-3 weeks after group completion",
+                'features': ["Bulk pricing", "Community driven", "Quality guaranteed"],
+                'requirements': [f"Minimum {group.product.moq if group.product else 10} total units required"],
+                'joined': False  # Fallback recommendations only show groups user hasn't joined
+            })
+        
+        return recommendations
+        
+    except Exception as e:
+        logger.error(f"Error getting fallback recommendations: {str(e)}")
+        return []
+
 def get_hybrid_recommendations(user_id: int, db: Session, limit: int = 10) -> List[Dict[str, Any]]:
     """Get hybrid recommendations combining ML models and user similarity"""
     try:
@@ -1836,10 +1929,22 @@ def get_hybrid_recommendations(user_id: int, db: Session, limit: int = 10) -> Li
         
         # For new users or when ML fails, use similarity-based recommendations
         similarity_recommendations = get_user_similarity_based_recommendations(user_id, db, limit)
-        return similarity_recommendations
+        if similarity_recommendations:
+            return similarity_recommendations
+        
+        # Final fallback: return all active groups if no other recommendations available
+        logger.info(f"Using fallback: showing all active groups for user {user_id}")
+        return get_fallback_recommendations(user, db, limit)
         
     except Exception as e:
         logger.error(f"Error getting hybrid recommendations: {str(e)}")
+        # Last resort: return all active groups
+        try:
+            user = db.query(User).filter(User.id == user_id).first()
+            if user:
+                return get_fallback_recommendations(user, db, limit)
+        except:
+            pass
         return []
 
 # API Endpoints

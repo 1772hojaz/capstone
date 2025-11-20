@@ -178,14 +178,12 @@ export default function GroupList() {
               <Card key={group.id} variant="elevated" hoverable>
                 {/* Product Image */}
                 <div className="relative h-48 bg-gray-100 flex items-center justify-center">
-                  {group.product_image_url ? (
+                  {group.product_image_url && (
                     <img 
                       src={group.product_image_url} 
                       alt={group.product_name} 
                       className="h-full w-full object-cover" 
                     />
-                  ) : (
-                    <span className="text-5xl text-gray-400">📦</span>
                   )}
                   
                   {/* Status Badge */}
