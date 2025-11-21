@@ -7,10 +7,13 @@ logger = logging.getLogger(__name__)
 
 class FlutterwaveService:
     def __init__(self):
-        # Load credentials from environment or file
-        self.secret_key = os.getenv('FLUTTERWAVE_SECRET_KEY', 'FLWSECK_TEST-d55e0d7ae8a0e08b6d6078ba1f5094c2-X')
-        self.encryption_key = os.getenv('FLUTTERWAVE_ENCRYPTION_KEY', 'FLWSECK_TEST4ff4b95e2452')
-        self.public_key = os.getenv('FLUTTERWAVE_PUBLIC_KEY', 'FLWPUBK_TEST-9451b8a5c95b08dae2ae0366bd89a079-X')
+        # Load credentials from environment or use production defaults
+        # PUBLIC KEY = Client ID
+        self.public_key = os.getenv('FLUTTERWAVE_PUBLIC_KEY', '12a8c4c6-9bc6-4f80-9ea9-5a26842f2d53')
+        # SECRET KEY = Client Secret
+        self.secret_key = os.getenv('FLUTTERWAVE_SECRET_KEY', '6nCZym5JnoZBhmYBFhMve34qcNiIkpou')
+        # ENCRYPTION KEY
+        self.encryption_key = os.getenv('FLUTTERWAVE_ENCRYPTION_KEY', 'd5A347B9ixcJpAd6j7KCVSNKnGNNwdP1rKZLPJqp08o=')
 
         self.base_url = "https://api.flutterwave.com/v3"
         self.headers = {
@@ -54,10 +57,21 @@ class FlutterwaveService:
             else:
                 # Log full response for easier debugging (includes errors like DCC Rate messages)
                 logger.error(f"Payment initialization returned error: status={response.status_code}, body={result}")
-                return result
+                
+                # Return a properly formatted error response
+                return {
+                    "status": "error",
+                    "message": result.get("message", "Payment initialization failed"),
+                    "data": None,
+                    "error_details": result
+                }
         except requests.exceptions.RequestException as e:
             logger.error(f"Payment initialization failed: {str(e)}")
-            raise
+            return {
+                "status": "error",
+                "message": f"Network error: {str(e)}",
+                "data": None
+            }
 
     def verify_payment(self, transaction_id: str) -> Dict[str, Any]:
         """Verify a payment transaction"""

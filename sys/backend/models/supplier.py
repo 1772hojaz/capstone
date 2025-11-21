@@ -13,7 +13,7 @@ import cloudinary.api
 
 from db.database import get_db
 from models.models import User, SupplierProduct, ProductPricingTier, SupplierOrder, SupplierOrderItem, Product, GroupBuy, SupplierPickupLocation, SupplierInvoice, SupplierPayment, SupplierNotification, AdminGroup, AdminGroupJoin, Transaction
-from authentication.auth import verify_token
+from authentication.auth import verify_token, verify_supplier
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

@@ -356,6 +356,11 @@ class ApiService {
     return this.request(endpoint);
   }
 
+  // Alias for getAllGroups for consistency
+  async getGroups(params = {}) {
+    return this.getAllGroups(params);
+  }
+
   // Past groups summary
   async getPastGroupsSummary() {
     return this.request('/api/groups/past-groups-summary');

@@ -27,13 +27,15 @@ export default function AllGroups() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Check if user is admin and redirect them
+  // Check if user is admin or supplier and redirect them
   useEffect(() => {
     const checkRole = async () => {
       try {
         const user = await apiService.getCurrentUser();
         if (user?.is_admin) {
           navigate('/admin', { replace: true });
+        } else if (user?.is_supplier) {
+          navigate('/supplier/dashboard', { replace: true });
         }
       } catch (err) {
         console.error('Failed to check user role:', err);
@@ -60,7 +62,7 @@ export default function AllGroups() {
         setGroups(data || []);
         
         // Track page view
-        analyticsService.trackEvent('all_groups_viewed', {
+        analyticsService.track('all_groups_viewed', {
           count: data?.length || 0
         });
       } catch (err: any) {
@@ -308,9 +310,11 @@ export default function AllGroups() {
                           style={{ width: `${Math.min((group.current_amount || 0) / (group.target_amount || 1) * 100, 100)}%` }}
                         />
                       </div>
-                      <p className="text-xs text-gray-500 text-center">
-                        {group.participants} people joined
-                      </p>
+                      {group.participants > 0 && (
+                        <p className="text-xs text-gray-500 text-center">
+                          {group.participants} {group.participants === 1 ? 'person' : 'people'} joined
+                        </p>
+                      )}
                     </div>
 
                     {/* Actions */}
@@ -404,9 +408,11 @@ export default function AllGroups() {
                             style={{ width: `${Math.min((group.current_amount || 0) / (group.target_amount || 1) * 100, 100)}%` }}
                           />
                         </div>
-                        <p className="text-xs text-gray-500 text-center mt-1">
-                          {group.participants} people joined
-                        </p>
+                        {group.participants > 0 && (
+                          <p className="text-xs text-gray-500 text-center mt-1">
+                            {group.participants} {group.participants === 1 ? 'person' : 'people'} joined
+                          </p>
+                        )}
                       </div>
 
                       {/* Actions */}

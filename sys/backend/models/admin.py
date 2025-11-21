@@ -1215,8 +1215,9 @@ async def get_active_groups_for_moderation(
                 AdminGroupJoin.admin_group_id == group.id
             ).scalar() or 0
 
-            # Calculate total amount
-            total_amount = participant_count * group.price
+            # Calculate amounts
+            current_amount = participant_count * group.price  # How much collected so far
+            target_amount = group.max_participants * group.price  # Total target needed
 
             # Determine creator type and display name
             creator_type = "Supplier" if group.admin_name and group.admin_name != "Admin" else "Admin"
@@ -1230,7 +1231,9 @@ async def get_active_groups_for_moderation(
                 "category": group.category,
                 "members": participant_count,
                 "targetMembers": group.max_participants or 0,
-                "totalAmount": f"${total_amount:.2f}",
+                "totalAmount": f"${target_amount:.2f}",  # Show target amount, not current
+                "currentAmount": f"${current_amount:.2f}",  # Also include current amount
+                "targetAmount": f"${target_amount:.2f}",   # Explicit target amount
                 "dueDate": group.end_date.strftime("%Y-%m-%d") if group.end_date else "No deadline",
                 "description": group.description,
                 "status": "active",
@@ -1290,8 +1293,9 @@ async def get_ready_for_payment_groups(
                 AdminGroupJoin.admin_group_id == group.id
             ).scalar() or 0
 
-            # Calculate total amount
-            total_amount = total_quantity * group.price
+            # Calculate amounts
+            current_amount = total_quantity * group.price  # Amount collected
+            target_amount = group.max_participants * group.price  # Target needed
 
             # Determine creator type and display name
             creator_type = "Supplier" if group.admin_name and group.admin_name != "Admin" else "Admin"
@@ -1314,7 +1318,7 @@ async def get_ready_for_payment_groups(
                             "group_name": group.name,
                             "total_quantity": total_quantity,
                             "total_stock": group.total_stock,
-                            "total_amount": total_amount,
+                            "total_amount": current_amount,
                             "message": f"Your group '{group.name}' has reached the required quantity ({total_quantity}/{group.total_stock}) and is ready for payment processing."
                         }
 
@@ -1333,7 +1337,9 @@ async def get_ready_for_payment_groups(
                 "category": group.category,
                 "members": participant_count,
                 "targetMembers": group.max_participants or 0,
-                "totalAmount": f"${total_amount:.2f}",
+                "totalAmount": f"${target_amount:.2f}",  # Show target amount
+                "currentAmount": f"${current_amount:.2f}",  # Amount collected
+                "targetAmount": f"${target_amount:.2f}",   # Explicit target
                 "dueDate": group.end_date.strftime("%Y-%m-%d") if group.end_date else "No deadline",
                 "description": group.description,
                 "status": "ready_for_payment",
@@ -1384,8 +1390,9 @@ async def get_completed_groups(
                 AdminGroupJoin.admin_group_id == group.id
             ).scalar() or 0
 
-            # Calculate total amount
-            total_amount = participant_count * group.price
+            # Calculate amounts
+            current_amount = participant_count * group.price  # Amount collected
+            target_amount = group.max_participants * group.price  # Target needed
 
             # Determine creator type and display name
             creator_type = "Supplier" if group.admin_name and group.admin_name != "Admin" else "Admin"
@@ -1402,7 +1409,9 @@ async def get_completed_groups(
                 "category": group.category,
                 "members": participant_count,
                 "targetMembers": group.max_participants or 0,
-                "totalAmount": f"${total_amount:.2f}",
+                "totalAmount": f"${target_amount:.2f}",  # Show target amount
+                "currentAmount": f"${current_amount:.2f}",  # Amount collected
+                "targetAmount": f"${target_amount:.2f}",   # Explicit target
                 "dueDate": group.end_date.strftime("%Y-%m-%d") if group.end_date else "No deadline",
                 "description": group.description,
                 "status": "completed",

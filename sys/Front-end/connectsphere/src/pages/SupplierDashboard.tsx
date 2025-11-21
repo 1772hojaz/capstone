@@ -117,7 +117,7 @@ export default function SupplierDashboard() {
   }, []);
 
   const handleOrderAction = async (orderId: number, action: 'accept' | 'reject') => {
-    // Mock: Update order status locally
+    // Update order status locally for immediate UI feedback
     setOrders(prevOrders => 
       prevOrders.map(order => 
         order.id === orderId 
@@ -130,6 +130,9 @@ export default function SupplierDashboard() {
     if (action === 'accept') {
       setMetrics(prev => prev ? { ...prev, pending_orders: prev.pending_orders - 1 } : null);
     }
+    
+    // TODO: Add API call to update order status in backend
+    // await apiService.updateOrderStatus(orderId, action);
   };
 
   const handleViewGroup = (group: Group) => {

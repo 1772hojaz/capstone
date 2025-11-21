@@ -18,13 +18,15 @@ const TraderDashboard = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Check if user is admin and redirect them
+  // Check if user is admin or supplier and redirect them
   useEffect(() => {
     const checkRole = async () => {
       try {
         const user = await apiService.getCurrentUser();
         if (user?.is_admin) {
           navigate('/admin', { replace: true });
+        } else if (user?.is_supplier) {
+          navigate('/supplier/dashboard', { replace: true });
         }
       } catch (err) {
         console.error('Failed to check user role:', err);
@@ -159,6 +161,16 @@ const TraderDashboard = () => {
                   <div className="p-4 space-y-3">
                     <h3 className="heading-5 line-clamp-2">{product.product_name}</h3>
                     
+                    {/* Recommendation Reason - Explainability */}
+                    {product.reason && (
+                      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg px-3 py-2.5 shadow-sm">
+                        <p className="text-xs font-medium text-blue-900 flex items-start gap-2">
+                          <span className="text-blue-600 font-bold text-sm">Why:</span>
+                          <span className="flex-1 leading-relaxed">{product.reason}</span>
+                        </p>
+                      </div>
+                    )}
+                    
                     {/* Price */}
                     <div className="flex items-baseline gap-2">
                       <span className="text-2xl font-bold text-gray-900">
@@ -181,9 +193,11 @@ const TraderDashboard = () => {
                           style={{ width: `${Math.min(product.amount_progress || product.moq_progress || 0, 100)}%` }}
                         />
                       </div>
-                      <p className="text-xs text-gray-500 text-center">
-                        {product.participants_count} people joined
-                      </p>
+                      {product.participants_count > 0 && (
+                        <p className="text-xs text-gray-500 text-center">
+                          {product.participants_count} {product.participants_count === 1 ? 'person' : 'people'} joined
+                        </p>
+                      )}
                     </div>
 
                     {/* Actions */}

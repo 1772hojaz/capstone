@@ -10,12 +10,14 @@ from datetime import datetime, timedelta
 import base64
 import io
 import secrets
+import logging
 from cryptography.fernet import Fernet
 from db.database import get_db
 from models.models import User, AdminGroup, Contribution, GroupBuy, AdminGroupJoin, QRCodePickup
-from authentication.auth import verify_token
+from authentication.auth import verify_token, verify_trader, verify_supplier
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 # Pydantic Models for Front-end compatibility
 class GroupResponse(BaseModel):
@@ -45,6 +47,8 @@ class GroupResponse(BaseModel):
     status: Optional[str] = None
     orderStatus: Optional[str] = None
     joined: bool = False
+    current_amount: Optional[float] = None
+    target_amount: Optional[float] = None
 
 class ProductInfo(BaseModel):
     name: str
@@ -256,7 +260,7 @@ def get_creator_display_name(creator: User) -> str:
 @router.get("/{group_id}/qr-code")
 async def get_group_qr_code(
     group_id: int,
-    user: User = Depends(verify_token),
+    user: User = Depends(verify_trader),
     db: Session = Depends(get_db)
 ):
     """Generate and return a QR code (base64 PNG) for a user's pickup of a group-buy.
@@ -398,7 +402,7 @@ async def get_group_qr_code(
 
 @router.get("/my-groups")
 async def get_my_groups(
-    user: User = Depends(verify_token),
+    user: User = Depends(verify_trader),
     db: Session = Depends(get_db)
 ):
     """Get all groups the current user has joined"""
@@ -740,6 +744,33 @@ async def get_all_groups(
             AdminGroupJoin.user_id == current_user.id
         ).first() is not None
         
+        # Calculate money tracking for AdminGroups
+        target_amount = group.price * group.max_participants
+        # Calculate current amount from all joins
+        total_paid = db.query(AdminGroupJoin).filter(
+            AdminGroupJoin.admin_group_id == group.id
+        ).count() * group.price  # Assuming each join = 1 unit at group.price
+        current_amount = float(total_paid)
+        
+        # Calculate dynamic status based on deadline and progress
+        now = datetime.utcnow()
+        if group.end_date and group.end_date < now:
+            # Group deadline has passed
+            if group.participants >= group.max_participants:
+                group_status = "completed"
+                order_status = "Completed - Ready for fulfillment"
+            else:
+                group_status = "expired"
+                order_status = "Expired - Goal not reached"
+        elif group.participants >= group.max_participants:
+            # Goal reached, still within deadline
+            group_status = "ready_for_payment"
+            order_status = "Goal reached - Ready for payment"
+        else:
+            # Still active and accepting participants
+            group_status = "active"
+            order_status = "Open for joining"
+        
         result.append(GroupResponse(
             id=group.id,
             name=group.name,
@@ -764,16 +795,15 @@ async def get_all_groups(
             features=group.features or [],
             requirements=group.requirements or [],
             longDescription=group.long_description,
-            status="active",
-            orderStatus="Open for joining",
-            joined=joined
+            status=group_status,
+            orderStatus=order_status,
+            joined=joined,
+            current_amount=current_amount,
+            target_amount=target_amount
         ))
     
-    # Get active GroupBuy groups
-    group_buy_groups = db.query(GroupBuy).join(GroupBuy.product).filter(
-        GroupBuy.status == "active",
-        GroupBuy.deadline > datetime.utcnow()
-    ).all()
+    # Get all GroupBuy groups (not just active ones - we'll filter by status dynamically)
+    group_buy_groups = db.query(GroupBuy).join(GroupBuy.product).all()
     
     for group in group_buy_groups:
         # Calculate participants count
@@ -787,34 +817,63 @@ async def get_all_groups(
             Contribution.user_id == current_user.id
         ).first() is not None
         
-        result.append(GroupResponse(
-            id=group.id,
-            name=group.product.name if group.product else f"Group Buy #{group.id}",
-            price=group.product.bulk_price if group.product else 0,
-            image_url=group.product.image_url if group.product and group.product.image_url else "https://via.placeholder.com/300x200?text=Product",
-            description=group.product.description if group.product else "User-created group buy",
-            participants=participants_count,
-            moq=group.product.moq if group.product else 10,
-            category=group.product.category if group.product else "General",
-            created=group.created_at.isoformat(),
-            maxParticipants=None,  # GroupBuy doesn't have max participants
-            originalPrice=group.product.unit_price if group.product else 0,
-            endDate=group.deadline.isoformat(),
-            matchScore=75,  # Default match score for user-created groups
-            reason="User-created group buy",
-            adminCreated=False,
-            adminName=get_creator_display_name(group.creator),
-            savings=(group.product.unit_price - group.product.bulk_price) if group.product else 0,
-            discountPercentage=round(group.product.savings_factor * 100) if group.product else 0,
-            shippingInfo="Pickup at designated location",
-            estimatedDelivery="2-3 weeks after group completion",
-            features=["Bulk pricing", "Community driven", "Flexible quantities"],
-            requirements=[f"Minimum {group.product.moq if group.product else 10} total units required"],
-            longDescription=group.product.description if group.product else f"Join this community group buy for {group.product.name if group.product else 'quality products'} at bulk prices.",
-            status="active",
-            orderStatus="Open for joining",
-            joined=joined
-        ))
+        # Calculate dynamic status
+        now = datetime.utcnow()
+        moq = group.product.moq if group.product else 10
+        
+        if group.deadline < now:
+            # Deadline has passed
+            if participants_count >= moq:
+                group_status = "completed"
+                order_status = "Completed - Ready for fulfillment"
+            else:
+                group_status = "expired"
+                order_status = "Expired - Minimum order not reached"
+        elif participants_count >= moq:
+            # MOQ reached, still within deadline
+            group_status = "ready_for_payment"
+            order_status = "Goal reached - Ready for payment"
+        else:
+            # Still active
+            group_status = "active"
+            order_status = "Open for joining"
+        
+        # Only include active, ready_for_payment, and recently completed groups (not expired or old completed)
+        if group_status in ["active", "ready_for_payment", "completed"]:
+            if group_status == "completed" and (now - group.deadline).days > 30:
+                # Skip old completed groups (older than 30 days)
+                continue
+                
+            result.append(GroupResponse(
+                id=group.id,
+                name=group.product.name if group.product else f"Group Buy #{group.id}",
+                price=group.product.bulk_price if group.product else 0,
+                image_url=group.product.image_url if group.product and group.product.image_url else "https://via.placeholder.com/300x200?text=Product",
+                description=group.product.description if group.product else "User-created group buy",
+                participants=participants_count,
+                moq=moq,
+                category=group.product.category if group.product else "General",
+                created=group.created_at.isoformat(),
+                maxParticipants=None,  # GroupBuy doesn't have max participants
+                originalPrice=group.product.unit_price if group.product else 0,
+                endDate=group.deadline.isoformat(),
+                matchScore=75,  # Default match score for user-created groups
+                reason="User-created group buy",
+                adminCreated=False,
+                adminName=get_creator_display_name(group.creator),
+                savings=(group.product.unit_price - group.product.bulk_price) if group.product else 0,
+                discountPercentage=round(group.product.savings_factor * 100) if group.product else 0,
+                shippingInfo="Pickup at designated location",
+                estimatedDelivery="2-3 weeks after group completion",
+                features=["Bulk pricing", "Community driven", "Flexible quantities"],
+                requirements=[f"Minimum {moq} total units required"],
+                longDescription=group.product.description if group.product else f"Join this community group buy for {group.product.name if group.product else 'quality products'} at bulk prices.",
+                status=group_status,
+                orderStatus=order_status,
+                joined=joined,
+                current_amount=round(group.current_amount, 2),
+                target_amount=round(group.target_amount, 2)
+            ))
     
     return result
 
@@ -875,6 +934,14 @@ async def get_group_detail(
     # First try to find as AdminGroup
     admin_group = db.query(AdminGroup).filter(AdminGroup.id == group_id).first()
     if admin_group:
+        # Calculate money tracking for AdminGroups
+        target_amount = admin_group.price * admin_group.max_participants
+        # Calculate current amount from all joins
+        total_paid = db.query(AdminGroupJoin).filter(
+            AdminGroupJoin.admin_group_id == admin_group.id
+        ).count() * admin_group.price
+        current_amount = float(total_paid)
+        
         return GroupDetailResponse(
             id=admin_group.id,
             name=admin_group.name,
@@ -898,6 +965,8 @@ async def get_group_detail(
             estimatedDelivery=admin_group.estimated_delivery,
             features=admin_group.features or [],
             requirements=admin_group.requirements or [],
+            current_amount=current_amount,
+            target_amount=target_amount,
             product=ProductInfo(
                 name=admin_group.product_name or admin_group.name,
                 description=admin_group.product_description or admin_group.description,
@@ -963,7 +1032,7 @@ async def get_group_detail(
 async def update_contribution(
     group_id: int,
     request: UpdateContributionRequest,
-    user: User = Depends(verify_token),
+    user: User = Depends(verify_trader),
     db: Session = Depends(get_db)
 ):
     """Update the user's contribution quantity for a group-buy.
@@ -1042,7 +1111,7 @@ async def update_contribution(
 async def join_group(
     group_id: int,
     request: JoinGroupRequest,
-    user: User = Depends(verify_token),
+    user: User = Depends(verify_trader),
     db: Session = Depends(get_db)
 ):
     """Join a group-buy by creating a contribution or join record with Flutterwave payment integration.
@@ -1120,16 +1189,29 @@ async def join_group(
                     redirect_url=f"http://localhost:8000/api/payment/callback?group_id={group_id}"
                 )
                 
-                # In simulation mode, payment is auto-approved
-                # In production, user would be redirected to payment_result['data']['link']
+                # Check if payment initialization was successful
                 payment_status = payment_result.get("status")
-                transaction_id = payment_result.get("data", {}).get("id", tx_ref)
                 
+                # If payment initialization failed, reject the join
+                if payment_status != "success":
+                    error_message = payment_result.get("message", "Payment initialization failed")
+                    logger.error(f"[JOIN GROUP] Payment failed for group {group_id}, user {user.id}: {error_message}")
+                    raise HTTPException(
+                        status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                        detail=f"Payment initialization failed: {error_message}. Please check your payment credentials or contact support."
+                    )
+                
+                transaction_id = payment_result.get("data", {}).get("id", tx_ref)
+                payment_link = payment_result.get("data", {}).get("link")
+                
+            except HTTPException:
+                raise
             except Exception as e:
-                print(f"Payment initialization failed: {e}")
-                # In simulation mode, continue anyway
-                payment_status = "simulated"
-                transaction_id = f"sim_{tx_ref}"
+                logger.error(f"[JOIN GROUP] Payment exception for group {group_id}: {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                    detail="Payment service unavailable. Please try again later or contact support."
+                )
 
             # Create admin group join record
             join_record = AdminGroupJoin(
@@ -1248,12 +1330,27 @@ async def join_group(
                 )
                 
                 payment_status = payment_result.get("status")
-                transaction_id = payment_result.get("data", {}).get("id", tx_ref)
                 
+                # If payment initialization failed, reject the join
+                if payment_status != "success":
+                    error_message = payment_result.get("message", "Payment initialization failed")
+                    logger.error(f"[JOIN GROUP] Payment failed for GroupBuy {group_id}, user {user.id}: {error_message}")
+                    raise HTTPException(
+                        status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                        detail=f"Payment initialization failed: {error_message}. Please contact support."
+                    )
+                
+                transaction_id = payment_result.get("data", {}).get("id", tx_ref)
+                payment_link = payment_result.get("data", {}).get("link")
+                
+            except HTTPException:
+                raise
             except Exception as e:
-                print(f"Payment initialization failed: {e}")
-                payment_status = "simulated"
-                transaction_id = f"sim_{tx_ref}"
+                logger.error(f"[JOIN GROUP] Payment exception for GroupBuy {group_id}: {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                    detail="Payment service unavailable. Please try again later or contact support."
+                )
 
             # Create contribution record
             contribution = Contribution(
@@ -1325,9 +1422,12 @@ async def join_group(
             detail="Group not found or no longer active"
         )
 
-    except HTTPException:
+    except HTTPException as he:
+        # Log the specific HTTP exception details
+        logger.error(f"[JOIN GROUP] HTTPException for group {group_id}: {he.status_code} - {he.detail}")
         raise
     except Exception as e:
+        logger.error(f"[JOIN GROUP] Unexpected error joining group {group_id}: {e}")
         print(f"Error joining group {group_id}: {e}")
         db.rollback()
         raise HTTPException(status_code=500, detail="Failed to join group")
@@ -1593,7 +1693,7 @@ async def create_admin_group(
 
 @router.get("/supplier/groups/active")
 async def get_supplier_active_groups(
-    user: User = Depends(verify_token),
+    user: User = Depends(verify_supplier),
     db: Session = Depends(get_db)
 ):
     """Get all active groups created by the authenticated supplier"""
@@ -1651,7 +1751,7 @@ async def get_supplier_active_groups(
 
 @router.get("/supplier/groups/ready-for-payment")
 async def get_supplier_completed_group_orders(
-    user: User = Depends(verify_token),
+    user: User = Depends(verify_supplier),
     db: Session = Depends(get_db)
 ):
     """Get all completed groups created by the authenticated supplier that are ready for payment processing"""
@@ -1711,7 +1811,7 @@ async def get_supplier_completed_group_orders(
 
 @router.get("/supplier/groups/moderation-stats")
 async def get_supplier_group_moderation_stats(
-    user: User = Depends(verify_token),
+    user: User = Depends(verify_supplier),
     db: Session = Depends(get_db)
 ):
     """Get moderation statistics for groups created by the authenticated supplier"""
@@ -1767,7 +1867,7 @@ async def get_supplier_group_moderation_stats(
 @router.post("/supplier/groups/create")
 async def create_supplier_group(
     request: GroupCreateRequest,
-    user: User = Depends(verify_token),
+    user: User = Depends(verify_supplier),
     db: Session = Depends(get_db)
 ):
     """Create a new group-buy opportunity for suppliers.
@@ -1866,7 +1966,7 @@ async def create_supplier_group(
 @router.get("/supplier/groups/{group_id}")
 async def get_supplier_group_details(
     group_id: int,
-    user: User = Depends(verify_token),
+    user: User = Depends(verify_supplier),
     db: Session = Depends(get_db)
 ):
     """Get detailed information about a specific group created by the supplier"""
@@ -1931,7 +2031,7 @@ async def get_supplier_group_details(
 @router.post("/supplier/groups/{group_id}/process-payment")
 async def process_supplier_group_payment(
     group_id: int,
-    user: User = Depends(verify_token),
+    user: User = Depends(verify_supplier),
     db: Session = Depends(get_db)
 ):
     """Process payment for a completed supplier group"""
@@ -1992,7 +2092,7 @@ async def process_supplier_group_payment(
 @router.post("/supplier/groups/{group_id}/qr/generate")
 async def generate_supplier_group_qr(
     group_id: int,
-    user: User = Depends(verify_token),
+    user: User = Depends(verify_supplier),
     db: Session = Depends(get_db)
 ):
     """Generate QR code for supplier group pickup"""

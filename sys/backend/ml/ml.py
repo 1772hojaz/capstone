@@ -19,7 +19,7 @@ from db.database import get_db
 from ml.cold_start_handler import ColdStartHandler
 from models.models import User, GroupBuy, Transaction, Product, MLModel, Contribution, AdminGroup, AdminGroupJoin
 from models.analytics_models import UserBehaviorFeatures as AnalyticsUserBehaviorFeatures
-from authentication.auth import verify_token, get_current_user
+from authentication.auth import verify_token, get_current_user, verify_trader, verify_admin
 from websocket.websocket_manager import manager
 from .explainability import explain_recommendation, explain_cluster_assignment, generate_counterfactual_explanation
 from .lime_explainer import explain_with_lime
@@ -141,6 +141,8 @@ class RecommendationResponse(BaseModel):
     estimated_delivery: Optional[str] = "2-3 weeks after group completion"
     features: Optional[List[str]] = None
     requirements: Optional[List[str]] = None
+    current_amount: Optional[float] = None
+    target_amount: Optional[float] = None
 
 class ClusterInfo(BaseModel):
     cluster_id: int
@@ -821,7 +823,9 @@ def get_recommendations_for_user(user: User, db: Session) -> List[dict]:
                 "shipping_info": "Free shipping when group goal is reached",
                 "estimated_delivery": "2-3 weeks after group completion",
                 "features": ["Bulk pricing", "Quality guaranteed", "Group savings"],
-                "requirements": [f"Minimum {gb.product.moq if gb.product else 10} participants required", "Full payment required to join"]
+                "requirements": [f"Minimum {gb.product.moq if gb.product else 10} participants required", "Full payment required to join"],
+                "current_amount": round(gb.current_amount, 2) if gb.current_amount is not None else 0.0,
+                "target_amount": round(gb.target_amount, 2) if gb.target_amount is not None else 0.0
             })
         
         # Sort by recommendation score
@@ -940,7 +944,9 @@ def get_simple_recommendations(user: User, db: Session, active_groups) -> List[d
                 "shipping_info": "Free shipping when group goal is reached",
                 "estimated_delivery": "2-3 weeks after group completion",
                 "features": ["Bulk pricing", "Quality guaranteed", "Group savings"],
-                "requirements": [f"Minimum {gb.product.moq} participants required", "Full payment required to join"]
+                "requirements": [f"Minimum {gb.product.moq} participants required", "Full payment required to join"],
+                "current_amount": round(gb.current_amount, 2) if gb.current_amount is not None else 0.0,
+                "target_amount": round(gb.target_amount, 2) if gb.target_amount is not None else 0.0
             })
     
     recommendations.sort(key=lambda x: x["recommendation_score"], reverse=True)
@@ -1086,7 +1092,9 @@ def get_similarity_based_recommendations(user: User, db: Session, active_groups:
                     "shipping_info": "Free shipping when group goal is reached",
                     "estimated_delivery": "2-3 weeks after group completion",
                     "features": ["Bulk pricing", "Quality guaranteed", "Group savings"],
-                    "requirements": [f"Minimum {group_buy.product.moq} participants required", "Full payment required to join"]
+                    "requirements": [f"Minimum {group_buy.product.moq} participants required", "Full payment required to join"],
+                    "current_amount": round(group_buy.current_amount, 2) if group_buy.current_amount else 0.0,
+                    "target_amount": round(group_buy.target_amount, 2) if group_buy.target_amount else 0.0
                 })
     
     # Sort by final score and return top recommendations
@@ -1096,7 +1104,7 @@ def get_similarity_based_recommendations(user: User, db: Session, active_groups:
 # Routes
 @router.get("/recommendations", response_model=List[RecommendationResponse])
 async def get_recommendations(
-    user: User = Depends(verify_token),
+    user: User = Depends(verify_trader),
     db: Session = Depends(get_db)
 ):
     """Get personalized recommendations for the current user using hybrid approach"""
@@ -1123,7 +1131,7 @@ async def get_recommendations(
 
 @router.get("/clusters", response_model=List[ClusterInfo])
 async def get_clusters(
-    admin = Depends(verify_token),
+    admin = Depends(verify_admin),
     db: Session = Depends(get_db)
 ):
     """Get cluster information (for admin/analysis)"""
@@ -1160,7 +1168,7 @@ async def get_clusters(
 @router.post("/retrain", response_model=RetrainingStatus)
 async def retrain_models(
     background_tasks: BackgroundTasks,
-    admin = Depends(verify_token),
+    admin = Depends(verify_admin),
     db: Session = Depends(get_db)
 ):
     """Retrain ML models (Admin only)"""
@@ -1819,7 +1827,9 @@ def get_user_similarity_based_recommendations(user_id: int, db: Session, limit: 
             'shipping_info': "Free shipping when group goal is reached",
             'estimated_delivery': "2-3 weeks after group completion",
             'features': ["Bulk pricing", "Quality guaranteed", "Group savings"],
-            'requirements': [f"Minimum {rec['group'].product.moq if rec['group'].product else 10} participants required", "Full payment required to join"]
+            'requirements': [f"Minimum {rec['group'].product.moq if rec['group'].product else 10} participants required", "Full payment required to join"],
+            'current_amount': round(rec['group'].current_amount, 2) if rec['group'].current_amount is not None else 0.0,
+            'target_amount': round(rec['group'].target_amount, 2) if rec['group'].target_amount is not None else 0.0
         } for rec in recommended_groups[:limit]]
         
     except Exception as e:
@@ -1899,7 +1909,9 @@ def get_fallback_recommendations(user: User, db: Session, limit: int = 10) -> Li
                 'estimated_delivery': "2-3 weeks after group completion",
                 'features': ["Bulk pricing", "Community driven", "Quality guaranteed"],
                 'requirements': [f"Minimum {group.product.moq if group.product else 10} total units required"],
-                'joined': False  # Fallback recommendations only show groups user hasn't joined
+                'joined': False,  # Fallback recommendations only show groups user hasn't joined
+                'current_amount': round(group.current_amount, 2) if group.current_amount is not None else 0.0,
+                'target_amount': round(group.target_amount, 2) if group.target_amount is not None else 0.0
             })
         
         return recommendations
@@ -1981,7 +1993,7 @@ async def get_hybrid_user_recommendations(
 @router.get("/explain/{group_buy_id}")
 async def explain_group_buy_recommendation(
     group_buy_id: int,
-    user: User = Depends(verify_token),
+    user: User = Depends(verify_trader),
     db: Session = Depends(get_db)
 ):
     """
@@ -2047,7 +2059,7 @@ async def explain_group_buy_recommendation(
 
 @router.get("/explain-cluster")
 async def explain_user_cluster(
-    user: User = Depends(verify_token),
+    user: User = Depends(verify_trader),
     db: Session = Depends(get_db)
 ):
     """
@@ -2065,7 +2077,7 @@ async def explain_user_cluster(
 
 @router.get("/explain-all-recommendations")
 async def explain_all_user_recommendations(
-    user: User = Depends(verify_token),
+    user: User = Depends(verify_trader),
     db: Session = Depends(get_db),
     limit: int = Query(5, ge=1, le=10)
 ):
@@ -2119,7 +2131,7 @@ async def explain_all_user_recommendations(
 @router.get("/explain/lime/{group_buy_id}")
 async def explain_group_buy_with_lime(
     group_buy_id: int,
-    user: User = Depends(verify_token),
+    user: User = Depends(verify_trader),
     db: Session = Depends(get_db)
 ):
     """
@@ -2231,8 +2243,17 @@ def get_admin_group_recommendations(user: User, admin_groups: List[AdminGroup], 
                 "hybrid": score
             }
         
+        # Calculate actual participant count from joins
+        joins_count = db.query(AdminGroupJoin).filter(
+            AdminGroupJoin.admin_group_id == admin_group.id
+        ).count()
+        
         # Calculate moq_progress for display
-        moq_progress = (admin_group.participants / admin_group.max_participants) * 100
+        moq_progress = (joins_count / admin_group.max_participants) * 100 if admin_group.max_participants > 0 else 0
+        
+        # Calculate money tracking
+        target_amount = admin_group.price * admin_group.max_participants
+        current_amount = joins_count * admin_group.price
         
         recommendations.append({
             "group_buy_id": admin_group.id,
@@ -2246,9 +2267,9 @@ def get_admin_group_recommendations(user: User, admin_groups: List[AdminGroup], 
             "savings": admin_group.discount_percentage,
             "location_zone": "Mbare",
             "deadline": admin_group.end_date,
-            "total_quantity": admin_group.participants,
+            "total_quantity": joins_count,
             "moq_progress": moq_progress,
-            "participants_count": admin_group.participants,
+            "participants_count": joins_count,
             "recommendation_score": score,
             "reason": ", ".join(reasons) if isinstance(reasons, list) else reasons,
             "ml_scores": ml_scores,
@@ -2263,7 +2284,9 @@ def get_admin_group_recommendations(user: User, admin_groups: List[AdminGroup], 
             "estimated_delivery": admin_group.estimated_delivery,
             "features": admin_group.features or [],
             "requirements": admin_group.requirements or [],
-            "is_cold_start": is_new_admin_group  # Flag to indicate cold start
+            "is_cold_start": is_new_admin_group,  # Flag to indicate cold start
+            "current_amount": round(current_amount, 2),
+            "target_amount": round(target_amount, 2)
         })
     
     recommendations.sort(key=lambda x: x["recommendation_score"], reverse=True)

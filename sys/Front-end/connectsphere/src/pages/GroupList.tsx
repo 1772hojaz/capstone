@@ -47,13 +47,15 @@ export default function GroupList() {
   const [activeTab, setActiveTab] = useState<TabType>(getInitialTab());
   const [groups, setGroups] = useState<Group[]>([]);
 
-  // Check if user is admin and redirect them
+  // Check if user is admin or supplier and redirect them
   useEffect(() => {
     const checkRole = async () => {
       try {
         const user = await apiService.getCurrentUser();
         if (user?.is_admin) {
           navigate('/admin', { replace: true });
+        } else if (user?.is_supplier) {
+          navigate('/supplier/dashboard', { replace: true });
         }
       } catch (err) {
         console.error('Failed to check user role:', err);

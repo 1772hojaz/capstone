@@ -214,8 +214,23 @@ def verify_token_string(token: str, db: Session):
         return None
 
 def verify_admin(user: User = Depends(verify_token)):
+    """Verify user has admin role"""
     if not user.is_admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+    return user
+
+def verify_supplier(user: User = Depends(verify_token)):
+    """Verify user has supplier role"""
+    if not user.is_supplier:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Supplier access required")
+    return user
+
+def verify_trader(user: User = Depends(verify_token)):
+    """Verify user has trader role (not admin, not supplier)"""
+    if user.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admins cannot access trader features")
+    if user.is_supplier:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Suppliers cannot access trader features")
     return user
 
 # Routes

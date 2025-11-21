@@ -2,10 +2,10 @@ import { lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import MainLayout from './layouts/MainLayout';
 import { Spinner } from './components/feedback/Spinner';
-import MockDataIndicator from './components/MockDataIndicator';
 
 // Lazy load all pages
 const LandingPage = lazy(() => import('./pages/LandingPage'));
+const UnifiedLoginPage = lazy(() => import('./pages/UnifiedLoginPage'));
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const EnhancedRegistrationPage = lazy(() => import('./pages/EnhancedRegistrationPage'));
 const SupplierLandingPage = lazy(() => import('./pages/SupplierLandingPage'));
@@ -49,7 +49,6 @@ const PageLoader = () => (
 function App() {
   return (
     <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-      <MockDataIndicator />
       <Suspense fallback={<PageLoader />}>
         <Routes>
           <Route path="/" element={
@@ -60,25 +59,25 @@ function App() {
           
           <Route path="/login" element={
             <MainLayout>
-              <LoginPage />
+              <UnifiedLoginPage />
             </MainLayout>
           } />
 
           <Route path="/register" element={
             <MainLayout>
-              <EnhancedRegistrationPage />
+              <LoginPage />
+            </MainLayout>
+          } />
+
+          <Route path="/supplier/register" element={
+            <MainLayout>
+              <SupplierLoginPage />
             </MainLayout>
           } />
 
           <Route path="/supplier" element={
             <MainLayout>
               <SupplierLandingPage />
-            </MainLayout>
-          } />
-
-          <Route path="/supplier/login" element={
-            <MainLayout>
-              <SupplierLoginPage />
             </MainLayout>
           } />
 

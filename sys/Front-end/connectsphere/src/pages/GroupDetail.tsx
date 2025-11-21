@@ -83,13 +83,15 @@ export default function GroupDetail() {
   const [deliveryMethod, setDeliveryMethod] = useState('pickup');
   const [agreeToTerms, setAgreeToTerms] = useState(false);
 
-  // Check if user is admin and redirect them
+  // Check if user is admin or supplier and redirect them
   useEffect(() => {
     const checkRole = async () => {
       try {
         const user = await apiService.getCurrentUser();
         if (user?.is_admin) {
           navigate('/admin', { replace: true });
+        } else if (user?.is_supplier) {
+          navigate('/supplier/dashboard', { replace: true });
         }
       } catch (err) {
         console.error('Failed to check user role:', err);
@@ -111,7 +113,8 @@ export default function GroupDetail() {
     if (!groupData) return false;
     const currentAmount = groupData.current_amount || 0;
     const targetAmount = groupData.target_amount || 0;
-    return currentAmount >= targetAmount;
+    // Only consider goal reached if target is greater than 0 AND current >= target
+    return targetAmount > 0 && currentAmount >= targetAmount;
   }, [groupData]);
 
   const amountNeeded = useMemo(() => {
@@ -288,7 +291,8 @@ export default function GroupDetail() {
 
       const response = await apiService.joinGroup(groupId, {
         quantity,
-        delivery_method: deliveryMethod
+        delivery_method: deliveryMethod,
+        payment_method: "card"  // Payment will be handled through Flutterwave
       });
 
       // Track analytics - Join click
@@ -568,7 +572,32 @@ export default function GroupDetail() {
                   <Sparkles className="h-5 w-5 text-primary-600" />
                   About This Deal
                 </h3>
-                <p className="body text-gray-700 leading-relaxed">{groupData.description}</p>
+                <p className="body text-gray-700 leading-relaxed mb-4">{groupData.description}</p>
+                
+                {/* Recommendation Explanation - Show only if coming from recommendations */}
+                {source === 'dashboard' && groupData.reason && (
+                  <div className="mt-4 pt-4 border-t border-gray-200">
+                    <h4 className="text-sm font-semibold text-gray-900 mb-2">Why We Recommended This</h4>
+                    <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg px-4 py-3 shadow-sm">
+                      <p className="text-sm text-blue-900 leading-relaxed">
+                        {groupData.reason}
+                      </p>
+                      {groupData.recommendation_score && (
+                        <div className="mt-2 flex items-center gap-2">
+                          <div className="flex-1 bg-blue-200 rounded-full h-2">
+                            <div 
+                              className="bg-blue-600 h-2 rounded-full transition-all"
+                              style={{ width: `${Math.round(groupData.recommendation_score * 100)}%` }}
+                            />
+                          </div>
+                          <span className="text-xs font-medium text-blue-700">
+                            {Math.round(groupData.recommendation_score * 100)}% Match
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </Card>
             )}
 

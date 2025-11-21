@@ -9,8 +9,12 @@
  */
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
+// 🔴 TEMPORARILY DISABLED - Set to false to disable event tracking
+const ANALYTICS_ENABLED = false;
+
 class AnalyticsService {
   constructor() {
+    this.enabled = ANALYTICS_ENABLED;
     this.sessionId = this.generateSessionId();
     this.anonymousId = this.getOrCreateAnonymousId();
     this.eventQueue = [];
@@ -18,11 +22,17 @@ class AnalyticsService {
     this.maxQueueSize = 10;
     this.sessionStartTime = Date.now();
     
-    // Start auto-flush
-    this.startAutoFlush();
-    
-    // Track page visibility changes
-    this.setupVisibilityTracking();
+    if (this.enabled) {
+      // Start auto-flush
+      this.startAutoFlush();
+      
+      // Track page visibility changes
+      this.setupVisibilityTracking();
+      
+      console.log('✅ Analytics tracking enabled');
+    } else {
+      console.log('🔴 Analytics tracking disabled');
+    }
   }
 
   generateSessionId() {
@@ -67,6 +77,12 @@ class AnalyticsService {
   }
 
   async track(eventType, properties = {}) {
+    // Check if analytics is enabled
+    if (!this.enabled) {
+      console.log('[Analytics Disabled] Skipping event:', eventType);
+      return null;
+    }
+
     const event = {
       event_id: this.generateEventId(),
       event_type: eventType,
@@ -127,6 +143,8 @@ class AnalyticsService {
   }
 
   startAutoFlush() {
+    if (!this.enabled) return;
+
     // Flush periodically
     setInterval(() => {
       this.flush();
@@ -153,6 +171,8 @@ class AnalyticsService {
   }
 
   setupVisibilityTracking() {
+    if (!this.enabled) return;
+
     let pageViewStartTime = Date.now();
     
     document.addEventListener('visibilitychange', () => {
