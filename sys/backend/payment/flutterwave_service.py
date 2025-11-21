@@ -7,13 +7,13 @@ logger = logging.getLogger(__name__)
 
 class FlutterwaveService:
     def __init__(self):
-        # Load credentials from environment or use production defaults
-        # PUBLIC KEY = Client ID
-        self.public_key = os.getenv('FLUTTERWAVE_PUBLIC_KEY', '12a8c4c6-9bc6-4f80-9ea9-5a26842f2d53')
-        # SECRET KEY = Client Secret
-        self.secret_key = os.getenv('FLUTTERWAVE_SECRET_KEY', '6nCZym5JnoZBhmYBFhMve34qcNiIkpou')
+        # Load credentials from environment or use test defaults
+        # PUBLIC KEY (must start with FLWPUBK or FLWPUBK_TEST)
+        self.public_key = os.getenv('FLUTTERWAVE_PUBLIC_KEY', 'FLWPUBK_TEST-CONFIGURE_YOUR_KEY_HERE')
+        # SECRET KEY (must start with FLWSECK or FLWSECK_TEST)
+        self.secret_key = os.getenv('FLUTTERWAVE_SECRET_KEY', 'FLWSECK_TEST-CONFIGURE_YOUR_KEY_HERE')
         # ENCRYPTION KEY
-        self.encryption_key = os.getenv('FLUTTERWAVE_ENCRYPTION_KEY', 'd5A347B9ixcJpAd6j7KCVSNKnGNNwdP1rKZLPJqp08o=')
+        self.encryption_key = os.getenv('FLUTTERWAVE_ENCRYPTION_KEY', 'CONFIGURE_YOUR_ENCRYPTION_KEY_HERE')
 
         self.base_url = "https://api.flutterwave.com/v3"
         self.headers = {

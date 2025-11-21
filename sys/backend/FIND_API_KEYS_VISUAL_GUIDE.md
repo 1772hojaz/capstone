@@ -82,8 +82,8 @@ Once in the correct section, you should see:
 ### What You're Seeing (Webhooks - OAuth):
 ```
 Section: "Test webhooks"
-Client ID:     12a8c4c6-9bc6-4f80-9ea9-5a26842f2d53  (UUID)
-Client Secret: 6nCZym5JnoZBhmYBFhMve34qcNiIkpou      (28 chars)
+Client ID:     xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx  (UUID)
+Client Secret: xxxxxxxxxxxxxxxxxxxxxxxxxxxx          (28 chars)
 ```
 
 ### What You Should See (API Keys - Standard):

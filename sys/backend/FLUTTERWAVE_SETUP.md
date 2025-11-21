@@ -23,25 +23,25 @@ Create a `.env` file in `sys/backend/`:
 
 ```bash
 # Flutterwave Production Credentials
-FLUTTERWAVE_PUBLIC_KEY=12a8c4c6-9bc6-4f80-9ea9-5a26842f2d53
-FLUTTERWAVE_SECRET_KEY=6nCZym5JnoZBhmYBFhMve34qcNiIkpou
-FLUTTERWAVE_ENCRYPTION_KEY=lLus8OEFYep4Fjj3ciZnreBYz1JajcrXWuB0KxOmBbs=
+FLUTTERWAVE_PUBLIC_KEY=FLWPUBK-your-public-key-here
+FLUTTERWAVE_SECRET_KEY=FLWSECK-your-secret-key-here
+FLUTTERWAVE_ENCRYPTION_KEY=your-encryption-key-here
 ```
 
 ### Option 2: System Environment Variables
 
 **Windows PowerShell:**
 ```powershell
-$env:FLUTTERWAVE_PUBLIC_KEY="12a8c4c6-9bc6-4f80-9ea9-5a26842f2d53"
-$env:FLUTTERWAVE_SECRET_KEY="6nCZym5JnoZBhmYBFhMve34qcNiIkpou"
-$env:FLUTTERWAVE_ENCRYPTION_KEY="lLus8OEFYep4Fjj3ciZnreBYz1JajcrXWuB0KxOmBbs="
+$env:FLUTTERWAVE_PUBLIC_KEY="FLWPUBK-your-public-key-here"
+$env:FLUTTERWAVE_SECRET_KEY="FLWSECK-your-secret-key-here"
+$env:FLUTTERWAVE_ENCRYPTION_KEY="your-encryption-key-here"
 ```
 
 **Linux/Mac:**
 ```bash
-export FLUTTERWAVE_PUBLIC_KEY="12a8c4c6-9bc6-4f80-9ea9-5a26842f2d53"
-export FLUTTERWAVE_SECRET_KEY="6nCZym5JnoZBhmYBFhMve34qcNiIkpou"
-export FLUTTERWAVE_ENCRYPTION_KEY="lLus8OEFYep4Fjj3ciZnreBYz1JajcrXWuB0KxOmBbs="
+export FLUTTERWAVE_PUBLIC_KEY="FLWPUBK-your-public-key-here"
+export FLUTTERWAVE_SECRET_KEY="FLWSECK-your-secret-key-here"
+export FLUTTERWAVE_ENCRYPTION_KEY="your-encryption-key-here"
 ```
 
 ## 🧪 Testing Payment Integration

@@ -1,3 +1,4 @@
+clear
 # Getting Your Flutterwave API Keys
 
 ## 🔑 Where to Find Your Keys
@@ -26,34 +27,34 @@ You'll see two sets of keys:
 
 **Public Key (Test):**
 ```
-FLWPUBK_TEST-1234567890abcdef1234567890abcdef-X
+FLWPUBK_TEST-[48-character-string]-X
 ```
 
 **Secret Key (Test):**
 ```
-FLWSECK_TEST-1234567890abcdef1234567890abcdef-X
+FLWSECK_TEST-[48-character-string]-X
 ```
 
 **Encryption Key:**
 ```
-FLWSECK_TEST1234567890ab
+FLWSECK_TEST[alphanumeric-string]
 ```
 
 **Public Key (Live):**
 ```
-FLWPUBK-1234567890abcdef1234567890abcdef-X
+FLWPUBK-[48-character-string]-X
 ```
 
 **Secret Key (Live):**
 ```
-FLWSECK-1234567890abcdef1234567890abcdef-X
+FLWSECK-[48-character-string]-X
 ```
 
 ## ⚠️ Key Differences
 
 ### What You Have (OAuth Credentials):
-- **Client ID**: `12a8c4c6-9bc6-4f80-9ea9-5a26842f2d53` (UUID format)
-- **Client Secret**: `6nCZym5JnoZBhmYBFhMve34qcNiIkpou` (short)
+- **Client ID**: `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` (UUID format)
+- **Client Secret**: `xxxxxxxxxxxxxxxxxxxxxxxxxxxx` (short, ~28 characters)
 - **Use Case**: OAuth 2.0 authentication flow
 
 ### What You Need (API Keys):

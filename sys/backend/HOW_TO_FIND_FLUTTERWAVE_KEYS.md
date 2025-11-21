@@ -73,18 +73,18 @@ FLWSECK_TEST****************
 
 ---
 
-## ❌ What You Currently Have (Won't Work)
+## ❌ What OAuth Credentials Look Like (Won't Work for Payment API)
 
 ```
-Client ID:         12a8c4c6-9bc6-4f80-9ea9-5a26842f2d53
+Client ID:         xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
                    ↑ This is a UUID format (OAuth)
                    ↑ NOT the Public Key we need
 
-Client Secret:     6nCZym5JnoZBhmYBFhMve34qcNiIkpou
-                   ↑ Too short (OAuth)
+Client Secret:     xxxxxxxxxxxxxxxxxxxxxxxxxxxx
+                   ↑ Too short (OAuth - ~28 characters)
                    ↑ NOT the Secret Key we need
 
-Encryption Key:    d5A347B9ixcJpAd6j7KCVSNKnGNNwdP1rKZLPJqp08o=
+Encryption Key:    xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
                    ↑ Might be correct, but needs the other keys too
 ```
 
