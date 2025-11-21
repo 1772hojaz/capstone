@@ -2,9 +2,11 @@ from fastapi import APIRouter, HTTPException, Depends, status, Response
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from typing import Optional
+from sqlalchemy.orm import Session
 from payment.flutterwave_service import flutterwave_service
 from authentication.auth import get_current_user
 from models.models import User
+from db.database import get_db
 import logging
 import os
 from fastapi import Request
@@ -67,11 +69,145 @@ async def verify_payment(
             detail=f"Payment verification failed: {str(e)}"
         )
 
+async def confirm_pending_join(tx_ref: str, transaction_id: str, db: Session):
+    """
+    Confirm a pending join after successful payment.
+    Creates the actual AdminGroupJoin or Contribution record.
+    """
+    from models.models import PendingJoin, AdminGroupJoin, AdminGroup, Contribution, GroupBuy, Transaction
+    from sqlalchemy import func
+    from datetime import datetime
+    
+    try:
+        # Find pending join by tx_ref
+        pending_join = db.query(PendingJoin).filter(
+            PendingJoin.tx_ref == tx_ref,
+            PendingJoin.payment_status == "pending"
+        ).first()
+        
+        if not pending_join:
+            logger.warning(f"No pending join found for tx_ref: {tx_ref}")
+            return
+        
+        logger.info(f"Confirming pending join: user={pending_join.user_id}, group={pending_join.group_id}, type={pending_join.group_type}")
+        
+        if pending_join.group_type == "admin_group":
+            # Handle AdminGroup join
+            admin_group = db.query(AdminGroup).filter(AdminGroup.id == pending_join.group_id).first()
+            
+            if not admin_group:
+                logger.error(f"AdminGroup {pending_join.group_id} not found")
+                pending_join.payment_status = "failed"
+                db.commit()
+                return
+            
+            # Create the actual join record
+            join_record = AdminGroupJoin(
+                user_id=pending_join.user_id,
+                admin_group_id=pending_join.group_id,
+                quantity=pending_join.quantity,
+                delivery_method=pending_join.delivery_method,
+                payment_method=pending_join.payment_method,
+                special_instructions=pending_join.special_instructions,
+                payment_transaction_id=transaction_id,
+                payment_reference=tx_ref,
+                paid_amount=pending_join.payment_amount
+            )
+            db.add(join_record)
+            
+            # Update group participant count
+            admin_group.participants += 1
+            
+            # Check if group should be completed
+            total_quantity_sold = db.query(func.sum(AdminGroupJoin.quantity)).filter(
+                AdminGroupJoin.admin_group_id == pending_join.group_id
+            ).scalar() or 0
+            
+            if admin_group.max_participants and total_quantity_sold >= admin_group.max_participants:
+                logger.info(f"AdminGroup {pending_join.group_id} reached target, marking as completed")
+                admin_group.is_active = False
+                admin_group.end_date = datetime.utcnow()
+            
+            # Create transaction record
+            if admin_group.product_id:
+                transaction = Transaction(
+                    user_id=pending_join.user_id,
+                    group_buy_id=None,
+                    product_id=admin_group.product_id,
+                    quantity=pending_join.quantity,
+                    amount=pending_join.payment_amount,
+                    transaction_type="payment",
+                    location_zone="Unknown"
+                )
+                db.add(transaction)
+        
+        elif pending_join.group_type == "group_buy":
+            # Handle GroupBuy join
+            group_buy = db.query(GroupBuy).filter(GroupBuy.id == pending_join.group_id).first()
+            
+            if not group_buy:
+                logger.error(f"GroupBuy {pending_join.group_id} not found")
+                pending_join.payment_status = "failed"
+                db.commit()
+                return
+            
+            # Create the actual contribution record
+            contribution = Contribution(
+                user_id=pending_join.user_id,
+                group_buy_id=pending_join.group_id,
+                quantity=pending_join.quantity,
+                contribution_amount=pending_join.payment_amount,
+                paid_amount=pending_join.payment_amount,
+                is_fully_paid=True,
+                payment_transaction_id=transaction_id,
+                payment_reference=tx_ref
+            )
+            db.add(contribution)
+            
+            # Update group totals
+            group_buy.total_quantity += pending_join.quantity
+            group_buy.total_contributions += pending_join.payment_amount
+            group_buy.total_paid += pending_join.payment_amount
+            group_buy.current_amount += pending_join.payment_amount
+            
+            if group_buy.target_amount > 0:
+                group_buy.amount_progress = (group_buy.current_amount / group_buy.target_amount) * 100
+            
+            # Check if group should be completed
+            if group_buy.amount_progress >= 100 and group_buy.status == "active":
+                group_buy.status = "completed"
+                group_buy.completed_at = datetime.utcnow()
+            
+            # Create transaction record
+            transaction = Transaction(
+                user_id=pending_join.user_id,
+                group_buy_id=pending_join.group_id,
+                product_id=group_buy.product_id,
+                quantity=pending_join.quantity,
+                amount=pending_join.payment_amount,
+                transaction_type="payment",
+                location_zone="Unknown"
+            )
+            db.add(transaction)
+        
+        # Mark pending join as completed
+        pending_join.payment_status = "completed"
+        pending_join.completed_at = datetime.utcnow()
+        
+        db.commit()
+        logger.info(f"Successfully confirmed join for tx_ref: {tx_ref}")
+        
+    except Exception as e:
+        logger.error(f"Failed to confirm pending join for tx_ref {tx_ref}: {e}")
+        db.rollback()
+        raise
+
 @router.get("/callback")
 async def payment_callback(
     transaction_id: str,
     tx_ref: str,
-    status: str
+    status: str,
+    db: Session = Depends(get_db)
 ):
     """Handle Flutterwave payment callback (webhook)"""
     try:
@@ -82,6 +218,10 @@ async def payment_callback(
         payment_status = verification.get("data", {}).get("status", "unknown")
 
         logger.info(f"Payment verification result: {payment_status}")
+
+        # Process the pending join if payment successful
+        if payment_status == "successful":
+            await confirm_pending_join(tx_ref, transaction_id, db)
 
         # Redirect back to frontend with payment result
         frontend_url = "http://localhost:5173"  # Vite dev server default port

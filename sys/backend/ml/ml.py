@@ -143,6 +143,7 @@ class RecommendationResponse(BaseModel):
     requirements: Optional[List[str]] = None
     current_amount: Optional[float] = None
     target_amount: Optional[float] = None
+    amount_progress: Optional[float] = None
 
 class ClusterInfo(BaseModel):
     cluster_id: int
@@ -825,7 +826,8 @@ def get_recommendations_for_user(user: User, db: Session) -> List[dict]:
                 "features": ["Bulk pricing", "Quality guaranteed", "Group savings"],
                 "requirements": [f"Minimum {gb.product.moq if gb.product else 10} participants required", "Full payment required to join"],
                 "current_amount": round(gb.current_amount, 2) if gb.current_amount is not None else 0.0,
-                "target_amount": round(gb.target_amount, 2) if gb.target_amount is not None else 0.0
+                "target_amount": round(gb.target_amount, 2) if gb.target_amount is not None else 0.0,
+                "amount_progress": round((gb.current_amount / gb.target_amount * 100) if (gb.target_amount and gb.target_amount > 0) else 0, 1)
             })
         
         # Sort by recommendation score
@@ -946,7 +948,8 @@ def get_simple_recommendations(user: User, db: Session, active_groups) -> List[d
                 "features": ["Bulk pricing", "Quality guaranteed", "Group savings"],
                 "requirements": [f"Minimum {gb.product.moq} participants required", "Full payment required to join"],
                 "current_amount": round(gb.current_amount, 2) if gb.current_amount is not None else 0.0,
-                "target_amount": round(gb.target_amount, 2) if gb.target_amount is not None else 0.0
+                "target_amount": round(gb.target_amount, 2) if gb.target_amount is not None else 0.0,
+                "amount_progress": round((gb.current_amount / gb.target_amount * 100) if (gb.target_amount and gb.target_amount > 0) else 0, 1)
             })
     
     recommendations.sort(key=lambda x: x["recommendation_score"], reverse=True)
@@ -1094,7 +1097,8 @@ def get_similarity_based_recommendations(user: User, db: Session, active_groups:
                     "features": ["Bulk pricing", "Quality guaranteed", "Group savings"],
                     "requirements": [f"Minimum {group_buy.product.moq} participants required", "Full payment required to join"],
                     "current_amount": round(group_buy.current_amount, 2) if group_buy.current_amount else 0.0,
-                    "target_amount": round(group_buy.target_amount, 2) if group_buy.target_amount else 0.0
+                    "target_amount": round(group_buy.target_amount, 2) if group_buy.target_amount else 0.0,
+                    "amount_progress": round((group_buy.current_amount / group_buy.target_amount * 100) if (group_buy.target_amount and group_buy.target_amount > 0) else 0, 1)
                 })
     
     # Sort by final score and return top recommendations
@@ -1829,7 +1833,8 @@ def get_user_similarity_based_recommendations(user_id: int, db: Session, limit: 
             'features': ["Bulk pricing", "Quality guaranteed", "Group savings"],
             'requirements': [f"Minimum {rec['group'].product.moq if rec['group'].product else 10} participants required", "Full payment required to join"],
             'current_amount': round(rec['group'].current_amount, 2) if rec['group'].current_amount is not None else 0.0,
-            'target_amount': round(rec['group'].target_amount, 2) if rec['group'].target_amount is not None else 0.0
+            'target_amount': round(rec['group'].target_amount, 2) if rec['group'].target_amount is not None else 0.0,
+            'amount_progress': round((rec['group'].current_amount / rec['group'].target_amount * 100) if (rec['group'].target_amount and rec['group'].target_amount > 0) else 0, 1)
         } for rec in recommended_groups[:limit]]
         
     except Exception as e:
@@ -1911,7 +1916,8 @@ def get_fallback_recommendations(user: User, db: Session, limit: int = 10) -> Li
                 'requirements': [f"Minimum {group.product.moq if group.product else 10} total units required"],
                 'joined': False,  # Fallback recommendations only show groups user hasn't joined
                 'current_amount': round(group.current_amount, 2) if group.current_amount is not None else 0.0,
-                'target_amount': round(group.target_amount, 2) if group.target_amount is not None else 0.0
+                'target_amount': round(group.target_amount, 2) if group.target_amount is not None else 0.0,
+                'amount_progress': round((group.current_amount / group.target_amount * 100) if (group.target_amount and group.target_amount > 0) else 0, 1)
             })
         
         return recommendations
@@ -2254,6 +2260,7 @@ def get_admin_group_recommendations(user: User, admin_groups: List[AdminGroup], 
         # Calculate money tracking
         target_amount = admin_group.price * admin_group.max_participants
         current_amount = joins_count * admin_group.price
+        amount_progress = (current_amount / target_amount * 100) if target_amount > 0 else 0
         
         recommendations.append({
             "group_buy_id": admin_group.id,
@@ -2286,7 +2293,8 @@ def get_admin_group_recommendations(user: User, admin_groups: List[AdminGroup], 
             "requirements": admin_group.requirements or [],
             "is_cold_start": is_new_admin_group,  # Flag to indicate cold start
             "current_amount": round(current_amount, 2),
-            "target_amount": round(target_amount, 2)
+            "target_amount": round(target_amount, 2),
+            "amount_progress": round(amount_progress, 1)
         })
     
     recommendations.sort(key=lambda x: x["recommendation_score"], reverse=True)

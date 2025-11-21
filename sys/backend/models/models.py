@@ -162,6 +162,10 @@ class Contribution(Base):
     is_fully_paid = Column(Boolean, default=False)
     joined_at = Column(DateTime, default=datetime.utcnow)
     
+    # Payment tracking (Flutterwave integration)
+    payment_transaction_id = Column(String, nullable=True)  # Flutterwave transaction ID
+    payment_reference = Column(String, nullable=True)       # Payment reference/tx_ref
+    
     # Collection and refund tracking
     is_collected = Column(Boolean, default=False)
     collected_at = Column(DateTime, nullable=True)
@@ -313,6 +317,32 @@ class AdminGroupJoin(Base):
     # Relationships
     admin_group = relationship("AdminGroup", back_populates="joins")
     user = relationship("User", backref="admin_group_joins")
+
+class PendingJoin(Base):
+    """Temporary table to track payment intent before confirmation"""
+    __tablename__ = "pending_joins"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    group_id = Column(Integer, nullable=False)  # Can be AdminGroup or GroupBuy
+    group_type = Column(String, nullable=False)  # "admin_group" or "group_buy"
+    quantity = Column(Integer, nullable=False, default=1)
+    delivery_method = Column(String, nullable=False)
+    payment_method = Column(String, nullable=False)
+    special_instructions = Column(Text, nullable=True)
+    
+    # Payment tracking
+    tx_ref = Column(String, unique=True, nullable=False, index=True)  # Flutterwave tx_ref
+    payment_amount = Column(Float, nullable=False)
+    payment_status = Column(String, default="pending")  # pending, completed, failed, expired
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=False)  # Auto-expire after 30 minutes
+    completed_at = Column(DateTime, nullable=True)
+    
+    # Relationships
+    user = relationship("User", backref="pending_joins")
 
 class QRCodePickup(Base):
     __tablename__ = "qr_code_pickups"

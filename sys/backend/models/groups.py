@@ -543,6 +543,11 @@ async def get_my_groups(
                     status = "active"
                     order_status = "Active - Payment completed"
                 
+                # Calculate financial metrics for AdminGroup
+                target_amount = admin_group.price * admin_group.max_participants
+                current_amount = admin_group.participants * admin_group.price
+                amount_progress = (current_amount / target_amount * 100) if target_amount > 0 else 0
+                
                 group_data = {
                     "id": admin_group.id,
                     "name": admin_group.name,
@@ -574,7 +579,11 @@ async def get_my_groups(
                     "category": admin_group.category or "General",
                     "endDate": admin_group.end_date.strftime("%Y-%m-%dT%H:%M:%SZ") if admin_group.end_date else None,
                     "quantity": join.quantity,  # Add user's quantity
-                    "total_paid": round(join.paid_amount or admin_group.price * join.quantity, 2)  # User's contribution amount
+                    "total_paid": round(join.paid_amount or admin_group.price * join.quantity, 2),  # User's contribution amount
+                    # Money tracking (same as GroupBuy for consistency)
+                    "current_amount": round(current_amount, 2),
+                    "target_amount": round(target_amount, 2),
+                    "amount_progress": round(amount_progress, 1)
                 }
                 groups_data.append(group_data)
         
@@ -1213,76 +1222,57 @@ async def join_group(
                     detail="Payment service unavailable. Please try again later or contact support."
                 )
 
-            # Create admin group join record
-            join_record = AdminGroupJoin(
-                user_id=user.id,
-                admin_group_id=group_id,
-                quantity=request.quantity,
-                delivery_method=request.delivery_method,
-                payment_method="flutterwave",
-                special_instructions=request.special_instructions,
-                payment_transaction_id=transaction_id,
-                payment_reference=tx_ref,
-                paid_amount=payment_amount  # Store full payment amount
-            )
-
-            db.add(join_record)
-            db.flush()  # Flush to make join_record visible to queries
-
-            # Update group participant count
-            admin_group.participants += 1
+            # Create PENDING join record (not the real join yet!)
+            # The actual join will be created after payment confirmation
+            from models.models import PendingJoin
             
-            # Check if group should be completed (reached target quantity)
-            # Calculate total quantity sold across all participants (including this join)
-            total_quantity_sold = db.query(func.sum(AdminGroupJoin.quantity)).filter(
-                AdminGroupJoin.admin_group_id == group_id
-            ).scalar() or 0
+            # Check if there's already a pending join for this user/group
+            existing_pending = db.query(PendingJoin).filter(
+                PendingJoin.user_id == user.id,
+                PendingJoin.group_id == group_id,
+                PendingJoin.group_type == "admin_group",
+                PendingJoin.payment_status == "pending"
+            ).first()
             
-            print(f"[DEBUG] AdminGroup {group_id}: total_quantity_sold={total_quantity_sold}, max_participants={admin_group.max_participants}, is_active={admin_group.is_active}")
-            
-            # Complete group if total quantity meets or exceeds max_participants (target quantity)
-            if admin_group.max_participants and total_quantity_sold >= admin_group.max_participants:
-                print(f"[DEBUG] AdminGroup {group_id} reached target quantity, marking as completed")
-                if admin_group.is_active:
-                    admin_group.is_active = False  # Mark as completed
-                    admin_group.end_date = datetime.utcnow()  # Update end date to now
-                    print(f"[DEBUG] AdminGroup {group_id} marked as completed, creating supplier order")
-                    
-                    # Create supplier order when group completes
-                    from worker.auto_complete_groups import create_supplier_order_for_admin_group
-                    try:
-                        create_supplier_order_for_admin_group(db, admin_group)
-                        print(f"[DEBUG] Supplier order created for AdminGroup {group_id}")
-                    except Exception as e:
-                        print(f"[ERROR] Failed to create supplier order for admin group: {e}")
-                else:
-                    print(f"[DEBUG] AdminGroup {group_id} already inactive, skipping completion")
+            if existing_pending:
+                # Update existing pending join with new payment details
+                existing_pending.tx_ref = tx_ref
+                existing_pending.payment_amount = payment_amount
+                existing_pending.quantity = request.quantity
+                existing_pending.delivery_method = request.delivery_method
+                existing_pending.special_instructions = request.special_instructions
+                existing_pending.expires_at = datetime.utcnow() + timedelta(minutes=30)
+                pending_join = existing_pending
             else:
-                print(f"[DEBUG] AdminGroup {group_id} NOT completing: quantity check failed")
-
-            # Create transaction record
-            if admin_group.product_id:
-                from models.models import Transaction
-                transaction = Transaction(
+                # Create new pending join
+                pending_join = PendingJoin(
                     user_id=user.id,
-                    group_buy_id=None,
-                    product_id=admin_group.product_id,
+                    group_id=group_id,
+                    group_type="admin_group",
                     quantity=request.quantity,
-                    amount=payment_amount,
-                    transaction_type="payment",
-                    location_zone=user.location_zone or "Unknown"
+                    delivery_method=request.delivery_method,
+                    payment_method="flutterwave",
+                    special_instructions=request.special_instructions,
+                    tx_ref=tx_ref,
+                    payment_amount=payment_amount,
+                    payment_status="pending",
+                    expires_at=datetime.utcnow() + timedelta(minutes=30)
                 )
-                db.add(transaction)
-
+                db.add(pending_join)
+            
             db.commit()
+            
+            logger.info(f"[JOIN GROUP] Created pending join for user {user.id}, group {group_id}, tx_ref: {tx_ref}")
 
             return {
-                "message": "Successfully joined the group with payment!",
-                "join_id": join_record.id,
+                "message": "Payment initialized! Please complete payment to join the group.",
+                "pending_join_id": pending_join.id,
                 "quantity": request.quantity,
                 "payment_amount": round(payment_amount, 2),
-                "payment_status": payment_status,
+                "payment_status": "pending",
                 "transaction_id": transaction_id,
+                "tx_ref": tx_ref,  # Frontend needs this
+                "payment_url": payment_link,  # Frontend needs this
                 "group_progress": f"{admin_group.participants}/{admin_group.max_participants or 'unlimited'}"
             }
 
@@ -1352,66 +1342,57 @@ async def join_group(
                     detail="Payment service unavailable. Please try again later or contact support."
                 )
 
-            # Create contribution record
-            contribution = Contribution(
-                user_id=user.id,
-                group_buy_id=group_id,
-                quantity=request.quantity,
-                contribution_amount=contribution_amount,
-                paid_amount=payment_amount,
-                is_fully_paid=True,  # Marked as paid in simulation mode
-                payment_transaction_id=transaction_id,
-                payment_reference=tx_ref
-            )
-
-            db.add(contribution)
-
-            # Update group totals
-            group_buy.total_quantity += request.quantity
-            group_buy.total_contributions += contribution_amount
-            group_buy.total_paid += payment_amount
+            # Create PENDING join record (not the real contribution yet!)
+            # The actual contribution will be created after payment confirmation
+            from models.models import PendingJoin
             
-            # Update money tracking
-            group_buy.current_amount += payment_amount
-            # target_amount is already set at group creation
-            if group_buy.target_amount > 0:
-                group_buy.amount_progress = (group_buy.current_amount / group_buy.target_amount) * 100
-
-            # Check if group should be completed (reached MOQ or target amount)
-            if (group_buy.moq_progress >= 100 or group_buy.amount_progress >= 100) and group_buy.status == "active":
-                group_buy.status = "completed"
-                group_buy.completed_at = datetime.utcnow()
-                group_buy.supplier_status = "pending_supplier"
-                
-                # Create supplier order when group completes
-                from worker.auto_complete_groups import create_supplier_order_for_group
-                try:
-                    create_supplier_order_for_group(db, group_buy)
-                except Exception as e:
-                    print(f"Failed to create supplier order: {e}")
-
-            # Create transaction record for the contribution
-            from models.models import Transaction
-            transaction = Transaction(
-                user_id=user.id,
-                group_buy_id=group_id,
-                product_id=group_buy.product_id,
-                quantity=request.quantity,
-                amount=payment_amount,
-                transaction_type="payment",
-                location_zone=user.location_zone or "Unknown"
-            )
-
-            db.add(transaction)
+            # Check if there's already a pending join for this user/group
+            existing_pending = db.query(PendingJoin).filter(
+                PendingJoin.user_id == user.id,
+                PendingJoin.group_id == group_id,
+                PendingJoin.group_type == "group_buy",
+                PendingJoin.payment_status == "pending"
+            ).first()
+            
+            if existing_pending:
+                # Update existing pending join with new payment details
+                existing_pending.tx_ref = tx_ref
+                existing_pending.payment_amount = payment_amount
+                existing_pending.quantity = request.quantity
+                existing_pending.delivery_method = request.delivery_method
+                existing_pending.special_instructions = request.special_instructions
+                existing_pending.expires_at = datetime.utcnow() + timedelta(minutes=30)
+                pending_join = existing_pending
+            else:
+                # Create new pending join
+                pending_join = PendingJoin(
+                    user_id=user.id,
+                    group_id=group_id,
+                    group_type="group_buy",
+                    quantity=request.quantity,
+                    delivery_method=request.delivery_method,
+                    payment_method="flutterwave",
+                    special_instructions=request.special_instructions,
+                    tx_ref=tx_ref,
+                    payment_amount=payment_amount,
+                    payment_status="pending",
+                    expires_at=datetime.utcnow() + timedelta(minutes=30)
+                )
+                db.add(pending_join)
+            
             db.commit()
+            
+            logger.info(f"[JOIN GROUP] Created pending join for user {user.id}, group_buy {group_id}, tx_ref: {tx_ref}")
 
             return {
-                "message": "Successfully joined the group buy with payment!",
-                "contribution_id": contribution.id,
+                "message": "Payment initialized! Please complete payment to join the group.",
+                "pending_join_id": pending_join.id,
                 "quantity": request.quantity,
                 "payment_amount": round(payment_amount, 2),
-                "payment_status": payment_status,
+                "payment_status": "pending",
                 "transaction_id": transaction_id,
+                "tx_ref": tx_ref,  # Frontend needs this
+                "payment_url": payment_link,  # Frontend needs this
                 "group_progress": f"{group_buy.total_quantity}/{group_buy.product.moq} ({group_buy.moq_progress:.1f}%)",
                 "group_status": group_buy.status
             }

@@ -1022,46 +1022,20 @@ async def get_supplier_groups(
     Status filter: active, completed, cancelled
     """
     try:
-        # Get both GroupBuy and AdminGroup that belong to this supplier
+        # Get AdminGroup instances where supplier is the creator
+        # Note: GroupBuy is for community groups created by traders, not suppliers
         groups = []
         
-        # Get GroupBuy instances where supplier is the creator
-        group_buys = db.query(GroupBuy).filter(
-            GroupBuy.supplier_id == supplier.id
-        ).all()
-        
-        for gb in group_buys:
-            if status_filter and gb.status != status_filter:
-                continue
-                
-            # Get product details
-            product = db.query(Product).filter(Product.id == gb.product_id).first()
-            
-            # Count participants
-            participants_count = db.query(AdminGroupJoin).filter(
-                AdminGroupJoin.group_id == gb.id
-            ).count()
-            
-            groups.append({
-                "id": gb.id,
-                "name": gb.name or (product.name if product else "Unnamed Group"),
-                "category": product.category if product else "Unknown",
-                "price": float(gb.bulk_price) if gb.bulk_price else 0.0,
-                "original_price": float(product.unit_price) if product and product.unit_price else 0.0,
-                "participants": participants_count,
-                "max_participants": gb.max_participants or 50,
-                "status": gb.status,
-                "end_date": gb.end_date.isoformat() if gb.end_date else None,
-                "created_at": gb.created_at.isoformat() if gb.created_at else None
-            })
-        
-        # Get AdminGroup instances where supplier is the creator
         admin_groups = db.query(AdminGroup).filter(
             AdminGroup.supplier_id == supplier.id
         ).all()
         
         for ag in admin_groups:
-            if status_filter and ag.status != status_filter:
+            # AdminGroup uses is_active field, not status
+            # Skip filtering by status for now or check is_active
+            if status_filter == "active" and not ag.is_active:
+                continue
+            elif status_filter == "cancelled" and ag.is_active:
                 continue
                 
             # Get product details
@@ -1072,6 +1046,15 @@ async def get_supplier_groups(
                 AdminGroupJoin.admin_group_id == ag.id
             ).count()
             
+            # Calculate dynamic status
+            now = datetime.utcnow()
+            if ag.end_date and ag.end_date < now:
+                status = "completed" if participants_count >= ag.max_participants else "expired"
+            elif participants_count >= ag.max_participants:
+                status = "ready_for_payment"
+            else:
+                status = "active" if ag.is_active else "cancelled"
+            
             groups.append({
                 "id": ag.id,
                 "name": ag.name,
@@ -1080,9 +1063,9 @@ async def get_supplier_groups(
                 "original_price": float(ag.original_price) if ag.original_price else 0.0,
                 "participants": participants_count,
                 "max_participants": ag.max_participants or 50,
-                "status": ag.status,
+                "status": status,
                 "end_date": ag.end_date.isoformat() if ag.end_date else None,
-                "created_at": ag.created_at.isoformat() if ag.created_at else None
+                "created_at": ag.created.isoformat() if ag.created else None
             })
         
         # Sort by created_at (newest first)
@@ -2524,18 +2507,11 @@ async def create_supplier_group(
         # Debug: Log the received data
         print(f"DEBUG: Received supplier group data: {group_data.dict()}")
 
-        # Validate required fields
+        # Validate required fields (same as admin)
         if not group_data.name or not group_data.name.strip():
             raise HTTPException(status_code=400, detail="Group name is required")
-        
-        # Allow description to be empty if long_description is provided
-        final_description = group_data.description.strip() if group_data.description else ""
-        if not final_description and group_data.long_description and group_data.long_description.strip():
-            final_description = group_data.long_description.strip()
-        
-        if not final_description:
+        if not group_data.description or not group_data.description.strip():
             raise HTTPException(status_code=400, detail="Group description is required")
-            
         if not group_data.category or not group_data.category.strip():
             raise HTTPException(status_code=400, detail="Category is required")
         if not isinstance(group_data.price, (int, float)) or group_data.price <= 0:
@@ -2561,7 +2537,7 @@ async def create_supplier_group(
         # Create the admin group (supplier-managed)
         new_group = AdminGroup(
             name=group_data.name,
-            description=final_description,
+            description=group_data.description,
             long_description=group_data.long_description,
             category=group_data.category,
             price=group_data.price,
@@ -2603,4 +2579,5 @@ async def create_supplier_group(
         raise
     except Exception as e:
         print(f"Error creating supplier group: {e}")
+        db.rollback()
         raise HTTPException(status_code=500, detail="Failed to create group")

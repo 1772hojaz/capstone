@@ -9,11 +9,11 @@ class FlutterwaveService:
     def __init__(self):
         # Load credentials from environment or use test defaults
         # PUBLIC KEY (must start with FLWPUBK or FLWPUBK_TEST)
-        self.public_key = os.getenv('FLUTTERWAVE_PUBLIC_KEY', 'FLWPUBK_TEST-CONFIGURE_YOUR_KEY_HERE')
+        self.public_key = os.getenv('FLUTTERWAVE_PUBLIC_KEY', 'FLWPUBK_TEST-9451b8a5c95b08dae2ae0366bd89a079-X')
         # SECRET KEY (must start with FLWSECK or FLWSECK_TEST)
-        self.secret_key = os.getenv('FLUTTERWAVE_SECRET_KEY', 'FLWSECK_TEST-CONFIGURE_YOUR_KEY_HERE')
+        self.secret_key = os.getenv('FLUTTERWAVE_SECRET_KEY', 'FLWSECK_TEST-d55e0d7ae8a0e08b6d6078ba1f5094c2-X')
         # ENCRYPTION KEY
-        self.encryption_key = os.getenv('FLUTTERWAVE_ENCRYPTION_KEY', 'CONFIGURE_YOUR_ENCRYPTION_KEY_HERE')
+        self.encryption_key = os.getenv('FLUTTERWAVE_ENCRYPTION_KEY', 'FLWSECK_TEST4ff4b95e2452')
 
         self.base_url = "https://api.flutterwave.com/v3"
         self.headers = {
