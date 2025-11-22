@@ -13,7 +13,7 @@ import secrets
 import logging
 from cryptography.fernet import Fernet
 from db.database import get_db
-from models.models import User, AdminGroup, Contribution, GroupBuy, AdminGroupJoin, QRCodePickup
+from models.models import User, AdminGroup, Contribution, GroupBuy, AdminGroupJoin, QRCodePickup, SupplierOrder
 from authentication.auth import verify_token, verify_trader, verify_supplier
 
 router = APIRouter()
@@ -532,20 +532,45 @@ async def get_my_groups(
                 # Format due date
                 due_date = admin_group.end_date.strftime("%b %d, %Y") if admin_group.end_date else "No deadline"
                 
-                # Determine status based on admin group state
-                if not admin_group.is_active:
+                # Determine status based on admin group state and associated SupplierOrder
+                supplier_order = db.query(SupplierOrder).filter(SupplierOrder.admin_group_id == admin_group.id).first()
+                
+                # Debug logging for trader status
+                logger.info(f"🔍 Trader group status check for '{admin_group.name}' (ID: {admin_group.id})")
+                logger.info(f"   SupplierOrder exists: {supplier_order is not None}")
+                if supplier_order:
+                    logger.info(f"   SupplierOrder status: {supplier_order.status}")
+                    logger.info(f"   SupplierOrder ID: {supplier_order.id}")
+                
+                # Determine status based on SupplierOrder status
+                if supplier_order and supplier_order.status == "delivered":
+                    status = "completed"
+                    order_status = "Completed - Item collected"
+                    logger.info(f"   ✅ Setting trader status to: completed (delivered)")
+                elif supplier_order and supplier_order.status == "ready_for_pickup":
+                    status = "ready_for_pickup"
+                    order_status = "Ready for pickup - Generate QR code"
+                    logger.info(f"   ✅ Setting trader status to: ready_for_pickup")
+                elif not admin_group.is_active:
                     status = "cancelled"
                     order_status = "Cancelled"
+                    logger.info(f"   ⚠️  Setting trader status to: cancelled")
                 elif admin_group.end_date and admin_group.end_date < datetime.utcnow():
                     status = "completed"
                     order_status = "Completed - Ready for pickup"
+                    logger.info(f"   📋 Setting trader status to: completed")
                 else:
                     status = "active"
                     order_status = "Active - Payment completed"
+                    logger.info(f"   🟢 Setting trader status to: active")
                 
                 # Calculate financial metrics for AdminGroup
                 target_amount = admin_group.price * admin_group.max_participants
-                current_amount = admin_group.participants * admin_group.price
+                # Calculate actual current amount from all joins (sum of paid amounts)
+                total_paid_sum = db.query(func.sum(AdminGroupJoin.paid_amount)).filter(
+                    AdminGroupJoin.admin_group_id == admin_group.id
+                ).scalar() or 0
+                current_amount = float(total_paid_sum)
                 amount_progress = (current_amount / target_amount * 100) if target_amount > 0 else 0
                 
                 group_data = {
@@ -755,11 +780,11 @@ async def get_all_groups(
         
         # Calculate money tracking for AdminGroups
         target_amount = group.price * group.max_participants
-        # Calculate current amount from all joins
-        total_paid = db.query(AdminGroupJoin).filter(
+        # Calculate current amount from all joins (sum of paid amounts)
+        total_paid_sum = db.query(func.sum(AdminGroupJoin.paid_amount)).filter(
             AdminGroupJoin.admin_group_id == group.id
-        ).count() * group.price  # Assuming each join = 1 unit at group.price
-        current_amount = float(total_paid)
+        ).scalar() or 0
+        current_amount = float(total_paid_sum)
         
         # Calculate dynamic status based on deadline and progress
         now = datetime.utcnow()
@@ -945,11 +970,11 @@ async def get_group_detail(
     if admin_group:
         # Calculate money tracking for AdminGroups
         target_amount = admin_group.price * admin_group.max_participants
-        # Calculate current amount from all joins
-        total_paid = db.query(AdminGroupJoin).filter(
+        # Calculate current amount from all joins (sum of paid amounts)
+        total_paid_sum = db.query(func.sum(AdminGroupJoin.paid_amount)).filter(
             AdminGroupJoin.admin_group_id == admin_group.id
-        ).count() * admin_group.price
-        current_amount = float(total_paid)
+        ).scalar() or 0
+        current_amount = float(total_paid_sum)
         
         return GroupDetailResponse(
             id=admin_group.id,
