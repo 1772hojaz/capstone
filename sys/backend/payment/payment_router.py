@@ -124,9 +124,47 @@ async def confirm_pending_join(tx_ref: str, transaction_id: str, db: Session):
             ).scalar() or 0
             
             if admin_group.max_participants and total_quantity_sold >= admin_group.max_participants:
-                logger.info(f"AdminGroup {pending_join.group_id} reached target, marking as completed")
+                logger.info(f"AdminGroup {pending_join.group_id} reached target ({total_quantity_sold}/{admin_group.max_participants})")
                 admin_group.is_active = False
                 admin_group.end_date = datetime.utcnow()
+                
+                # AUTOMATIC ORDER CREATION: Create SupplierOrder automatically when target is reached
+                from models.models import SupplierOrder
+                
+                # Check if order already exists
+                existing_order = db.query(SupplierOrder).filter(
+                    SupplierOrder.admin_group_id == pending_join.group_id
+                ).first()
+                
+                if not existing_order:
+                    # Get all joins to calculate total amount
+                    all_joins = db.query(AdminGroupJoin).filter(
+                        AdminGroupJoin.admin_group_id == pending_join.group_id
+                    ).all()
+                    
+                    total_amount = sum(j.quantity * admin_group.price for j in all_joins)
+                    total_savings = (admin_group.original_price - admin_group.price) * sum(j.quantity for j in all_joins)
+                    
+                    # Generate order number
+                    order_number = f"ORD-AG-{pending_join.group_id}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+                    
+                    # Create SupplierOrder with status "pending" (awaiting supplier confirmation)
+                    supplier_order = SupplierOrder(
+                        supplier_id=admin_group.supplier_id,  # Can be None for admin-created groups
+                        admin_group_id=pending_join.group_id,
+                        order_number=order_number,
+                        status="pending",  # Awaiting supplier confirmation
+                        total_value=total_amount,
+                        total_savings=total_savings,
+                        delivery_method="pickup",
+                        admin_verification_status="verified",
+                        admin_verified_at=datetime.utcnow(),
+                        created_at=datetime.utcnow()
+                    )
+                    db.add(supplier_order)
+                    logger.info(f"✅ AUTO-CREATED SupplierOrder #{order_number} for group {pending_join.group_id} (status: pending)")
+                else:
+                    logger.info(f"ℹ️  SupplierOrder already exists for group {pending_join.group_id}")
             
             # Create transaction record
             if admin_group.product_id:

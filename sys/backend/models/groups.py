@@ -542,16 +542,33 @@ async def get_my_groups(
                     logger.info(f"   SupplierOrder status: {supplier_order.status}")
                     logger.info(f"   SupplierOrder ID: {supplier_order.id}")
                 
-                # Determine status based on SupplierOrder status
-                if supplier_order and supplier_order.status == "delivered":
+                # Check if THIS SPECIFIC TRADER's QR code has been used
+                user_qr_collected = db.query(QRCodePickup).filter(
+                    QRCodePickup.user_id == user.id,
+                    QRCodePickup.group_buy_id == admin_group.id,
+                    QRCodePickup.is_used == True
+                ).first() is not None
+                
+                logger.info(f"   User {user.id} has collected: {user_qr_collected}")
+                
+                # Determine status - CHECK INDIVIDUAL COLLECTION FIRST
+                # Individual trader's collection status takes precedence
+                if user_qr_collected:
+                    # THIS trader has collected their product
                     status = "completed"
                     order_status = "Completed - Item collected"
-                    logger.info(f"   ✅ Setting trader status to: completed (delivered)")
-                elif supplier_order and supplier_order.status == "ready_for_pickup":
+                    logger.info(f"   ✅ Setting trader status to: completed (user has collected)")
+                elif supplier_order and (supplier_order.status in ["ready_for_pickup", "delivered", "completed"]):
                     status = "ready_for_pickup"
                     order_status = "Ready for pickup - Generate QR code"
                     logger.info(f"   ✅ Setting trader status to: ready_for_pickup")
-                elif not admin_group.is_active:
+                elif supplier_order and supplier_order.status in ["pending", "confirmed"]:
+                    # Order exists but not yet ready for pickup
+                    status = "active"
+                    order_status = "Processing - Order confirmed"
+                    logger.info(f"   🟢 Setting trader status to: active (order pending)")
+                elif not admin_group.is_active and not supplier_order:
+                    # Only show as cancelled if inactive AND no order exists
                     status = "cancelled"
                     order_status = "Cancelled"
                     logger.info(f"   ⚠️  Setting trader status to: cancelled")

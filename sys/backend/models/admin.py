@@ -791,27 +791,43 @@ async def process_admin_group_payment(
         existing_order = db.query(SupplierOrder).filter(SupplierOrder.admin_group_id == group_id).first()
         
         if existing_order:
-            # Update existing order to ready_for_pickup
-            print(f"   ✏️  Updating existing order #{existing_order.order_number}")
-            supplier_order = existing_order
-            supplier_order.status = "ready_for_pickup"
-            supplier_order.admin_verification_status = "verified"
-            supplier_order.admin_verified_at = datetime.utcnow()
-            # Update values in case they weren't set correctly before
-            supplier_order.total_value = total_amount
-            supplier_order.total_savings = (group.original_price - group.price) * sum(join.quantity for join in joins)
-            db.add(supplier_order)
-            db.flush()
-            print(f"   ✅ Order updated: Total=${total_amount:.2f}, Status={supplier_order.status}")
+            # Check if supplier has confirmed the order
+            if existing_order.status == "confirmed":
+                # PROCESS PAYMENT - supplier confirmed, admin is now paying
+                print(f"   💰 Processing PAYMENT for confirmed order #{existing_order.order_number}")
+                supplier_order = existing_order
+                supplier_order.status = "ready_for_pickup"  # Update to ready for pickup
+                supplier_order.admin_verification_status = "verified"
+                supplier_order.admin_verified_at = datetime.utcnow()
+                supplier_order.total_value = total_amount
+                supplier_order.total_savings = (group.original_price - group.price) * sum(join.quantity for join in joins)
+                db.add(supplier_order)
+                db.flush()
+                print(f"   ✅ Order status updated to: {supplier_order.status}")
+                
+                # NOW create payment since supplier confirmed
+                should_create_payment = True
+            else:
+                # Order exists but supplier hasn't confirmed yet - just update values
+                print(f"   ✏️  Updating existing order #{existing_order.order_number}")
+                supplier_order = existing_order
+                supplier_order.admin_verification_status = "verified"
+                supplier_order.admin_verified_at = datetime.utcnow()
+                supplier_order.total_value = total_amount
+                supplier_order.total_savings = (group.original_price - group.price) * sum(join.quantity for join in joins)
+                db.add(supplier_order)
+                db.flush()
+                print(f"   ✅ Order updated: Total=${total_amount:.2f}, Status={supplier_order.status}")
+                should_create_payment = False
         else:
-            # Create new order (for both supplier-created and admin-created groups)
+            # Create new order with PENDING status (waiting for supplier confirmation)
             order_number = f"ORD-AG-{group_id}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
-            print(f"   ➕ Creating new order #{order_number}")
+            print(f"   ➕ Creating new PENDING order #{order_number} (awaiting supplier confirmation)")
             supplier_order = SupplierOrder(
                 supplier_id=group.supplier_id,  # Can be None for admin-created groups
                 admin_group_id=group_id,
                 order_number=order_number,
-                status="ready_for_pickup",  # Admin has processed payment, ready for pickup
+                status="pending",  # PENDING - waiting for supplier confirmation BEFORE payment
                 total_value=total_amount,
                 total_savings=(group.original_price - group.price) * sum(join.quantity for join in joins),
                 delivery_method="pickup",
@@ -822,12 +838,13 @@ async def process_admin_group_payment(
             db.add(supplier_order)
             db.flush()  # Flush to get supplier_order.id
             print(f"   ✅ Order created with ID: {supplier_order.id}, Status: {supplier_order.status}")
+            should_create_payment = False  # Don't create payment for new orders
 
-        # Create SupplierPayment record (for ALL groups with supplier_order)
-        # Payment should be created whether the group has a supplier or not (admin handles it)
-        print(f"\n💰 Creating SupplierPayment record")
-        print(f"   Group supplier_id: {group.supplier_id}")
+        # Create payment ONLY if supplier confirmed
+        print(f"\n📋 Payment Creation Check:")
         print(f"   SupplierOrder ID: {supplier_order.id}")
+        print(f"   Status: {supplier_order.status}")
+        print(f"   Should create payment: {should_create_payment}")
         
         # Check if payment already exists for this order
         existing_payment = db.query(SupplierPayment).filter(
@@ -835,51 +852,69 @@ async def process_admin_group_payment(
         ).first()
         
         if existing_payment:
-            print(f"   ⚠️  Payment already exists: {existing_payment.reference_number}")
+            print(f"   ℹ️  Payment already exists: {existing_payment.reference_number}")
             print(f"      Amount: ${existing_payment.amount:.2f}, Status: {existing_payment.status}")
-        else:
-            # Only create payment if group has a supplier
-            if group.supplier_id:
-                supplier = db.query(User).filter(User.id == group.supplier_id).first()
-                if supplier:
-                    print(f"   Supplier found: {supplier.email} (ID: {supplier.id})")
-                    
-                    platform_fee_rate = 0.0  # No platform fee
-                    platform_fee = total_amount * platform_fee_rate
-                    supplier_payout = total_amount - platform_fee  # Supplier gets full amount
+        elif should_create_payment and group.supplier_id:
+            # Create payment for confirmed orders
+            print(f"   💰 Creating payment for confirmed order")
+            supplier = db.query(User).filter(User.id == group.supplier_id).first()
+            if supplier:
+                print(f"   Supplier found: {supplier.email} (ID: {supplier.id})")
+                
+                platform_fee_rate = 0.0  # No platform fee
+                platform_fee = total_amount * platform_fee_rate
+                supplier_payout = total_amount - platform_fee
 
-                    supplier_payment = SupplierPayment(
-                        supplier_id=supplier.id,
-                        order_id=supplier_order.id,
-                        amount=supplier_payout,
-                        platform_fee=platform_fee,
-                        payment_method="admin_processed",
-                        reference_number=f"PAY-AG-{group_id}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
-                        status="completed",
-                        processed_at=datetime.utcnow()
-                    )
-                    db.add(supplier_payment)
-                    db.flush()  # Flush to ensure payment is created
-                    print(f"   ✅ Payment created with ID: {supplier_payment.id}")
-                    print(f"      Amount: ${supplier_payout:.2f} (after ${platform_fee:.2f} platform fee)")
-                    print(f"      Reference: {supplier_payment.reference_number}")
-                else:
-                    print(f"   ❌ Supplier not found with ID {group.supplier_id}")
+                supplier_payment = SupplierPayment(
+                    supplier_id=supplier.id,
+                    order_id=supplier_order.id,
+                    amount=supplier_payout,
+                    platform_fee=platform_fee,
+                    payment_method="admin_processed",
+                    reference_number=f"PAY-AG-{group_id}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
+                    status="completed",
+                    processed_at=datetime.utcnow()
+                )
+                db.add(supplier_payment)
+                db.flush()
+                print(f"   ✅ Payment created with ID: {supplier_payment.id}")
+                print(f"      Amount: ${supplier_payout:.2f}")
+                print(f"      Reference: {supplier_payment.reference_number}")
             else:
-                print(f"   ℹ️  No supplier_id for this group (admin-created group, no payment needed)")
+                print(f"   ❌ Supplier not found with ID {group.supplier_id}")
+        else:
+            # Skip payment creation
+            if not should_create_payment:
+                print(f"   ⏸️  Skipping payment - order not yet confirmed by supplier")
+                print(f"   📋 Next step: Supplier must confirm order, then admin can process payment")
+            else:
+                print(f"   ⏸️  Skipping payment - no supplier assigned to this group")
 
         print(f"\n💾 Committing transaction...")
         db.commit()
         print(f"✅ Transaction committed successfully!")
-
-        return {
-            "message": "Payment processed successfully",
-            "group_id": group_id,
-            "total_participants": total_participants,
-            "total_amount": round(total_amount, 2),
-            "status": "completed",
-            "processed_at": datetime.utcnow().isoformat()
-        }
+        
+        # Dynamic response based on action taken
+        if should_create_payment:
+            print(f"💰 Payment processed - order ready for pickup")
+            return {
+                "message": "Payment processed successfully - ready for pickup",
+                "group_id": group_id,
+                "total_participants": total_participants,
+                "total_amount": round(total_amount, 2),
+                "status": "completed",
+                "processed_at": datetime.utcnow().isoformat()
+            }
+        else:
+            print(f"📬 Order sent to supplier - awaiting confirmation before payment")
+            return {
+                "message": "Order sent to supplier for confirmation",
+                "group_id": group_id,
+                "total_participants": total_participants,
+                "total_amount": round(total_amount, 2),
+                "status": "pending_supplier_confirmation",
+                "processed_at": datetime.utcnow().isoformat()
+            }
 
     except HTTPException:
         raise
@@ -1350,24 +1385,44 @@ async def get_ready_for_payment_groups(
             func.sum(AdminGroupJoin.quantity).label('total_quantity')
         ).group_by(AdminGroupJoin.admin_group_id).subquery()
 
-        # Get admin groups that have reached their target but haven't been processed yet
-        # Exclude groups that already have a SupplierOrder (payment already processed)
-        processed_group_ids = db.query(SupplierOrder.admin_group_id).filter(
+        # Get admin groups that have been CONFIRMED by supplier but NOT YET PAID
+        # Show groups with SupplierOrder status = "confirmed" (supplier accepted, awaiting payment)
+        
+        # Get groups with confirmed orders (supplier said yes, waiting for admin to pay)
+        confirmed_order_ids = db.query(SupplierOrder.admin_group_id).filter(
+            SupplierOrder.admin_group_id.isnot(None),
+            SupplierOrder.status == "confirmed"  # Supplier confirmed, ready for payment
+        ).subquery()
+        
+        # Also include groups that reached target but haven't been sent to supplier yet
+        sent_to_supplier_ids = db.query(SupplierOrder.admin_group_id).filter(
             SupplierOrder.admin_group_id.isnot(None)
         ).subquery()
         
-        ready_groups = db.query(AdminGroup).join(
+        # Groups that reached target but haven't been sent to supplier
+        unsent_groups = db.query(AdminGroup).join(
             total_quantity_subquery,
             AdminGroup.id == total_quantity_subquery.c.admin_group_id
         ).outerjoin(
-            processed_group_ids,
-            AdminGroup.id == processed_group_ids.c.admin_group_id
+            sent_to_supplier_ids,
+            AdminGroup.id == sent_to_supplier_ids.c.admin_group_id
         ).filter(
             AdminGroup.is_active,
             AdminGroup.max_participants.isnot(None),
             total_quantity_subquery.c.total_quantity >= AdminGroup.max_participants,
-            processed_group_ids.c.admin_group_id.is_(None)  # Exclude processed groups
+            sent_to_supplier_ids.c.admin_group_id.is_(None)  # Not sent to supplier yet
         ).all()
+        
+        # Groups with confirmed orders
+        confirmed_groups = db.query(AdminGroup).join(
+            confirmed_order_ids,
+            AdminGroup.id == confirmed_order_ids.c.admin_group_id
+        ).filter(
+            AdminGroup.is_active
+        ).all()
+        
+        # Combine both lists
+        ready_groups = unsent_groups + confirmed_groups
 
         result = []
         for group in ready_groups:
@@ -1420,6 +1475,10 @@ async def get_ready_for_payment_groups(
                     # Log but don't fail the request if notification fails
                     print(f"Failed to send supplier notification for group {group.id}: {notification_error}")
 
+            # Check if supplier has confirmed this order
+            supplier_order = db.query(SupplierOrder).filter(SupplierOrder.admin_group_id == group.id).first()
+            supplier_confirmed = supplier_order and supplier_order.status == "confirmed"
+            
             result.append({
                 "id": group.id,
                 "name": group.name,
@@ -1434,6 +1493,8 @@ async def get_ready_for_payment_groups(
                 "dueDate": group.end_date.strftime("%Y-%m-%d") if group.end_date else "No deadline",
                 "description": group.description,
                 "status": "ready_for_payment",
+                "supplier_confirmed": supplier_confirmed,  # True if supplier confirmed, False if need to send
+                "action_needed": "Process Payment" if supplier_confirmed else "Send to Supplier",
                 "image": group.image or "https://via.placeholder.com/300x200?text=Product",  # Add image at group level
                 "price": float(group.price),
                 "original_price": float(group.original_price) if group.original_price else float(group.price),
@@ -1474,11 +1535,11 @@ async def get_completed_groups(
         print("\n🔍 GET /api/admin/groups/completed called")
         print(f"   Admin: {admin.email}")
         
-        # Get admin groups that have been processed (payment processed, order created)
-        # A group is "completed" when its payment has been processed and order created
+        # Get admin groups where payment has been processed (Option A)
+        # Show completed after payment, but track collection progress
         completed_group_ids = db.query(SupplierOrder.admin_group_id).filter(
-            SupplierOrder.admin_group_id.isnot(None)
-            # Any status means payment was processed - ready_for_pickup, delivered, completed, etc.
+            SupplierOrder.admin_group_id.isnot(None),
+            SupplierOrder.status.in_(["ready_for_pickup", "delivered", "completed"])  # After payment
         ).all()
         
         completed_group_ids = [gid[0] for gid in completed_group_ids]
@@ -1509,6 +1570,49 @@ async def get_completed_groups(
 
             # Determine completion reason
             completion_reason = "Processed" if not group.is_active else "Stock Depleted"
+            
+            # Get collection tracking data
+            # Get all participants with their collection status
+            participants = db.query(
+                User.id,
+                User.full_name,
+                User.email,
+                AdminGroupJoin.quantity,
+                QRCodePickup.is_used,
+                QRCodePickup.used_at
+            ).join(
+                AdminGroupJoin,
+                User.id == AdminGroupJoin.user_id
+            ).outerjoin(
+                QRCodePickup,
+                and_(
+                    QRCodePickup.user_id == User.id,
+                    QRCodePickup.group_buy_id == group.id,
+                    QRCodePickup.is_used == True
+                )
+            ).filter(
+                AdminGroupJoin.admin_group_id == group.id
+            ).all()
+            
+            collected_users = []
+            pending_users = []
+            
+            for p in participants:
+                user_data = {
+                    "id": p.id,
+                    "name": p.full_name or p.email,
+                    "email": p.email,
+                    "quantity": p.quantity,
+                    "collected_at": p.used_at.isoformat() if p.used_at else None
+                }
+                
+                if p.is_used:
+                    collected_users.append(user_data)
+                else:
+                    pending_users.append(user_data)
+            
+            collected_count = len(collected_users)
+            total_count = len(participants)
 
             result.append({
                 "id": group.id,
@@ -1525,6 +1629,14 @@ async def get_completed_groups(
                 "description": group.description,
                 "status": "completed",
                 "completion_reason": completion_reason,
+                "collection_tracking": {
+                    "total_participants": total_count,
+                    "collected_count": collected_count,
+                    "pending_count": total_count - collected_count,
+                    "collected_users": collected_users,
+                    "pending_users": pending_users,
+                    "collection_progress": f"{collected_count}/{total_count}"
+                },
                 "image": group.image or "https://via.placeholder.com/300x200?text=Product",  # Add image at group level
                 "price": float(group.price),
                 "original_price": float(group.original_price) if group.original_price else float(group.price),
@@ -1566,9 +1678,15 @@ async def get_group_moderation_stats(
             func.sum(AdminGroupJoin.quantity).label('total_quantity')
         ).group_by(AdminGroupJoin.admin_group_id).subquery()
 
-        # Get groups that have been processed (have a SupplierOrder)
-        processed_group_ids_subquery = db.query(SupplierOrder.admin_group_id).filter(
+        # Get groups that have been SENT to supplier (any SupplierOrder exists)
+        sent_to_supplier_ids_subquery = db.query(SupplierOrder.admin_group_id).filter(
             SupplierOrder.admin_group_id.isnot(None)
+        ).subquery()
+        
+        # Get groups with supplier-confirmed orders (waiting for admin payment)
+        confirmed_order_ids_subquery = db.query(SupplierOrder.admin_group_id).filter(
+            SupplierOrder.admin_group_id.isnot(None),
+            SupplierOrder.status == "confirmed"
         ).subquery()
 
         # Active groups count: Active groups that haven't reached target yet
@@ -1585,26 +1703,36 @@ async def get_group_moderation_stats(
             AdminGroup.is_active
         ).scalar() or 0
 
-        # Ready for payment count: Groups that reached target but haven't been processed yet
-        ready_for_payment_count = db.query(func.count(AdminGroup.id)).join(
+        # Ready for payment count: Groups that reached target but haven't been PAID yet
+        # This includes: (1) unsent groups and (2) supplier-confirmed groups awaiting payment
+        unsent_ready_count = db.query(func.count(AdminGroup.id)).join(
             total_quantity_subquery,
             AdminGroup.id == total_quantity_subquery.c.admin_group_id
         ).outerjoin(
-            processed_group_ids_subquery,
-            AdminGroup.id == processed_group_ids_subquery.c.admin_group_id
+            sent_to_supplier_ids_subquery,
+            AdminGroup.id == sent_to_supplier_ids_subquery.c.admin_group_id
         ).filter(
             AdminGroup.is_active,
             AdminGroup.max_participants.isnot(None),
             total_quantity_subquery.c.total_quantity >= AdminGroup.max_participants,
-            processed_group_ids_subquery.c.admin_group_id.is_(None)  # Not yet processed
+            sent_to_supplier_ids_subquery.c.admin_group_id.is_(None)  # Not sent to supplier yet
         ).scalar() or 0
+        
+        # Count supplier-confirmed groups awaiting payment
+        confirmed_ready_count = db.query(func.count(func.distinct(SupplierOrder.admin_group_id))).filter(
+            SupplierOrder.admin_group_id.isnot(None),
+            SupplierOrder.status == "confirmed"
+        ).scalar() or 0
+        
+        ready_for_payment_count = unsent_ready_count + confirmed_ready_count
 
-        # Required action count = ready for payment count (groups waiting to be processed)
+        # Required action count = ready for payment count (groups waiting for admin action)
         required_action_count = ready_for_payment_count
 
-        # Completed groups count: Groups that have been processed (have a SupplierOrder)
+        # Completed groups count: Groups where payment has been processed (Option A)
         completed_groups_count = db.query(func.count(func.distinct(SupplierOrder.admin_group_id))).filter(
-            SupplierOrder.admin_group_id.isnot(None)
+            SupplierOrder.admin_group_id.isnot(None),
+            SupplierOrder.status.in_(["ready_for_pickup", "delivered", "completed"])  # After payment
         ).scalar() or 0
 
         stats_result = {
@@ -1960,8 +2088,10 @@ async def scan_qr_code(
                                     )
                                     db.add(qr_record)
                                     db.flush()
+                                    print(f"DEBUG: Created new QR record with ID: {qr_record.id}")
                                 else:
                                     qr_record = existing_qr
+                                    print(f"DEBUG: Using existing QR record with ID: {qr_record.id}")
                             else:
                                 # Try GroupBuy (old system)
                                 group_buy = db.query(GroupBuy).filter(GroupBuy.id == group_id).first()
@@ -2022,29 +2152,23 @@ async def scan_qr_code(
                             raise HTTPException(status_code=404, detail="Admin group not found")
                         
                         print(f"DEBUG: AdminGroup product_id: {admin_group.product_id}")
-                        print(f"DEBUG: AdminGroup product relationship: {admin_group.product}")
+                        print(f"DEBUG: AdminGroup name: {admin_group.name}")
+                        print(f"DEBUG: AdminGroup price: {admin_group.price}")
                         
-                        # Get product - try multiple methods
-                        product = None
+                        # AdminGroup has its own product fields, use those
+                        # Create a fake product object from AdminGroup data
+                        class FakeProduct:
+                            def __init__(self, admin_group):
+                                self.id = admin_group.id
+                                self.name = admin_group.name
+                                self.description = admin_group.description or ""
+                                self.unit_price = admin_group.price
+                                self.bulk_price = admin_group.price
+                                self.category = admin_group.category or ""
+                                self.savings_factor = ((admin_group.original_price - admin_group.price) / admin_group.original_price * 100) if admin_group.original_price > 0 else 0.0
                         
-                        if admin_group.product:
-                            product = admin_group.product
-                        elif admin_group.product_id:
-                            product = db.query(Product).filter(Product.id == admin_group.product_id).first()
-                        
-                        # If no product linked to group, try to find by name from QR data
-                        if not product and "productname" in plain_data_lower:
-                            product_name = plain_data_lower.get("productname")
-                            print(f"DEBUG: Trying to find product by name: {product_name}")
-                            product = db.query(Product).filter(
-                                func.lower(Product.name) == product_name.lower()
-                            ).first()
-                            
-                            if product:
-                                print(f"DEBUG: Found product by name: {product.name} (ID: {product.id})")
-                        
-                        if not product:
-                            raise HTTPException(status_code=404, detail=f"Product not found for group {group_id}. Please link a product to this group.")
+                        product = FakeProduct(admin_group)
+                        print(f"DEBUG: Using AdminGroup data as product: {product.name}")
                         
                         # Get join record for transaction info
                         join_record = db.query(AdminGroupJoin).filter(
@@ -2127,24 +2251,8 @@ async def scan_qr_code(
                 raise HTTPException(status_code=400, detail=f"QR processing error: {str(decrypt_error)}")
 
         # Prepare response data (common for both QR code types)
-        user_info = {
-            "id": user.id,
-            "email": user.email,
-            "full_name": user.full_name or "",
-            "location_zone": user.location_zone
-        }
-
-        product_info = {
-            "id": product.id,
-            "name": product.name,
-            "description": product.description or "",
-            "unit_price": float(product.unit_price),
-            "bulk_price": float(product.bulk_price) if hasattr(product, 'bulk_price') else float(product.unit_price),
-            "category": product.category or "",
-            "savings_factor": float(product.savings_factor) if hasattr(product, 'savings_factor') else 0.0
-        }
-
-        # Handle both Transaction and AdminGroupJoin (fake transaction)
+        
+        # Handle both Transaction and AdminGroupJoin (fake transaction) - MUST DO THIS FIRST
         if hasattr(transaction, 'quantity'):
             # Regular transaction
             quantity = transaction.quantity
@@ -2155,14 +2263,38 @@ async def scan_qr_code(
             quantity = decrypted_data.get("quantity", 1)
             amount = float(transaction.total_amount)
             transaction_type = "admin_group"
+        
+        user_info = {
+            "id": user.id,
+            "email": user.email,
+            "full_name": user.full_name or "",
+            "location_zone": user.location_zone
+        }
+
+        product_info = {
+            "product_id": product.id,
+            "product_name": product.name,  # Frontend expects this
+            "name": product.name,  # Keep for compatibility
+            "description": product.description or "",
+            "quantity": quantity,  # Frontend expects this in product_info
+            "unit_price": float(product.unit_price),
+            "bulk_price": float(product.bulk_price) if hasattr(product, 'bulk_price') else float(product.unit_price),
+            "category": product.category or "",
+            "savings_factor": float(product.savings_factor) if hasattr(product, 'savings_factor') else 0.0
+        }
 
         purchase_info = {
+            "group_buy_id": group_id,
+            "group_buy_name": product.name,  # Use product name as group name
             "quantity": quantity,
             "amount": amount,
+            "total_amount": amount,  # Frontend expects this field
             "transaction_type": transaction_type,
             "purchase_date": transaction.created_at.isoformat()
         }
 
+        print(f"DEBUG: QR record at response time: {qr_record}, ID: {qr_record.id if qr_record else 'None'}")
+        
         qr_status = {
             "id": qr_record.id if qr_record else None,
             "is_used": qr_record.is_used if qr_record else False,
@@ -2173,6 +2305,12 @@ async def scan_qr_code(
             "used_by_staff": qr_record.used_by_staff if qr_record else None,
             "used_location": qr_record.used_location if qr_record else None
         }
+        
+        print(f"DEBUG: QR status being returned: {qr_status}")
+        
+        # Commit any new QR records to the database
+        db.commit()
+        print("DEBUG: Database committed, QR record should be persisted")
 
         return QRCodeScanResponse(
             user_info=user_info,
@@ -2826,9 +2964,33 @@ async def mark_qr_code_as_used(
             ).first()
             
             if supplier_order:
-                print(f"📦 Updating SupplierOrder {supplier_order.order_number} to 'delivered'")
-                supplier_order.status = "delivered"
-                supplier_order.delivered_at = datetime.utcnow()
+                # Check if ALL traders have collected their products
+                total_participants = db.query(func.count(AdminGroupJoin.id)).filter(
+                    AdminGroupJoin.admin_group_id == admin_group_id
+                ).scalar() or 0
+                
+                # Count how many have collected (QR codes marked as used)
+                collected_count = db.query(func.count(QRCodePickup.id)).filter(
+                    QRCodePickup.group_buy_id == admin_group_id,
+                    QRCodePickup.is_used == True
+                ).scalar() or 0
+                
+                print(f"📊 Collection Progress for Group {admin_group_id}:")
+                print(f"   Total Participants: {total_participants}")
+                print(f"   Collected: {collected_count}")
+                
+                if collected_count >= total_participants and total_participants > 0:
+                    # ALL traders have collected - mark as COMPLETED
+                    print(f"✅ ALL traders collected! Marking order as COMPLETED")
+                    supplier_order.status = "completed"
+                    supplier_order.delivered_at = datetime.utcnow()
+                else:
+                    # Some traders still need to collect - mark as DELIVERED (in progress)
+                    print(f"📦 Partial collection ({collected_count}/{total_participants}) - Status: DELIVERED")
+                    supplier_order.status = "delivered"
+                    if not supplier_order.delivered_at:
+                        supplier_order.delivered_at = datetime.utcnow()
+                
                 db.add(supplier_order)
         
         db.commit()

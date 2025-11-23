@@ -1074,6 +1074,12 @@ async def get_supplier_groups(
             else:
                 status = "active" if ag.is_active else "cancelled"
             
+            # Check if a SupplierOrder already exists for this group
+            existing_order = db.query(SupplierOrder).filter(
+                SupplierOrder.admin_group_id == ag.id
+            ).first()
+            has_order = existing_order is not None
+            
             groups.append({
                 "id": ag.id,
                 "name": ag.name,
@@ -1087,6 +1093,7 @@ async def get_supplier_groups(
                 "current_amount": round(current_amount, 2),
                 "target_amount": round(target_amount, 2),
                 "status": status,
+                "has_order": has_order,  # NEW: Indicates if order already exists
                 "end_date": ag.end_date.isoformat() if ag.end_date else None,
                 "created_at": ag.created.isoformat() if ag.created else None
             })
