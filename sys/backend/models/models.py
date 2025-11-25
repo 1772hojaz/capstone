@@ -1,8 +1,9 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey, Text, JSON
+from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey, Text, JSON, Index
 from sqlalchemy.orm import relationship
 from db.database import Base
 from datetime import datetime
 from pydantic import BaseModel
+from .orders import Order, OrderItem
 
 class User(Base):
     __tablename__ = "users"
@@ -53,6 +54,7 @@ class User(Base):
     # Additional preferences
     show_recommendations = Column(Boolean, default=True)
     auto_join_groups = Column(Boolean, default=True)
+    price_alerts = Column(Boolean, default=False)  # Frontend naming compatibility
     
     created_at = Column(DateTime, default=datetime.utcnow)
     
@@ -63,6 +65,7 @@ class User(Base):
     chat_messages = relationship("ChatMessage", back_populates="user")
     supplier_products = relationship("SupplierProduct", back_populates="supplier")
     supplier_orders = relationship("SupplierOrder", back_populates="supplier")
+    orders = relationship("Order", back_populates="supplier")
 
 class Product(Base):
     __tablename__ = "products"
@@ -77,6 +80,8 @@ class Product(Base):
     bulk_price_zig = Column(Float)  # ZiG currency
     moq = Column(Integer, nullable=False)  # Minimum Order Quantity
     category = Column(String)
+    manufacturer = Column(String, nullable=True)  # Product manufacturer
+    total_stock = Column(Integer, nullable=True)  # Total available stock
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     
@@ -102,15 +107,28 @@ class GroupBuy(Base):
     total_quantity = Column(Integer, default=0)
     total_contributions = Column(Float, default=0.0)
     total_paid = Column(Float, default=0.0)
+    
+    # Money-based progress tracking (primary display)
+    current_amount = Column(Float, default=0.0)  # Total money collected so far
+    target_amount = Column(Float, default=0.0)  # Target amount needed
+    amount_progress = Column(Float, default=0.0)  # Percentage (0-100)
+    
     status = Column(String, default="active")  # active, completed, cancelled
     created_at = Column(DateTime, default=datetime.utcnow)
     completed_at = Column(DateTime, nullable=True)
+    
+    # Supplier workflow fields
+    supplier_status = Column(String, nullable=True)  # pending_supplier, supplier_accepted, supplier_rejected, ready_for_collection, collected
+    supplier_response_at = Column(DateTime, nullable=True)
+    ready_for_collection_at = Column(DateTime, nullable=True)
+    supplier_notes = Column(Text, nullable=True)
     
     # Relationships
     product = relationship("Product", back_populates="group_buys")
     creator = relationship("User", back_populates="created_groups", foreign_keys=[creator_id])
     contributions = relationship("Contribution", back_populates="group_buy", cascade="all, delete-orphan")
     chat_messages = relationship("ChatMessage", back_populates="group_buy", cascade="all, delete-orphan")
+    orders = relationship("Order", back_populates="group")
     
     @property
     def moq_progress(self):
@@ -123,6 +141,14 @@ class GroupBuy(Base):
     def participants_count(self):
         """Count number of participants"""
         return len(self.contributions)
+    
+    __table_args__ = (
+        Index("idx_group_buys_status_deadline", "status", "deadline"),
+        Index("idx_group_buys_location_status", "location_zone", "status"),
+        Index("idx_group_buys_product", "product_id"),
+        Index("idx_group_buys_creator", "creator_id"),
+        Index("idx_group_buys_amount_progress", "amount_progress"),
+    )
 
 class Contribution(Base):
     __tablename__ = "contributions"
@@ -136,9 +162,25 @@ class Contribution(Base):
     is_fully_paid = Column(Boolean, default=False)
     joined_at = Column(DateTime, default=datetime.utcnow)
     
+    # Payment tracking (Flutterwave integration)
+    payment_transaction_id = Column(String, nullable=True)  # Flutterwave transaction ID
+    payment_reference = Column(String, nullable=True)       # Payment reference/tx_ref
+    
+    # Collection and refund tracking
+    is_collected = Column(Boolean, default=False)
+    collected_at = Column(DateTime, nullable=True)
+    qr_code_token = Column(String, nullable=True)  # Unique token for QR verification
+    refund_status = Column(String, nullable=True)  # pending, completed, failed
+    refunded_at = Column(DateTime, nullable=True)
+    
     # Relationships
     group_buy = relationship("GroupBuy", back_populates="contributions")
     user = relationship("User", back_populates="contributions")
+    
+    __table_args__ = (
+        Index("idx_contributions_user_group", "user_id", "group_buy_id"),
+        Index("idx_contributions_group_joined", "group_buy_id", "joined_at"),
+    )
 
 class Transaction(Base):
     __tablename__ = "transactions"
@@ -158,6 +200,12 @@ class Transaction(Base):
     # Store for ML retraining
     location_zone = Column(String)
     cluster_id = Column(Integer)
+    
+    __table_args__ = (
+        Index("idx_transactions_user_created", "user_id", "created_at"),
+        Index("idx_transactions_product_created", "product_id", "created_at"),
+        Index("idx_transactions_group_created", "group_buy_id", "created_at"),
+    )
 
 class ChatMessage(Base):
     __tablename__ = "chat_messages"
@@ -216,6 +264,7 @@ class AdminGroup(Base):
     created = Column(DateTime, default=datetime.utcnow)
     end_date = Column(DateTime, nullable=False)
     admin_name = Column(String, default="Admin")
+    supplier_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # Track who created this group
     shipping_info = Column(String, default="Free shipping when group goal is reached")
     estimated_delivery = Column(String, default="2-3 weeks after group completion")
     features = Column(JSON)  # List of feature strings
@@ -244,9 +293,11 @@ class AdminGroup(Base):
         return 0
 
     # Relationships
-    joins = relationship("AdminGroupJoin", back_populates="admin_group")
+    joins = relationship("AdminGroupJoin", back_populates="admin_group", cascade="all, delete-orphan")
     supplier_orders = relationship("SupplierOrder", backref="admin_group")
     product = relationship("Product", backref="admin_groups")
+    performance_metrics = relationship("GroupPerformanceMetrics", back_populates="admin_group", cascade="all, delete-orphan", uselist=False, passive_deletes=True)
+    user_interactions = relationship("UserGroupInteractionMatrix", back_populates="admin_group", cascade="all, delete-orphan", passive_deletes=True)
 
 class AdminGroupJoin(Base):
     __tablename__ = "admin_group_joins"
@@ -260,11 +311,38 @@ class AdminGroupJoin(Base):
     special_instructions = Column(Text, nullable=True)
     payment_transaction_id = Column(String, nullable=True)  # For card payments
     payment_reference = Column(String, nullable=True)       # For card payments
+    paid_amount = Column(Float, nullable=True)              # Amount paid for this join
     joined_at = Column(DateTime, default=datetime.utcnow)
     
     # Relationships
     admin_group = relationship("AdminGroup", back_populates="joins")
     user = relationship("User", backref="admin_group_joins")
+
+class PendingJoin(Base):
+    """Temporary table to track payment intent before confirmation"""
+    __tablename__ = "pending_joins"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    group_id = Column(Integer, nullable=False)  # Can be AdminGroup or GroupBuy
+    group_type = Column(String, nullable=False)  # "admin_group" or "group_buy"
+    quantity = Column(Integer, nullable=False, default=1)
+    delivery_method = Column(String, nullable=False)
+    payment_method = Column(String, nullable=False)
+    special_instructions = Column(Text, nullable=True)
+    
+    # Payment tracking
+    tx_ref = Column(String, unique=True, nullable=False, index=True)  # Flutterwave tx_ref
+    payment_amount = Column(Float, nullable=False)
+    payment_status = Column(String, default="pending")  # pending, completed, failed, expired
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=False)  # Auto-expire after 30 minutes
+    completed_at = Column(DateTime, nullable=True)
+    
+    # Relationships
+    user = relationship("User", backref="pending_joins")
 
 class QRCodePickup(Base):
     __tablename__ = "qr_code_pickups"
@@ -350,6 +428,11 @@ class SupplierOrder(Base):
     shipped_at = Column(DateTime, nullable=True)
     delivered_at = Column(DateTime, nullable=True)
     
+    # Admin verification fields
+    admin_verification_status = Column(String, default="pending")  # pending, verified, rejected
+    admin_verified_at = Column(DateTime, nullable=True)
+    qr_codes_generated = Column(Boolean, default=False)
+    
     # Relationships
     supplier = relationship("User", back_populates="supplier_orders")
     order_items = relationship("SupplierOrderItem", back_populates="supplier_order", cascade="all, delete-orphan")
@@ -410,9 +493,13 @@ class SupplierPayment(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     supplier_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    order_id = Column(Integer, ForeignKey("supplier_orders.id"), nullable=True)  # Link to order
     amount = Column(Float, nullable=False)
+    platform_fee = Column(Float, nullable=True)  # Platform fee deducted
     payment_method = Column(String, nullable=False)  # bank_transfer, mobile_money, cash
     reference_number = Column(String)
+    transfer_id = Column(String, nullable=True)  # Flutterwave transfer ID
+    transfer_reference = Column(String, nullable=True)  # Transfer reference
     status = Column(String, default="pending")  # pending, completed, failed
     processed_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -455,20 +542,32 @@ class QRScanHistory(Base):
     group_buy = relationship("GroupBuy", backref="scan_history")
     product = relationship("Product", backref="scan_history")
 
-class UserBehaviorFeatures(Base):
-    __tablename__ = "user_behavior_features"
+# UserBehaviorFeatures moved to analytics_models.py to avoid duplication
+# Import from there if needed: from models.analytics_models import UserBehaviorFeatures
+
+class BenchmarkResult(Base):
+    """Store ML model benchmark evaluation results"""
+    __tablename__ = "benchmark_results"
     
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
-    engagement_score = Column(Float, default=0.5)
-    price_sensitivity_score = Column(Float, default=0.5)
-    top_category_1 = Column(String)
-    top_category_2 = Column(String)
-    days_since_last_activity = Column(Integer, default=0)
-    last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    model_name = Column(String, index=True, nullable=False)  # "hybrid", "random", "popularity", etc.
+    precision_at_5 = Column(Float, nullable=False)
+    precision_at_10 = Column(Float, nullable=False)
+    recall_at_5 = Column(Float, nullable=False)
+    recall_at_10 = Column(Float, nullable=False)
+    ndcg_at_5 = Column(Float, nullable=False)
+    ndcg_at_10 = Column(Float, nullable=False)
+    map_score = Column(Float, nullable=False)  # Mean Average Precision
+    hit_rate = Column(Float, nullable=False)
+    coverage = Column(Float, nullable=False)
+    test_set_size = Column(Integer, nullable=False)
+    evaluation_time = Column(Float, default=0.0)  # seconds
+    run_at = Column(DateTime, default=datetime.utcnow, index=True)
+    notes = Column(Text, nullable=True)
     
-    # Relationships
-    user = relationship("User", backref="behavior_features")
+    __table_args__ = (
+        Index("idx_benchmark_model_rundate", "model_name", "run_at"),
+    )
 
 
 # Pydantic models for API responses
@@ -499,4 +598,11 @@ class UserProductPurchaseInfo(BaseModel):
     total_amount: float
     purchase_date: datetime
     pickup_location: str
+
+# Import analytics models after all base models are defined to avoid circular dependencies
+try:
+    from models.analytics_models import GroupPerformanceMetrics, UserGroupInteractionMatrix
+except ImportError:
+    # Analytics models may not be available in all configurations
+    pass
 

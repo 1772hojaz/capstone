@@ -4,6 +4,8 @@ Create missing database tables for supplier functionality
 """
 
 from db.database import engine, Base
+# Import all models so they're registered with Base
+from models import models  # noqa: F401
 
 def create_missing_tables():
     """Create all missing tables for supplier functionality"""

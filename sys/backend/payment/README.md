@@ -112,7 +112,16 @@ The integration is configured for Flutterwave's test environment. Use test card 
 
 ## Production
 
-For production:
-1. Set `is_test=False` in the service
-2. Use live API keys
-3. Update webhook URL in Flutterwave dashboard
+✅ **Production credentials are now configured!**
+
+See `FLUTTERWAVE_SETUP.md` in the backend root directory for:
+- Credential details
+- Testing instructions
+- Security best practices
+- Troubleshooting guide
+
+For production deployment:
+1. ✅ Credentials configured (Client ID, Secret, Encryption Key)
+2. 🔄 Restart backend server
+3. 🧪 Test payment flow
+4. 📊 Monitor Flutterwave dashboard at https://dashboard.flutterwave.com

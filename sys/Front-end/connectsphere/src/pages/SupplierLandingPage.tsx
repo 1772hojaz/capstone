@@ -80,13 +80,13 @@ const SupplierLandingPage = () => {
               For Traders
             </button>
             <button
-              onClick={() => navigate('/supplier/login')}
+              onClick={() => navigate('/login')}
               className="text-white hover:text-blue-200 transition"
             >
               Sign In
             </button>
             <button
-              onClick={() => navigate('/supplier/login')}
+              onClick={() => navigate('/login')}
               className="bg-white text-blue-900 px-4 py-2 rounded-lg font-medium hover:bg-blue-50 transition"
             >
               Get Started
@@ -110,7 +110,7 @@ const SupplierLandingPage = () => {
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <button
-              onClick={() => navigate('/supplier/login')}
+              onClick={() => navigate('/login')}
               className="bg-white text-blue-900 px-8 py-4 rounded-xl font-bold text-lg hover:bg-blue-50 transition shadow-2xl inline-flex items-center justify-center gap-2"
             >
               Start Selling Today

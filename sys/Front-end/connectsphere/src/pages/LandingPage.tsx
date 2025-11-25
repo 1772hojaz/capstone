@@ -110,7 +110,7 @@ const LandingPage = () => {
             {/* Left Content */}
             <div className="text-white space-y-8">
               <div className="inline-block px-4 py-2 bg-white/10 backdrop-blur-sm rounded-full text-sm font-medium border border-white/20">
-                🎉 Save up to 40% with Group Buying
+                Save up to 40% with Group Buying
               </div>
               
               <h1 className="text-5xl lg:text-6xl font-bold leading-tight">
@@ -223,7 +223,7 @@ const LandingPage = () => {
                 30% OFF
               </div>
               <div className="absolute -bottom-6 -left-6 bg-green-400 text-green-900 px-4 py-2 rounded-full font-bold shadow-lg">
-                ✓ Verified
+                Verified
               </div>
             </div>
           </div>

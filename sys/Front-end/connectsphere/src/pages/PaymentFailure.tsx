@@ -1,4 +1,8 @@
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
+import { XCircle, RefreshCw, MessageCircle, ArrowLeft } from 'lucide-react';
+import { Button } from '../components/ui/button';
+import { Card } from '../components/ui/card';
+import { Badge } from '../components/ui/badge';
 
 const PaymentFailure = () => {
   const navigate = useNavigate();
@@ -9,69 +13,163 @@ const PaymentFailure = () => {
   const transactionId = searchParams.get('transaction_id');
   const status = searchParams.get('status');
 
-  // Check if this is a quantity increase payment
   const paymentData = location.state as {
     error?: string;
     action?: string;
+    groupName?: string;
+    amount?: number;
   } | null;
 
   const isQuantityIncrease = paymentData?.action === 'quantity_increase';
 
   const handleRetry = () => {
-    // Redirect back to the group detail page or all groups
     navigate('/all-groups');
   };
 
   const handleContactSupport = () => {
-    // For now, just show an alert. In a real app, this would open a support chat or email
-    alert('Please contact support at support@connectsphere.com for assistance.');
+    navigate('/contact');
+  };
+
+  const handleBackToHome = () => {
+    navigate('/trader');
+  };
+
+  // Determine error message based on status or custom error
+  const getErrorMessage = () => {
+    if (paymentData?.error) {
+      return paymentData.error;
+    }
+
+    switch (status) {
+      case 'cancelled':
+        return 'You cancelled the payment process. No charges were made to your account.';
+      case 'failed':
+        return 'The payment could not be processed. Please check your payment details and try again.';
+      case 'declined':
+        return 'Your payment was declined by your bank. Please try a different payment method.';
+      default:
+        return `Your ${isQuantityIncrease ? 'quantity increase' : 'group join'} payment could not be processed.`;
+    }
+  };
+
+  const getRecommendedAction = () => {
+    if (status === 'cancelled') {
+      return 'You can try again when you\'re ready to complete the payment.';
+    }
+    if (status === 'declined') {
+      return 'Please contact your bank or try a different payment method.';
+    }
+    return 'Please try again or contact our support team if the issue persists.';
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center px-4">
-      <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-8 text-center">
-        <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-          <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex flex-col items-center justify-center px-4 py-12">
+      <Card className="max-w-lg w-full p-8">
+        {/* Error Icon */}
+        <div className="flex justify-center mb-6">
+          <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center">
+            <XCircle className="w-12 h-12 text-red-600" />
+          </div>
         </div>
 
-        <h2 className="text-xl font-semibold text-gray-800 mb-2">Payment Failed</h2>
-        <p className="text-gray-600 mb-6">
-          {paymentData?.error ||
-            `Your ${isQuantityIncrease ? 'quantity increase' : 'group join'} payment could not be processed. Please try again or contact support if the issue persists.`
-          }
-        </p>
+        {/* Error Message */}
+        <div className="text-center mb-6">
+          <h2 className="text-2xl font-bold text-gray-900 mb-3">Payment {status === 'cancelled' ? 'Cancelled' : 'Failed'}</h2>
+          <p className="text-gray-600 mb-2">
+            {getErrorMessage()}
+          </p>
+          <p className="text-sm text-gray-500">
+            {getRecommendedAction()}
+          </p>
+        </div>
 
+        {/* Payment Details (if available) */}
+        {paymentData && (paymentData.groupName || paymentData.amount) && (
+          <Card variant="filled" className="p-4 mb-6">
+            <h3 className="font-semibold text-gray-900 mb-3 text-center">Order Details</h3>
+            <div className="space-y-2 text-sm">
+              {paymentData.groupName && (
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Group:</span>
+                  <span className="font-medium text-gray-900">{paymentData.groupName}</span>
+                </div>
+              )}
+              {paymentData.amount && (
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Amount:</span>
+                  <span className="font-medium text-gray-900">${paymentData.amount.toFixed(2)}</span>
+                </div>
+              )}
+              <div className="flex justify-between">
+                <span className="text-gray-600">Type:</span>
+                <span className="font-medium text-gray-900">
+                  {isQuantityIncrease ? 'Quantity Increase' : 'Group Join'}
+                </span>
+              </div>
+              <div className="flex justify-between items-center pt-2 border-t border-gray-200">
+                <span className="text-gray-600">Payment Status:</span>
+                <Badge variant="destructive" size="sm">
+                  {status === 'cancelled' ? 'Cancelled' : 'Failed'}
+                </Badge>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {/* Action Buttons */}
         <div className="space-y-3">
-          <button
-            onClick={handleRetry}
-            className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
-          >
-            Try Again
-          </button>
-
-          <button
-            onClick={handleContactSupport}
-            className="w-full px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition"
-          >
+          {status !== 'cancelled' && (
+            <Button onClick={handleRetry} className="w-full" size="lg">
+              <RefreshCw className="mr-2 h-5 w-5" />
+              Try Again
+            </Button>
+          )}
+          
+          <Button onClick={handleContactSupport} variant="outline" className="w-full">
+            <MessageCircle className="mr-2 h-5 w-5" />
             Contact Support
-          </button>
+          </Button>
+
+          <Button onClick={handleBackToHome} variant="ghost" className="w-full">
+            <ArrowLeft className="mr-2 h-5 w-5" />
+            Back to Dashboard
+          </Button>
         </div>
 
         {/* Transaction Details */}
         {(txRef || transactionId || status) && (
-          <div className="mt-6 pt-4 border-t border-gray-200 text-left">
-            <h3 className="text-sm font-medium text-gray-700 mb-2">Transaction Details</h3>
-            <div className="text-xs text-gray-500 space-y-1">
-              {txRef && <p>Reference: {txRef}</p>}
-              {transactionId && <p>Transaction ID: {transactionId}</p>}
-              {status && <p>Status: {status}</p>}
-              {isQuantityIncrease && <p>Type: Quantity Increase</p>}
+          <div className="mt-8 pt-6 border-t border-gray-200">
+            <h3 className="text-sm font-semibold text-gray-700 mb-3">Transaction Details</h3>
+            <div className="space-y-2 text-xs text-gray-600">
+              {txRef && (
+                <div className="flex justify-between">
+                  <span>Reference:</span>
+                  <span className="font-mono text-right break-all">{txRef.substring(0, 30)}...</span>
+                </div>
+              )}
+              {transactionId && (
+                <div className="flex justify-between">
+                  <span>Transaction ID:</span>
+                  <span className="font-mono text-right break-all">{transactionId.substring(0, 20)}...</span>
+                </div>
+              )}
+              {status && (
+                <div className="flex justify-between items-center">
+                  <span>Status:</span>
+                  <Badge variant="destructive" size="sm">{status}</Badge>
+                </div>
+              )}
             </div>
           </div>
         )}
-      </div>
+
+        {/* Help Text */}
+        <div className="mt-6 p-4 bg-blue-50 rounded-lg">
+          <p className="text-sm text-blue-800">
+            <strong>Need help?</strong> Our support team is available 24/7 to assist you with any payment issues.
+          </p>
+        </div>
+      </Card>
     </div>
   );
 };

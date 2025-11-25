@@ -14,7 +14,7 @@ from authentication.auth import hash_password
 from db.seed_mbare_products import seed_mbare_products
 from db.seed_mbare_data import main as seed_mbare_data_main
 import random
-from datetime import datetime, timedelta, UTC
+from datetime import datetime, timedelta, timezone
 
 def create_suppliers_and_related_data(db):
     """Create suppliers and populate all supplier-related tables"""
@@ -199,7 +199,7 @@ def create_suppliers_and_related_data(db):
                 delivery_method=random.choice(["pickup", "delivery"]),
                 delivery_location=f"{trader.location_zone} Area, Harare",
                 special_instructions="Handle with care - fresh produce",
-                created_at=datetime.now(UTC) - timedelta(days=random.randint(1, 30))
+                created_at=datetime.now(timezone.utc) - timedelta(days=random.randint(1, 30))
             )
             db.add(order)
             db.commit()  # Commit order to get ID

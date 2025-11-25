@@ -1,8 +1,20 @@
-// Analytics Service for tracking user interactions
+/**
+ * Analytics Service - TRADER ONLY
+ * 
+ * Tracks TRADER user behavior and interactions for analytics and ML recommendations.
+ * Events are batched and sent to the backend every 5 seconds or when the page unloads.
+ * 
+ * NOTE: Backend automatically filters out events from admin and supplier users.
+ * Only trader (regular user) events are stored in the analytics database.
+ */
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+
+// 🔴 TEMPORARILY DISABLED - Set to false to disable event tracking
+const ANALYTICS_ENABLED = false;
 
 class AnalyticsService {
   constructor() {
+    this.enabled = ANALYTICS_ENABLED;
     this.sessionId = this.generateSessionId();
     this.anonymousId = this.getOrCreateAnonymousId();
     this.eventQueue = [];
@@ -10,11 +22,17 @@ class AnalyticsService {
     this.maxQueueSize = 10;
     this.sessionStartTime = Date.now();
     
-    // Start auto-flush
-    this.startAutoFlush();
-    
-    // Track page visibility changes
-    this.setupVisibilityTracking();
+    if (this.enabled) {
+      // Start auto-flush
+      this.startAutoFlush();
+      
+      // Track page visibility changes
+      this.setupVisibilityTracking();
+      
+      console.log('✅ Analytics tracking enabled');
+    } else {
+      console.log('🔴 Analytics tracking disabled');
+    }
   }
 
   generateSessionId() {
@@ -59,6 +77,12 @@ class AnalyticsService {
   }
 
   async track(eventType, properties = {}) {
+    // Check if analytics is enabled
+    if (!this.enabled) {
+      console.log('[Analytics Disabled] Skipping event:', eventType);
+      return null;
+    }
+
     const event = {
       event_id: this.generateEventId(),
       event_type: eventType,
@@ -70,7 +94,7 @@ class AnalyticsService {
       context: this.getContext()
     };
 
-    console.log('📊 Tracking event:', eventType, properties);
+    console.log('Tracking event:', eventType, properties);
     
     // Add to queue
     this.eventQueue.push(event);
@@ -110,15 +134,17 @@ class AnalyticsService {
         keepalive: true
       });
       
-      console.log(`✅ Flushed ${eventsToSend.length} analytics events`);
+      console.log(`Flushed ${eventsToSend.length} analytics events`);
     } catch (error) {
-      console.warn('❌ Failed to send analytics events:', error);
+      console.warn('Failed to send analytics events:', error);
       // Re-queue failed events (with limit)
       this.eventQueue = [...eventsToSend.slice(-5), ...this.eventQueue];
     }
   }
 
   startAutoFlush() {
+    if (!this.enabled) return;
+
     // Flush periodically
     setInterval(() => {
       this.flush();
@@ -145,6 +171,8 @@ class AnalyticsService {
   }
 
   setupVisibilityTracking() {
+    if (!this.enabled) return;
+
     let pageViewStartTime = Date.now();
     
     document.addEventListener('visibilitychange', () => {
@@ -211,6 +239,11 @@ class AnalyticsService {
       payment_method: groupData.payment_method,
       delivery_method: groupData.delivery_method
     });
+  }
+
+  // Alias for trackGroupJoinComplete
+  trackJoinGroup(groupId, groupData = {}) {
+    return this.trackGroupJoinComplete(groupId, groupData);
   }
 
   trackQuantityIncrease(groupId, oldQty, newQty, delta, price) {

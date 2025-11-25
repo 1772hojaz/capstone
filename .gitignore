@@ -1,5 +1,3 @@
-
-```ignore
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -212,4 +210,11 @@ futterwave.txt
 # Local cleanup directory (created by automated cleanup actions)
 trash/
 
-``` 
+# Email configuration files with secrets
+BREVO_CONFIG*.txt
+test_email*.py
+fix_brevo*.py
+
+# Temporary migration scripts
+add_*_column.py
+add_*_columns.py

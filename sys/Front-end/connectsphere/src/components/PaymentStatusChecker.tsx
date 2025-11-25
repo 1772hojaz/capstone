@@ -82,13 +82,13 @@ const PaymentStatusChecker: React.FC<PaymentStatusCheckerProps> = ({
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'successful':
-        return '✓';
+        return 'Success';
       case 'failed':
-        return '✗';
+        return 'Failed';
       case 'pending':
-        return '⏳';
+        return 'Pending';
       case 'error':
-        return '⚠';
+        return 'Error';
       default:
         return '?';
     }

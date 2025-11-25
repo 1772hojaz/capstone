@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.orm import Session
-from sqlalchemy import func, or_
+from sqlalchemy import func, desc, or_
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime, timedelta
@@ -12,8 +12,8 @@ import cloudinary.uploader
 import cloudinary.api
 
 from db.database import get_db
-from models.models import User, SupplierProduct, ProductPricingTier, SupplierOrder, SupplierOrderItem, Product, GroupBuy, SupplierPickupLocation, SupplierInvoice, SupplierPayment, SupplierNotification, AdminGroup, AdminGroupJoin
-from authentication.auth import verify_token
+from models.models import User, SupplierProduct, ProductPricingTier, SupplierOrder, SupplierOrderItem, Product, GroupBuy, SupplierPickupLocation, SupplierInvoice, SupplierPayment, SupplierNotification, AdminGroup, AdminGroupJoin, Transaction
+from authentication.auth import verify_token, verify_supplier
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -72,6 +72,12 @@ class OrderActionRequest(BaseModel):
     delivery_method: Optional[str] = None
     scheduled_delivery_date: Optional[datetime] = None
     special_instructions: Optional[str] = None
+
+
+class ShipDeliveryRequest(BaseModel):
+    tracking_number: Optional[str] = None
+    tracking_url: Optional[str] = None
+    notes: Optional[str] = None
 
 class PickupLocationCreate(BaseModel):
     name: str
@@ -236,14 +242,10 @@ async def get_supplier_dashboard_metrics(
             SupplierOrder.status == "pending"
         ).count()
 
-        # Active groups using supplier's products
-        supplier_product_ids = db.query(SupplierProduct.product_id).filter(
-            SupplierProduct.supplier_id == supplier.id
-        ).subquery()
-
-        active_groups = db.query(GroupBuy).filter(
-            GroupBuy.product_id.in_(supplier_product_ids),
-            GroupBuy.status == "active"
+        # Active groups created by this supplier (AdminGroups)
+        active_groups = db.query(AdminGroup).filter(
+            AdminGroup.supplier_id == supplier.id,
+            AdminGroup.is_active == True
         ).count()
 
         # Monthly revenue (last 30 days)
@@ -269,7 +271,7 @@ async def get_supplier_dashboard_metrics(
             SupplierOrderItem.supplier_product_id,
             SupplierProduct.product_id,
             Product.name,
-            db.func.sum(SupplierOrderItem.total_amount).label('revenue')
+            func.sum(SupplierOrderItem.total_amount).label('revenue')
         ).join(
             SupplierOrder, SupplierOrderItem.supplier_order_id == SupplierOrder.id
         ).join(
@@ -284,7 +286,7 @@ async def get_supplier_dashboard_metrics(
             SupplierProduct.product_id,
             Product.name
         ).order_by(
-            db.desc('revenue')
+            desc('revenue')
         ).limit(5).all()
 
         top_products = [
@@ -479,8 +481,8 @@ async def get_supplier_orders(
     result = []
     for order in orders:
         # Get group info
-        group_name = "Unknown Group"
-        trader_count = 0
+        group_name = "Direct Order"  # Default for orders not linked to groups
+        trader_count = 1  # Default for direct orders
 
         if order.group_buy_id:
             # Query the GroupBuy object
@@ -493,7 +495,10 @@ async def get_supplier_orders(
             admin_group = db.query(AdminGroup).filter(AdminGroup.id == order.admin_group_id).first()
             if admin_group:
                 group_name = admin_group.name
-                trader_count = admin_group.participants or 0
+                # Count actual joins for admin groups
+                trader_count = db.query(func.count(AdminGroupJoin.id)).filter(
+                    AdminGroupJoin.admin_group_id == admin_group.id
+                ).scalar() or 0
 
         # Get products
         products = []
@@ -551,15 +556,62 @@ async def process_order_action(
         elif action_request.action == "reject":
             if not action_request.reason:
                 raise HTTPException(status_code=400, detail="Rejection reason required")
+            
             order.status = "rejected"
             order.rejection_reason = action_request.reason
-            message = "Order rejected"
+            
+            # Auto-trigger refunds when order is rejected
+            from services.refund_service import RefundService
+            from services.email_service import email_service
+            
+            refund_results = {"refunds_processed": 0, "refunds_failed": 0}
+            
+            try:
+                # Check if this order is linked to a GroupBuy or AdminGroup
+                if order.group_buy_id:
+                    # Process refunds for GroupBuy
+                    refund_results = RefundService.process_group_refunds(
+                        db=db,
+                        group_buy_id=order.group_buy_id,
+                        reason=f"Supplier rejected order: {action_request.reason}"
+                    )
+                elif order.admin_group_id:
+                    # Process refunds for AdminGroup
+                    refund_results = RefundService.process_admin_group_refunds(
+                        db=db,
+                        admin_group_id=order.admin_group_id,
+                        reason=f"Supplier rejected order: {action_request.reason}"
+                    )
+                
+                # Send refund confirmation emails to users
+                for refund in refund_results.get("successful_refunds", []):
+                    try:
+                        user = db.query(User).filter(User.id == refund["user_id"]).first()
+                        if user and user.email:
+                            email_service.send_refund_confirmation(
+                                user_email=user.email,
+                                user_name=user.full_name or "Valued Customer",
+                                refund_amount=refund["amount"],
+                                refund_reference=f"REF-{order.order_number}",
+                                reason=f"Supplier rejected order: {action_request.reason}"
+                            )
+                    except Exception as e:
+                        print(f"Failed to send refund email to user {refund['user_id']}: {e}")
+                
+                message = f"Order rejected and {refund_results['refunds_processed']} refund(s) processed automatically"
+                
+            except Exception as e:
+                print(f"Failed to process automatic refunds: {e}")
+                message = f"Order rejected but automatic refund failed: {str(e)}"
 
         else:
             raise HTTPException(status_code=400, detail="Invalid action")
 
         db.commit()
-        return {"message": message}
+        return {
+            "message": message,
+            "refund_summary": refund_results if action_request.action == "reject" else None
+        }
 
     except HTTPException:
         raise
@@ -567,6 +619,78 @@ async def process_order_action(
         db.rollback()
         print(f"Error processing order action: {e}")
         raise HTTPException(status_code=500, detail="Failed to process order action")
+
+
+@router.post("/orders/{order_id}/ship")
+async def mark_order_shipped(
+    order_id: int,
+    ship_data: ShipDeliveryRequest,
+    supplier: User = Depends(verify_supplier),
+    db: Session = Depends(get_db)
+):
+    """Mark a confirmed order as shipped"""
+    try:
+        order = db.query(SupplierOrder).filter(
+            SupplierOrder.id == order_id,
+            SupplierOrder.supplier_id == supplier.id
+        ).first()
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found")
+
+        if order.status != "confirmed":
+            raise HTTPException(status_code=400, detail="Only confirmed orders can be marked as shipped")
+
+        order.status = "shipped"
+        order.shipped_at = datetime.utcnow()
+        if ship_data.tracking_number:
+            order.tracking_number = ship_data.tracking_number
+        if ship_data.tracking_url:
+            order.tracking_url = ship_data.tracking_url
+        if ship_data.notes:
+            order.shipment_notes = ship_data.notes
+
+        db.commit()
+        return {"message": "Order marked as shipped"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        print(f"Error marking order shipped: {e}")
+        raise HTTPException(status_code=500, detail="Failed to mark order as shipped")
+
+
+@router.post("/orders/{order_id}/deliver")
+async def mark_order_delivered(
+    order_id: int,
+    deliver_data: ShipDeliveryRequest,
+    supplier: User = Depends(verify_supplier),
+    db: Session = Depends(get_db)
+):
+    """Mark a shipped order as delivered"""
+    try:
+        order = db.query(SupplierOrder).filter(
+            SupplierOrder.id == order_id,
+            SupplierOrder.supplier_id == supplier.id
+        ).first()
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found")
+
+        if order.status != "shipped":
+            raise HTTPException(status_code=400, detail="Only shipped orders can be marked as delivered")
+
+        order.status = "delivered"
+        order.delivered_at = datetime.utcnow()
+        if deliver_data.notes:
+            order.delivery_notes = deliver_data.notes
+
+        db.commit()
+        return {"message": "Order marked as delivered"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        print(f"Error marking order delivered: {e}")
+        raise HTTPException(status_code=500, detail="Failed to mark order as delivered")
 
 # Pickup Location Management
 @router.get("/pickup-locations", response_model=List[PickupLocationResponse])
@@ -797,9 +921,16 @@ async def get_supplier_payments(
     db: Session = Depends(get_db)
 ):
     """Get supplier payment history"""
+    print(f"\n💰 GET /api/supplier/payments called")
+    print(f"   Supplier: {supplier.email} (ID: {supplier.id})")
+    
     payments = db.query(SupplierPayment).filter(
         SupplierPayment.supplier_id == supplier.id
     ).order_by(SupplierPayment.created_at.desc()).all()
+    
+    print(f"   Found {len(payments)} payments")
+    for pay in payments:
+        print(f"      - {pay.reference_number}: ${pay.amount:.2f} ({pay.status})")
     
     return [
         PaymentResponse(
@@ -821,6 +952,9 @@ async def get_payment_dashboard(
 ):
     """Get payment dashboard data"""
     try:
+        print(f"\n📊 GET /api/supplier/payments/dashboard called")
+        print(f"   Supplier: {supplier.email} (ID: {supplier.id})")
+        
         # Get total earnings
         total_earnings = db.query(SupplierPayment).filter(
             SupplierPayment.supplier_id == supplier.id,
@@ -828,6 +962,7 @@ async def get_payment_dashboard(
         ).with_entities(SupplierPayment.amount).all()
         
         total_earnings_sum = sum(pay.amount for pay in total_earnings)
+        print(f"   Total completed payments: {len(total_earnings)} = ${total_earnings_sum:.2f}")
         
         # Get pending payments
         pending_payments = db.query(SupplierPayment).filter(
@@ -836,21 +971,28 @@ async def get_payment_dashboard(
         ).with_entities(SupplierPayment.amount).all()
         
         pending_amount = sum(pay.amount for pay in pending_payments)
+        print(f"   Pending payments: {len(pending_payments)} = ${pending_amount:.2f}")
         
         # Get monthly breakdown (last 6 months)
         six_months_ago = datetime.utcnow() - timedelta(days=180)
-        monthly_payments = db.query(
-            db.func.strftime('%Y-%m', SupplierPayment.processed_at).label('month'),
-            db.func.sum(SupplierPayment.amount).label('amount')
-        ).filter(
+        monthly_payments_query = db.query(SupplierPayment).filter(
             SupplierPayment.supplier_id == supplier.id,
             SupplierPayment.status == "completed",
             SupplierPayment.processed_at >= six_months_ago
-        ).group_by('month').order_by('month').all()
+        ).all()
+        
+        # Group by month in Python
+        monthly_data = {}
+        for payment in monthly_payments_query:
+            if payment.processed_at:
+                month_key = payment.processed_at.strftime('%Y-%m')
+                if month_key not in monthly_data:
+                    monthly_data[month_key] = 0
+                monthly_data[month_key] += payment.amount
         
         monthly_data = [
             {"month": month, "amount": amount}
-            for month, amount in monthly_payments
+            for month, amount in sorted(monthly_data.items())
         ]
         
         # Get next payout date (simplified - every 15th and last day of month)
@@ -874,6 +1016,96 @@ async def get_payment_dashboard(
     except Exception as e:
         print(f"Error getting payment dashboard: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve payment dashboard")
+
+
+# Group Buy Management
+@router.get("/groups")
+async def get_supplier_groups(
+    status_filter: Optional[str] = None,
+    supplier: User = Depends(verify_supplier),
+    db: Session = Depends(get_db)
+):
+    """
+    Get all group buys for the supplier
+    Status filter: active, completed, cancelled
+    """
+    try:
+        # Get AdminGroup instances where supplier is the creator
+        # Note: GroupBuy is for community groups created by traders, not suppliers
+        groups = []
+        
+        admin_groups = db.query(AdminGroup).filter(
+            AdminGroup.supplier_id == supplier.id
+        ).all()
+        
+        for ag in admin_groups:
+            # AdminGroup uses is_active field, not status
+            # Skip filtering by status for now or check is_active
+            if status_filter == "active" and not ag.is_active:
+                continue
+            elif status_filter == "cancelled" and ag.is_active:
+                continue
+                
+            # Get product details
+            product = db.query(Product).filter(Product.id == ag.product_id).first()
+            
+            # Count participants
+            participants_count = db.query(AdminGroupJoin).filter(
+                AdminGroupJoin.admin_group_id == ag.id
+            ).count()
+            
+            # Calculate total quantity sold and money raised
+            total_quantity_sold = db.query(func.sum(AdminGroupJoin.quantity)).filter(
+                AdminGroupJoin.admin_group_id == ag.id
+            ).scalar() or 0
+            
+            total_paid_sum = db.query(func.sum(AdminGroupJoin.paid_amount)).filter(
+                AdminGroupJoin.admin_group_id == ag.id
+            ).scalar() or 0
+            current_amount = float(total_paid_sum)
+            target_amount = ag.price * ag.max_participants
+            
+            # Calculate dynamic status
+            now = datetime.utcnow()
+            if ag.end_date and ag.end_date < now:
+                status = "completed" if total_quantity_sold >= ag.max_participants else "expired"
+            elif total_quantity_sold >= ag.max_participants:
+                status = "ready_for_payment"
+            else:
+                status = "active" if ag.is_active else "cancelled"
+            
+            # Check if a SupplierOrder already exists for this group
+            existing_order = db.query(SupplierOrder).filter(
+                SupplierOrder.admin_group_id == ag.id
+            ).first()
+            has_order = existing_order is not None
+            
+            groups.append({
+                "id": ag.id,
+                "name": ag.name,
+                "category": ag.category or (product.category if product else "Unknown"),
+                "price": float(ag.price) if ag.price else 0.0,
+                "original_price": float(ag.original_price) if ag.original_price else 0.0,
+                "image": ag.image or "https://via.placeholder.com/300x200?text=Product",
+                "participants": participants_count,
+                "total_quantity": int(total_quantity_sold),
+                "max_participants": ag.max_participants or 50,
+                "current_amount": round(current_amount, 2),
+                "target_amount": round(target_amount, 2),
+                "status": status,
+                "has_order": has_order,  # NEW: Indicates if order already exists
+                "end_date": ag.end_date.isoformat() if ag.end_date else None,
+                "created_at": ag.created.isoformat() if ag.created else None
+            })
+        
+        # Sort by created_at (newest first)
+        groups.sort(key=lambda x: x['created_at'] if x['created_at'] else '', reverse=True)
+        
+        return groups
+        
+    except Exception as e:
+        logger.error(f"Error getting supplier groups: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve groups")
 
 # Notification Management
 @router.get("/notifications", response_model=List[NotificationResponse])
@@ -1124,8 +1356,15 @@ async def get_supplier_active_groups_for_moderation(
                 AdminGroupJoin.admin_group_id == group.id
             ).scalar() or 0
 
-            # Calculate total amount
-            total_amount = participant_count * group.price
+            # Calculate total quantity and amount (sum of actual paid amounts)
+            total_quantity_sold = db.query(func.sum(AdminGroupJoin.quantity)).filter(
+                AdminGroupJoin.admin_group_id == group.id
+            ).scalar() or 0
+            
+            total_paid_sum = db.query(func.sum(AdminGroupJoin.paid_amount)).filter(
+                AdminGroupJoin.admin_group_id == group.id
+            ).scalar() or 0
+            total_amount = float(total_paid_sum)
 
             result.append({
                 "id": group.id,
@@ -1133,6 +1372,7 @@ async def get_supplier_active_groups_for_moderation(
                 "creator": group.admin_name or "Admin",
                 "category": group.category,
                 "members": participant_count,
+                "totalQuantity": int(total_quantity_sold),
                 "targetMembers": group.max_participants or 0,
                 "totalAmount": f"${total_amount:.2f}",
                 "dueDate": group.end_date.strftime("%Y-%m-%d") if group.end_date else "No deadline",
@@ -1240,8 +1480,15 @@ async def get_supplier_ready_for_payment_groups(
                 AdminGroupJoin.admin_group_id == group.id
             ).scalar() or 0
 
-            # Calculate total amount
-            total_amount = participant_count * group.price
+            # Calculate total quantity and amount (sum of actual paid amounts)
+            total_quantity_sold = db.query(func.sum(AdminGroupJoin.quantity)).filter(
+                AdminGroupJoin.admin_group_id == group.id
+            ).scalar() or 0
+            
+            total_paid_sum = db.query(func.sum(AdminGroupJoin.paid_amount)).filter(
+                AdminGroupJoin.admin_group_id == group.id
+            ).scalar() or 0
+            total_amount = float(total_paid_sum)
 
             result.append({
                 "id": group.id,
@@ -1249,6 +1496,7 @@ async def get_supplier_ready_for_payment_groups(
                 "creator": group.admin_name or "Admin",
                 "category": group.category,
                 "members": participant_count,
+                "totalQuantity": int(total_quantity_sold),
                 "targetMembers": group.max_participants or 0,
                 "totalAmount": f"${total_amount:.2f}",
                 "dueDate": group.end_date.strftime("%Y-%m-%d") if group.end_date else "No deadline",
@@ -1280,24 +1528,23 @@ async def get_supplier_group_moderation_stats(
 ):
     """Get group moderation statistics for supplier"""
     try:
-        supplier_name = supplier.company_name or supplier.full_name or "Supplier"
-
-        # Count groups created by this supplier
+        # Count groups created by this supplier (using supplier_id for accuracy)
         supplier_created_groups_count = db.query(func.count(AdminGroup.id)).filter(
             AdminGroup.is_active,
-            AdminGroup.admin_name == supplier_name
+            AdminGroup.supplier_id == supplier.id
         ).scalar() or 0
 
         # Calculate total members for supplier-created groups
+        # Note: This counts participant count, not actual quantity sold
         supplier_created_members = db.query(func.sum(AdminGroup.participants)).filter(
             AdminGroup.is_active,
-            AdminGroup.admin_name == supplier_name
+            AdminGroup.supplier_id == supplier.id
         ).scalar() or 0
 
         # Count pending groups created by supplier
         supplier_pending_groups_count = db.query(func.count(AdminGroup.id)).filter(
             AdminGroup.is_active,
-            AdminGroup.admin_name == supplier_name,
+            AdminGroup.supplier_id == supplier.id,
             or_(
                 AdminGroup.max_participants.is_(None),
                 AdminGroup.participants < AdminGroup.max_participants
@@ -1305,17 +1552,27 @@ async def get_supplier_group_moderation_stats(
         ).scalar() or 0
 
         # Ready for payment count (supplier-created groups that have reached target)
-        ready_for_payment_count = db.query(func.count(AdminGroup.id)).filter(
+        # Using total quantity sold instead of participant count
+        groups_with_target_reached = 0
+        supplier_groups = db.query(AdminGroup).filter(
             AdminGroup.is_active,
-            AdminGroup.admin_name == supplier_name,
-            AdminGroup.max_participants.isnot(None),
-            AdminGroup.participants >= AdminGroup.max_participants
-        ).scalar() or 0
+            AdminGroup.supplier_id == supplier.id,
+            AdminGroup.max_participants.isnot(None)
+        ).all()
+        
+        for group in supplier_groups:
+            total_quantity = db.query(func.sum(AdminGroupJoin.quantity)).filter(
+                AdminGroupJoin.admin_group_id == group.id
+            ).scalar() or 0
+            if total_quantity >= group.max_participants:
+                groups_with_target_reached += 1
+        
+        ready_for_payment_count = groups_with_target_reached
 
         # Required action count (supplier-created groups that have expired)
         required_action_count = db.query(func.count(AdminGroup.id)).filter(
             AdminGroup.is_active,
-            AdminGroup.admin_name == supplier_name,
+            AdminGroup.supplier_id == supplier.id,
             AdminGroup.end_date < datetime.utcnow()
         ).scalar() or 0
 
@@ -1389,46 +1646,84 @@ async def process_supplier_group_payment(
     supplier: User = Depends(verify_supplier),
     db: Session = Depends(get_db)
 ):
-    """Process payment for a completed group created by supplier"""
+    """Process payment for a completed group created by supplier - Creates an order"""
     try:
         # First check if it's an AdminGroup
         group = db.query(AdminGroup).filter(AdminGroup.id == group_id).first()
         
         if group:
             # Verify supplier created this group
-            supplier_name = supplier.company_name or supplier.full_name or "Supplier"
-            if group.admin_name != supplier_name:
+            if group.supplier_id != supplier.id:
                 raise HTTPException(status_code=403, detail="You can only process payments for groups you created")
 
-            # Check if group is ready for payment
-            participant_count = db.query(func.count(AdminGroupJoin.id)).filter(
+            # Check if order already exists
+            existing_order = db.query(SupplierOrder).filter(
+                SupplierOrder.admin_group_id == group_id
+            ).first()
+            
+            if existing_order:
+                return {
+                    "message": "Order already exists for this group",
+                    "order_id": existing_order.id,
+                    "order_number": existing_order.order_number,
+                    "status": existing_order.status
+                }
+
+            # Check if group has reached target
+            total_quantity_sold = db.query(func.sum(AdminGroupJoin.quantity)).filter(
                 AdminGroupJoin.admin_group_id == group.id
             ).scalar() or 0
             
-            if participant_count < (group.max_participants or 0):
-                raise HTTPException(status_code=400, detail="Group hasn't reached target participants yet")
+            if total_quantity_sold < group.max_participants:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Group hasn't reached target yet. {total_quantity_sold}/{group.max_participants} units sold"
+                )
 
-            # Calculate total amount
-            total_amount = participant_count * group.price
+            # Calculate total amount from actual paid amounts
+            total_paid_sum = db.query(func.sum(AdminGroupJoin.paid_amount)).filter(
+                AdminGroupJoin.admin_group_id == group.id
+            ).scalar() or 0
+            total_amount = float(total_paid_sum)
             
-            # Create supplier payment record
-            payment = SupplierPayment(
+            # Get all joins for calculating savings
+            joins = db.query(AdminGroupJoin).filter(
+                AdminGroupJoin.admin_group_id == group_id
+            ).all()
+            
+            total_savings = (group.original_price - group.price) * sum(join.quantity for join in joins)
+            
+            # Create SupplierOrder
+            order_number = f"ORD-AG-{group_id}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+            supplier_order = SupplierOrder(
                 supplier_id=supplier.id,
-                amount=total_amount,
-                payment_method="bank_transfer",
-                reference_number=f"GROUP-{group.id}-{supplier.id}",
-                status="pending"
+                admin_group_id=group_id,
+                order_number=order_number,
+                status="pending",  # Supplier needs to confirm/ship
+                total_value=total_amount,
+                total_savings=total_savings,
+                delivery_method="pickup",
+                admin_verification_status="pending",
+                created_at=datetime.utcnow()
             )
             
-            db.add(payment)
+            db.add(supplier_order)
+            
+            # Keep group active but mark it as "order created" (stays in ready for payment)
+            # Don't set is_active = False here - group should stay in ready_for_payment
+            # until order is fully delivered/completed
+            # group.is_active remains True
+            
             db.commit()
+            db.refresh(supplier_order)
             
             return {
-                "message": "Payment processed successfully",
-                "payment_id": payment.id,
-                "amount": total_amount,
-                "status": "pending",
-                "reference": payment.reference_number
+                "message": "Order created successfully from completed group",
+                "order_id": supplier_order.id,
+                "order_number": supplier_order.order_number,
+                "total_amount": round(total_amount, 2),
+                "total_savings": round(total_savings, 2),
+                "status": "pending"
             }
         
         raise HTTPException(status_code=404, detail="Group not found")
@@ -1606,23 +1901,69 @@ async def delete_supplier_group(
             )
 
         # Check if group has participants
-        participant_count = db.query(func.count(AdminGroupJoin.id)).filter(
+        joins = db.query(AdminGroupJoin).filter(
             AdminGroupJoin.admin_group_id == group_id
-        ).scalar() or 0
+        ).all()
 
-        if participant_count > 0:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Cannot delete group with {participant_count} active participants"
-            )
+        refunded = []
+        manual_refund_required = []
 
-        # Delete the group
-        db.delete(group)
-        db.commit()
+        if joins:
+            # Process refunds for joined participants where possible
+            for join in joins:
+                try:
+                    # Calculate refund amount (price * quantity)
+                    refund_amount = (group.price or 0.0) * (join.quantity or 0)
+
+                    # Only create an internal refund transaction if we have a linked product
+                    # and therefore a sensible product_id to attach. For admin groups without
+                    # a product_id or where external payment is used, record for manual review.
+                    if getattr(group, 'product_id', None):
+                        txn = Transaction(
+                            user_id=join.user_id,
+                            group_buy_id=None,
+                            product_id=group.product_id,
+                            quantity=join.quantity or 0,
+                            amount=-1 * round(refund_amount, 2),
+                            transaction_type="refund",
+                            location_zone=(getattr(join.user, 'location_zone', None) or "Unknown")
+                        )
+                        db.add(txn)
+                        refunded.append({
+                            "user_id": join.user_id,
+                            "quantity": join.quantity,
+                            "refund_amount": round(refund_amount, 2)
+                        })
+                    else:
+                        # Mark for manual refund if we can't create an internal transaction
+                        manual_refund_required.append({
+                            "user_id": join.user_id,
+                            "quantity": join.quantity,
+                            "reason": "No linked product_id - requires manual refund"
+                        })
+
+                    # Remove the join record
+                    db.delete(join)
+                except Exception as e:
+                    print(f"Error refunding join {join.id} for group {group_id}: {e}")
+                    db.rollback()
+                    raise HTTPException(status_code=500, detail="Failed while processing refunds")
+
+        # Finally delete the group itself
+        try:
+            db.delete(group)
+            db.commit()
+        except Exception as e:
+            print(f"Error deleting supplier group {group_id}: {e}")
+            db.rollback()
+            raise HTTPException(status_code=500, detail="Failed to delete group after refunds")
 
         return {
             "message": "Group deleted successfully",
-            "group_id": group_id
+            "group_id": group_id,
+            "refunded_count": len(refunded),
+            "refunded": refunded,
+            "manual_refund_required": manual_refund_required
         }
 
     except HTTPException:
@@ -1908,13 +2249,24 @@ async def get_supplier_group_insights(
 
         # Performance benchmarks
         avg_completion_rate = sum(g["completion_rate"] for g in group_insights) / len(group_insights) if group_insights else 0
-        avg_time_to_first_participant = db.query(func.avg(
-            func.extract('epoch', AdminGroupJoin.joined_at - AdminGroup.created) / 86400
-        )).join(
+        
+        # Calculate average time to first participant in Python
+        first_participants = db.query(
+            AdminGroupJoin.joined_at,
+            AdminGroup.created
+        ).join(
             AdminGroup, AdminGroupJoin.admin_group_id == AdminGroup.id
         ).filter(
             AdminGroup.admin_name == supplier_name
-        ).scalar() or 0
+        ).all()
+        
+        time_diffs = []
+        for joined_at, created in first_participants:
+            if joined_at and created:
+                time_diff = (joined_at - created).total_seconds() / 86400  # Convert to days
+                time_diffs.append(time_diff)
+        
+        avg_time_to_first_participant = sum(time_diffs) / len(time_diffs) if time_diffs else 0
 
         return {
             "group_insights": group_insights,
@@ -2234,6 +2586,8 @@ class CreateGroupRequest(BaseModel):
     estimated_delivery: Optional[str] = None
     features: Optional[List[str]] = None
     requirements: Optional[List[str]] = None
+    manufacturer: Optional[str] = None
+    total_stock: Optional[int] = None
 
 @router.post("/groups/create")
 async def create_supplier_group(
@@ -2246,18 +2600,11 @@ async def create_supplier_group(
         # Debug: Log the received data
         print(f"DEBUG: Received supplier group data: {group_data.dict()}")
 
-        # Validate required fields
+        # Validate required fields (same as admin)
         if not group_data.name or not group_data.name.strip():
             raise HTTPException(status_code=400, detail="Group name is required")
-        
-        # Allow description to be empty if long_description is provided
-        final_description = group_data.description.strip() if group_data.description else ""
-        if not final_description and group_data.long_description and group_data.long_description.strip():
-            final_description = group_data.long_description.strip()
-        
-        if not final_description:
+        if not group_data.description or not group_data.description.strip():
             raise HTTPException(status_code=400, detail="Group description is required")
-            
         if not group_data.category or not group_data.category.strip():
             raise HTTPException(status_code=400, detail="Category is required")
         if not isinstance(group_data.price, (int, float)) or group_data.price <= 0:
@@ -2283,7 +2630,7 @@ async def create_supplier_group(
         # Create the admin group (supplier-managed)
         new_group = AdminGroup(
             name=group_data.name,
-            description=final_description,
+            description=group_data.description,
             long_description=group_data.long_description,
             category=group_data.category,
             price=group_data.price,
@@ -2292,10 +2639,13 @@ async def create_supplier_group(
             max_participants=group_data.max_participants,
             end_date=end_date_obj,
             admin_name=supplier_name,
+            supplier_id=supplier.id,  # Track who created this group
             shipping_info=group_data.shipping_info,
             estimated_delivery=group_data.estimated_delivery,
             features=group_data.features,
             requirements=group_data.requirements,
+            manufacturer=group_data.manufacturer,
+            total_stock=group_data.total_stock,
             is_active=True,
             participants=0  # Start with 0 participants
         )

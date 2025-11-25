@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import PaymentModal from '../components/PaymentModal';
 import apiService from '../services/api';
+import analyticsService from '../services/analytics';
 
 export default function PaymentPage() {
   const navigate = useNavigate();
@@ -47,6 +48,18 @@ export default function PaymentPage() {
       navigate('/groups');
       return;
     }
+
+    // Analytics: track opening of payment page
+    const totalAmount = (() => {
+      const increase = (paymentData?.newQuantity ?? 0) - (paymentData?.currentQuantity ?? 0);
+      const unit = parseFloat((paymentData?.price || '0').replace('$', '')) || 0;
+      return Math.max(0, increase * unit);
+    })();
+    analyticsService.trackPageView('payment_page', {
+      action: paymentData?.action,
+      amount: totalAmount,
+      group_id: paymentData?.groupId
+    });
   }, [paymentData, navigate]);
 
   if (!paymentData) {
@@ -94,6 +107,16 @@ export default function PaymentPage() {
       action: 'quantity_increase'
     };
     sessionStorage.setItem('paymentSuccessData', JSON.stringify(paymentSuccessData));
+
+    // Analytics: track payment initiation
+    analyticsService.trackPaymentInitiated({
+      tx_ref: `quantity_increase_${paymentData.groupId}_${Date.now()}`,
+      amount: additionalAmount,
+      currency: 'USD',
+      group_id: paymentData.groupId,
+      action: 'quantity_increase',
+      quantity: quantityIncrease
+    });
 
     setShowPaymentModal(true);
   };

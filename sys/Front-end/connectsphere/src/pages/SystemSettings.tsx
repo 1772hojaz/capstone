@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import Layout from '../components/Layout';
+import TopNavigation from '../components/navigation/TopNavigation';
+import MobileBottomNav from '../components/navigation/MobileBottomNav';
+import { PageContainer, PageHeader } from '../components/layout/index';
 import { Settings, Bell, Shield, Database, Mail, Globe, Check, AlertTriangle } from 'lucide-react';
 
 const SystemSettings = () => {
@@ -8,14 +10,13 @@ const SystemSettings = () => {
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
   const [maintenanceMode, setMaintenanceMode] = useState(false);
   return (
-    <Layout title="System Settings">
-      {/* Header */}
-      <div className="mb-6">
-        <div className="flex items-center gap-2 mb-2">
-          <Settings className="w-6 h-6 text-blue-600" />
-          <p className="text-gray-600">Configure global platform settings, notifications, and error integration points.</p>
-        </div>
-      </div>
+    <>
+      <TopNavigation userRole="admin" />
+      <PageContainer>
+        <PageHeader
+          title="System Settings"
+          subtitle="Configure global platform settings, notifications, and error integration points."
+        />
 
       {/* Settings Sections */}
       <div className="space-y-6">
@@ -295,7 +296,9 @@ const SystemSettings = () => {
           </button>
         </div>
       </div>
-    </Layout>
+      </PageContainer>
+      <MobileBottomNav userRole="admin" />
+    </>
   );
 };
 

@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Mail, Lock, User, Eye, EyeOff, AlertCircle, CheckCircle, Loader, ArrowLeft } from 'lucide-react';
+import { Mail, Lock, User, Eye, EyeOff, AlertCircle, CheckCircle, Loader, ArrowLeft, MapPin } from 'lucide-react';
 import apiService from '../services/api';
 
 const LoginPage = () => {
   const navigate = useNavigate();
-  const [isLogin, setIsLogin] = useState(true);
+  // Default to registration mode since this page is now used for /register
+  const [isLogin, setIsLogin] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<{[key: string]: string}>({});
@@ -14,6 +15,7 @@ const LoginPage = () => {
     email: '',
     password: '',
     name: '',
+    locationZone: 'Mbare',
     rememberMe: false,
   });
 
@@ -37,6 +39,11 @@ const LoginPage = () => {
     // Name validation for registration
     if (!isLogin && !formData.name.trim()) {
       newErrors.name = 'Full name is required';
+    }
+
+    // Location validation for registration
+    if (!isLogin && !formData.locationZone) {
+      newErrors.locationZone = 'Location is required';
     }
 
     setErrors(newErrors);
@@ -68,7 +75,7 @@ const LoginPage = () => {
           email: formData.email,
           password: formData.password,
           full_name: formData.name,
-          location_zone: 'Mbare', // Default location, could be made configurable
+          location_zone: formData.locationZone,
           preferred_categories: [],
           budget_range: 'medium',
           experience_level: 'beginner',
@@ -124,51 +131,53 @@ const LoginPage = () => {
         <div className="text-center mb-8">
           <div className="flex justify-center mb-4">
             <div className="relative">
-              <svg className="w-16 h-16 text-blue-600" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-              </svg>
+              <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-full blur-lg opacity-50"></div>
+              <div className="relative bg-white p-3 rounded-full">
+                <svg className="w-12 h-12 text-blue-600" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+                </svg>
+              </div>
             </div>
           </div>
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-            ConnectSphere
+          <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent mb-2">
+            Join ConnectSphere
           </h1>
-          <p className="text-gray-600 mt-2 font-medium">
-            <span className="inline-flex items-center gap-1">
-              <User className="w-4 h-4" />
-              Trader Portal
-            </span>
+          <p className="text-gray-600 font-medium mb-1">
+            Start Saving with Group Buying
+          </p>
+          <p className="text-sm text-gray-500">
+            Join thousands of traders and save up to 40% on bulk purchases
           </p>
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-2 mb-6 bg-gray-100 rounded-lg p-1">
-          <button
-            onClick={() => setIsLogin(true)}
-            className={`flex-1 py-2 rounded-md font-medium transition ${
-              isLogin
-                ? 'bg-white text-blue-600 shadow-sm'
-                : 'text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            Login
-          </button>
-          <button
-            onClick={() => setIsLogin(false)}
-            className={`flex-1 py-2 rounded-md font-medium transition ${
-              !isLogin
-                ? 'bg-white text-blue-600 shadow-sm'
-                : 'text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            Register
-          </button>
+        {/* Benefits Section */}
+        <div className="mb-6 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-4 border border-blue-100">
+          <h3 className="text-sm font-semibold text-gray-900 mb-2">Why Join as a Trader?</h3>
+          <ul className="space-y-2 text-sm text-gray-700">
+            <li className="flex items-start gap-2">
+              <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0 mt-0.5" />
+              <span>Access exclusive group buying deals from verified suppliers</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0 mt-0.5" />
+              <span>Get personalized product recommendations using AI</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0 mt-0.5" />
+              <span>Save money through collective purchasing power</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0 mt-0.5" />
+              <span>Track your savings and manage orders easily</span>
+            </li>
+          </ul>
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-5">
           {/* General Error Message */}
           {errors.general && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-center gap-2">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-center gap-2 animate-shake">
               <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
               <p className="text-sm text-red-700">{errors.general}</p>
             </div>
@@ -176,7 +185,7 @@ const LoginPage = () => {
 
           {/* Success Message */}
           {successMessage && (
-            <div className="bg-green-50 border border-green-200 rounded-lg p-3 flex items-center gap-2">
+            <div className="bg-green-50 border border-green-200 rounded-lg p-3 flex items-center gap-2 animate-fadeIn">
               <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
               <p className="text-sm text-green-700">{successMessage}</p>
             </div>
@@ -184,8 +193,8 @@ const LoginPage = () => {
 
           {!isLogin && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Full Name
+              <label className="block text-sm font-semibold text-gray-800 mb-2">
+                Full Name <span className="text-red-500">*</span>
               </label>
               <div className="relative">
                 <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -193,25 +202,26 @@ const LoginPage = () => {
                   type="text"
                   value={formData.name}
                   onChange={(e) => handleInputChange('name', e.target.value)}
-                  className={`w-full pl-10 pr-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors ${
-                    errors.name ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                  className={`w-full pl-10 pr-4 py-3 border-2 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all ${
+                    errors.name ? 'border-red-300 bg-red-50' : 'border-gray-200 hover:border-gray-300'
                   }`}
-                  placeholder="Enter your name"
+                  placeholder="e.g., John Doe"
                   required={!isLogin}
                 />
               </div>
               {errors.name && (
-                <p className="mt-1 text-sm text-red-600 flex items-center gap-1">
+                <p className="mt-1.5 text-sm text-red-600 flex items-center gap-1">
                   <AlertCircle className="w-4 h-4" />
                   {errors.name}
                 </p>
               )}
+              <p className="mt-1.5 text-xs text-gray-500">Enter your full name as it appears on your ID</p>
             </div>
           )}
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Email Address
+            <label className="block text-sm font-semibold text-gray-800 mb-2">
+              Email Address <span className="text-red-500">*</span>
             </label>
             <div className="relative">
               <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -219,24 +229,25 @@ const LoginPage = () => {
                 type="email"
                 value={formData.email}
                 onChange={(e) => handleInputChange('email', e.target.value)}
-                className={`w-full pl-10 pr-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors ${
-                  errors.email ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                className={`w-full pl-10 pr-4 py-3 border-2 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all ${
+                  errors.email ? 'border-red-300 bg-red-50' : 'border-gray-200 hover:border-gray-300'
                 }`}
-                placeholder="Enter your email"
+                placeholder="e.g., john.doe@email.com"
                 required
               />
             </div>
             {errors.email && (
-              <p className="mt-1 text-sm text-red-600 flex items-center gap-1">
+              <p className="mt-1.5 text-sm text-red-600 flex items-center gap-1">
                 <AlertCircle className="w-4 h-4" />
                 {errors.email}
               </p>
             )}
+            <p className="mt-1.5 text-xs text-gray-500">We'll use this to send order confirmations and updates</p>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Password
+            <label className="block text-sm font-semibold text-gray-800 mb-2">
+              Password <span className="text-red-500">*</span>
             </label>
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -244,27 +255,83 @@ const LoginPage = () => {
                 type={showPassword ? 'text' : 'password'}
                 value={formData.password}
                 onChange={(e) => handleInputChange('password', e.target.value)}
-                className={`w-full pl-10 pr-12 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors ${
-                  errors.password ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                className={`w-full pl-10 pr-12 py-3 border-2 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all ${
+                  errors.password ? 'border-red-300 bg-red-50' : 'border-gray-200 hover:border-gray-300'
                 }`}
-                placeholder="Enter your password"
+                placeholder="Create a strong password"
                 required
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
               >
                 {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
               </button>
             </div>
             {errors.password && (
-              <p className="mt-1 text-sm text-red-600 flex items-center gap-1">
+              <p className="mt-1.5 text-sm text-red-600 flex items-center gap-1">
                 <AlertCircle className="w-4 h-4" />
                 {errors.password}
               </p>
             )}
+            <p className="mt-1.5 text-xs text-gray-500">Must be at least 6 characters long</p>
           </div>
+
+          {!isLogin && (
+            <div>
+              <label className="block text-sm font-semibold text-gray-800 mb-2">
+                Location <span className="text-red-500">*</span>
+              </label>
+              <div className="relative">
+                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
+                <select
+                  value={formData.locationZone}
+                  onChange={(e) => handleInputChange('locationZone', e.target.value)}
+                  className={`w-full pl-10 pr-3 py-3 border-2 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all appearance-none bg-white ${
+                    errors.locationZone ? 'border-red-300 bg-red-50' : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                  required={!isLogin}
+                >
+                <option value="Mbare">Mbare</option>
+                <option value="Harare">Harare</option>
+                <option value="Bulawayo">Bulawayo</option>
+                <option value="Mutare">Mutare</option>
+                <option value="Gweru">Gweru</option>
+                <option value="Kwekwe">Kwekwe</option>
+                <option value="Masvingo">Masvingo</option>
+                <option value="Chitungwiza">Chitungwiza</option>
+                <option value="Epworth">Epworth</option>
+                <option value="Kadoma">Kadoma</option>
+                <option value="Marondera">Marondera</option>
+                <option value="Chinhoyi">Chinhoyi</option>
+                <option value="Norton">Norton</option>
+                <option value="Chegutu">Chegutu</option>
+                <option value="Bindura">Bindura</option>
+                <option value="Zvishavane">Zvishavane</option>
+                <option value="Victoria Falls">Victoria Falls</option>
+                <option value="Hwange">Hwange</option>
+                <option value="Redcliff">Redcliff</option>
+                <option value="Rusape">Rusape</option>
+                <option value="Chiredzi">Chiredzi</option>
+                <option value="Kariba">Kariba</option>
+                <option value="Karoi">Karoi</option>
+                <option value="Gokwe">Gokwe</option>
+                <option value="Shurugwi">Shurugwi</option>
+                <option value="Rural">Rural Areas</option>
+                <option value="Other">Other</option>
+                </select>
+              </div>
+              {errors.locationZone && (
+                <p className="mt-1.5 text-sm text-red-600 flex items-center gap-1">
+                  <AlertCircle className="w-4 h-4" />
+                  {errors.locationZone}
+                </p>
+              )}
+              <p className="mt-1.5 text-xs text-gray-500">Select your primary trading location in Zimbabwe</p>
+            </div>
+          )}
 
           {isLogin && (
             <div className="flex items-center justify-between text-sm">
@@ -286,33 +353,57 @@ const LoginPage = () => {
             </div>
           )}
 
+          {!isLogin && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+              <p className="text-xs text-yellow-800">
+                <strong>Note:</strong> By creating an account, you agree to our{' '}
+                <a href="#" className="text-yellow-900 underline hover:text-yellow-700">Terms of Service</a> and{' '}
+                <a href="#" className="text-yellow-900 underline hover:text-yellow-700">Privacy Policy</a>
+              </p>
+            </div>
+          )}
+
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full bg-blue-600 text-white py-2.5 rounded-lg font-medium hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-3.5 rounded-lg font-semibold hover:from-blue-700 hover:to-indigo-700 focus:ring-4 focus:ring-blue-500 focus:ring-opacity-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
           >
             {isLoading ? (
               <>
-                <Loader className="w-4 h-4 animate-spin" />
-                {isLogin ? 'Signing In...' : 'Creating Account...'}
+                <Loader className="w-5 h-5 animate-spin" />
+                {isLogin ? 'Signing In...' : 'Creating Your Account...'}
               </>
             ) : (
-              isLogin ? 'Sign In' : 'Create Account'
+              <>
+                {isLogin ? 'Sign In' : 'Create Trader Account'}
+                <ArrowLeft className="w-5 h-5 rotate-180" />
+              </>
             )}
           </button>
         </form>
 
         {/* Quick Navigation */}
         <div className="mt-6 pt-6 border-t border-gray-200">
-          <p className="text-sm text-gray-600 text-center mb-3">Not a trader? Login or register as a supplier</p>
-          <div className="flex justify-center">
-            <button
-              onClick={() => navigate('/supplier/login')}
-              className="px-6 py-2 text-sm bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition font-medium"
-            >
-              Supplier Portal
-            </button>
-          </div>
+          <p className="text-sm text-gray-600 text-center mb-3">
+            Already have a ConnectSphere account?
+          </p>
+          <button
+            onClick={() => navigate('/login')}
+            className="w-full px-6 py-2.5 text-sm bg-white border-2 border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-all font-medium flex items-center justify-center gap-2"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back to Sign In
+          </button>
+        </div>
+
+        {/* Additional Help */}
+        <div className="mt-6 text-center">
+          <p className="text-xs text-gray-500">
+            Need help? Contact us at{' '}
+            <a href="mailto:support@connectsphere.com" className="text-blue-600 hover:underline">
+              support@connectsphere.com
+            </a>
+          </p>
         </div>
       </div>
     </div>

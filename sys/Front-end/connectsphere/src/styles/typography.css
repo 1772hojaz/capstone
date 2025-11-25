@@ -1,0 +1,142 @@
+/* Typography System - ConnectSphere */
+/* Consistent text styles across the application */
+
+/* Heading Styles */
+.heading-1 {
+  @apply text-3xl sm:text-4xl font-bold text-gray-900 leading-tight;
+}
+
+.heading-2 {
+  @apply text-2xl sm:text-3xl font-bold text-gray-900 leading-tight;
+}
+
+.heading-3 {
+  @apply text-xl sm:text-2xl font-semibold text-gray-900 leading-tight;
+}
+
+.heading-4 {
+  @apply text-lg sm:text-xl font-semibold text-gray-900 leading-tight;
+}
+
+.heading-5 {
+  @apply text-base sm:text-lg font-semibold text-gray-900 leading-tight;
+}
+
+.heading-6 {
+  @apply text-sm sm:text-base font-semibold text-gray-900 leading-tight;
+}
+
+/* Body Text */
+.body-lg {
+  @apply text-lg text-gray-700 leading-relaxed;
+}
+
+.body {
+  @apply text-base text-gray-700 leading-normal;
+}
+
+.body-sm {
+  @apply text-sm text-gray-600 leading-normal;
+}
+
+/* Utility Text */
+.caption {
+  @apply text-xs text-gray-500 leading-tight;
+}
+
+.overline {
+  @apply text-xs uppercase tracking-wide font-medium text-gray-500;
+}
+
+.label {
+  @apply text-sm font-medium text-gray-700;
+}
+
+/* Link Styles */
+.link {
+  @apply text-primary-600 hover:text-primary-700 underline-offset-2 hover:underline transition-colors duration-150;
+}
+
+.link-subtle {
+  @apply text-gray-600 hover:text-gray-900 transition-colors duration-150;
+}
+
+/* Display Text (for hero sections) */
+.display-1 {
+  @apply text-5xl sm:text-6xl md:text-7xl font-extrabold text-gray-900 leading-none;
+}
+
+.display-2 {
+  @apply text-4xl sm:text-5xl md:text-6xl font-extrabold text-gray-900 leading-none;
+}
+
+/* Code/Monospace */
+.code {
+  @apply font-mono text-sm bg-gray-100 px-1.5 py-0.5 rounded text-gray-800;
+}
+
+/* Text Colors (semantic) */
+.text-primary {
+  @apply text-primary-600;
+}
+
+.text-secondary {
+  @apply text-secondary-600;
+}
+
+.text-success {
+  @apply text-success-600;
+}
+
+.text-warning {
+  @apply text-warning-600;
+}
+
+.text-danger {
+  @apply text-danger-600;
+}
+
+.text-info {
+  @apply text-info-600;
+}
+
+/* Text Truncation */
+.text-truncate {
+  @apply overflow-hidden text-ellipsis whitespace-nowrap;
+}
+
+.text-truncate-2 {
+  @apply overflow-hidden line-clamp-2;
+}
+
+.text-truncate-3 {
+  @apply overflow-hidden line-clamp-3;
+}
+
+/* Font Weights */
+.font-light {
+  font-weight: 300;
+}
+
+.font-normal {
+  font-weight: 400;
+}
+
+.font-medium {
+  font-weight: 500;
+}
+
+.font-semibold {
+  font-weight: 600;
+}
+
+.font-bold {
+  font-weight: 700;
+}
+
+.font-extrabold {
+  font-weight: 800;
+}
+
+
+

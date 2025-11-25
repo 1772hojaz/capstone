@@ -1,9 +1,44 @@
 // src/services/api.js
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
+// Error types for better error handling
+export class ApiError extends Error {
+  constructor(message, status, code, details = {}) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.code = code;
+    this.details = details;
+    this.isRetryable = this.determineRetryability(status);
+  }
+
+  determineRetryability(status) {
+    // Network errors and server errors (except 500) are retryable
+    return !status || status >= 500 || status === 408 || status === 429;
+  }
+
+  getUserFriendlyMessage() {
+    const messages = {
+      400: 'Invalid request. Please check your input.',
+      401: 'Session expired. Please log in again.',
+      403: 'You don\'t have permission to perform this action.',
+      404: 'The requested resource was not found.',
+      408: 'Request timeout. Please try again.',
+      409: 'This action conflicts with existing data.',
+      429: 'Too many requests. Please slow down.',
+      500: 'Server error. Our team has been notified.',
+      503: 'Service temporarily unavailable. Please try again later.',
+    };
+    return messages[this.status] || this.message || 'An unexpected error occurred.';
+  }
+}
+
 class ApiService {
   constructor() {
     this.baseURL = API_BASE_URL;
+    this.defaultRetryAttempts = 3;
+    this.defaultRetryDelay = 1000; // 1 second
+    this.requestTimeout = 30000; // 30 seconds
   }
 
   // Helper method to get auth token
@@ -11,17 +46,83 @@ class ApiService {
     return localStorage.getItem('token');
   }
 
-  // Helper method to make authenticated requests
+  // Generic HTTP methods for convenience
+  async get(endpoint, options = {}) {
+    return this.request(endpoint, {
+      method: 'GET',
+      ...options
+    });
+  }
+
+  async post(endpoint, data, options = {}) {
+    return this.request(endpoint, {
+      method: 'POST',
+      body: JSON.stringify(data),
+      ...options
+    });
+  }
+
+  async put(endpoint, data, options = {}) {
+    return this.request(endpoint, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+      ...options
+    });
+  }
+
+  async delete(endpoint, options = {}) {
+    return this.request(endpoint, {
+      method: 'DELETE',
+      ...options
+    });
+  }
+
+  // Sleep helper for retry delays
+  sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  // Calculate exponential backoff delay
+  getRetryDelay(attempt) {
+    return this.defaultRetryDelay * Math.pow(2, attempt);
+  }
+
+  // Enhanced error parser
+  async parseError(response) {
+    try {
+      const errorData = await response.json();
+      return {
+        message: errorData.detail || errorData.message || 'An error occurred',
+        code: errorData.code,
+        details: errorData.errors || errorData.details || {}
+      };
+    } catch {
+      return {
+        message: `HTTP ${response.status}: ${response.statusText}`,
+        code: null,
+        details: {}
+      };
+    }
+  }
+
+  // Helper method to make authenticated requests with retry logic
   async request(endpoint, options = {}) {
+    const {
+      retryAttempts = this.defaultRetryAttempts,
+      retryable = true,
+      timeout = this.requestTimeout,
+      ...fetchOptions
+    } = options;
+
     const url = `${this.baseURL}${endpoint}`;
     const token = this.getAuthToken();
 
     const config = {
       headers: {
         'Content-Type': 'application/json',
-        ...options.headers,
+        ...fetchOptions.headers,
       },
-      ...options,
+      ...fetchOptions,
     };
 
     // Add auth token if available
@@ -29,26 +130,106 @@ class ApiService {
       config.headers.Authorization = `Bearer ${token}`;
     }
 
-    try {
-      const response = await fetch(url, config);
+    let lastError = null;
+    
+    for (let attempt = 0; attempt < (retryable ? retryAttempts : 1); attempt++) {
+      try {
+        // Create abort controller for timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeout);
+        
+        const response = await fetch(url, {
+          ...config,
+          signal: controller.signal
+        });
 
-      // Handle unauthorized responses
-      if (response.status === 401) {
-        localStorage.removeItem('token');
-        window.location.href = '/login';
-        throw new Error('Unauthorized - redirecting to login');
+        clearTimeout(timeoutId);
+
+        // Handle unauthorized responses
+        if (response.status === 401) {
+          localStorage.removeItem('token');
+          window.location.href = '/login';
+          throw new ApiError(
+            'Your session has expired. Please log in again.',
+            401,
+            'UNAUTHORIZED'
+          );
+        }
+
+        if (!response.ok) {
+          const errorInfo = await this.parseError(response);
+          const error = new ApiError(
+            errorInfo.message,
+            response.status,
+            errorInfo.code,
+            errorInfo.details
+          );
+
+          // Don't retry client errors (4xx except specific cases)
+          if (response.status >= 400 && response.status < 500 && 
+              response.status !== 408 && response.status !== 429) {
+            throw error;
+          }
+
+          lastError = error;
+          
+          // If retryable and not last attempt, wait and retry
+          if (attempt < retryAttempts - 1) {
+            const delay = this.getRetryDelay(attempt);
+            console.warn(
+              `Request failed (attempt ${attempt + 1}/${retryAttempts}): ${endpoint}. ` +
+              `Retrying in ${delay}ms...`
+            );
+            await this.sleep(delay);
+            continue;
+          }
+          
+          throw error;
+        }
+
+        return response.json();
+        
+      } catch (error) {
+        // Handle network errors and timeouts
+        if (error.name === 'AbortError') {
+          lastError = new ApiError(
+            'Request timeout. Please check your connection and try again.',
+            408,
+            'TIMEOUT'
+          );
+        } else if (error instanceof ApiError) {
+          lastError = error;
+        } else if (error.message === 'Failed to fetch' || error.message.includes('NetworkError')) {
+          lastError = new ApiError(
+            'Network error. Please check your internet connection.',
+            null,
+            'NETWORK_ERROR'
+          );
+        } else {
+          lastError = new ApiError(
+            error.message || 'An unexpected error occurred',
+            null,
+            'UNKNOWN_ERROR'
+          );
+        }
+
+        // Retry on network errors if not last attempt
+        if (lastError.isRetryable && attempt < retryAttempts - 1) {
+          const delay = this.getRetryDelay(attempt);
+          console.warn(
+            `Request failed (attempt ${attempt + 1}/${retryAttempts}): ${endpoint}. ` +
+            `Retrying in ${delay}ms...`, lastError
+          );
+          await this.sleep(delay);
+          continue;
+        }
+
+        break;
       }
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || `API Error: ${response.status}`);
-      }
-
-      return response.json();
-    } catch (error) {
-      console.error(`API request failed: ${endpoint}`, error);
-      throw error;
     }
+
+    console.error(`API request failed after ${retryAttempts} attempts: ${endpoint}`, lastError);
+    throw lastError;
   }
 
   // Authentication methods
@@ -165,10 +346,19 @@ class ApiService {
     return this.request(`/api/groups/${groupId}/qr-code?t=${timestamp}`);
   }
 
+  async getUserRefunds() {
+    return this.request('/api/groups/refunds');
+  }
+
   async getAllGroups(params = {}) {
     const queryString = new URLSearchParams(params).toString();
     const endpoint = queryString ? `/api/groups?${queryString}` : '/api/groups';
     return this.request(endpoint);
+  }
+
+  // Alias for getAllGroups for consistency
+  async getGroups(params = {}) {
+    return this.getAllGroups(params);
   }
 
   // Past groups summary
@@ -277,6 +467,13 @@ class ApiService {
     });
   }
 
+
+  async updateAdminGroup(groupId, groupData) {
+    return this.request(`/api/admin/groups/${groupId}`, {
+      method: 'PUT',
+      body: JSON.stringify(groupData),
+    });
+  }
 
   async deleteAdminGroup(groupId) {
     return this.request(`/api/admin/groups/${groupId}`, {
@@ -444,6 +641,18 @@ class ApiService {
     });
   }
 
+  async markOrderShipped(orderId) {
+    return this.request(`/api/supplier/orders/${orderId}/mark-shipped`, {
+      method: 'POST',
+    });
+  }
+
+  async markOrderDelivered(orderId) {
+    return this.request(`/api/supplier/orders/${orderId}/mark-delivered`, {
+      method: 'POST',
+    });
+  }
+
   // Supplier Pickup Locations
   async getSupplierPickupLocations() {
     return this.request('/api/supplier/pickup-locations');
@@ -469,14 +678,6 @@ class ApiService {
     });
   }
 
-  // QR Code Scanning
-  async scanQRCode(qrCodeData) {
-    return this.request('/api/admin/qr/scan', {
-      method: 'POST',
-      body: JSON.stringify({ qr_code_data: qrCodeData }),
-    });
-  }
-
   // Admin-only function - should not be called by traders
   async getQRCodeStatusAdmin(qrCodeId) {
     return this.request(`/api/admin/qr/status/${qrCodeId}`);
@@ -484,6 +685,39 @@ class ApiService {
 
   async markQRCodeAsUsed(qrCodeId) {
     return this.request(`/api/admin/qr/mark-used/${qrCodeId}`, {
+      method: 'POST',
+    });
+  }
+
+  // New Admin endpoints for group workflow
+  async getGroupsReadyForPayment() {
+    return this.request('/api/admin/groups/ready-for-payment');
+  }
+
+  async markGroupReadyForCollection(groupId) {
+    return this.request(`/api/admin/groups/${groupId}/mark-ready-for-collection`, {
+      method: 'POST',
+    });
+  }
+
+  async verifySupplierDelivery(groupId) {
+    return this.request(`/api/admin/groups/${groupId}/verify-delivery`, {
+      method: 'POST',
+    });
+  }
+
+  async verifyQRCode(token) {
+    return this.request(`/api/admin/verify-qr?token=${encodeURIComponent(token)}`);
+  }
+
+  async collectWithQR(token) {
+    return this.request(`/api/admin/collect-with-qr?token=${encodeURIComponent(token)}`, {
+      method: 'POST',
+    });
+  }
+
+  async processGroupRefunds(groupId, reason) {
+    return this.request(`/api/admin/groups/${groupId}/process-refunds?reason=${encodeURIComponent(reason || '')}`, {
       method: 'POST',
     });
   }
@@ -623,53 +857,53 @@ class ApiService {
     // Connect to backend WebSocket endpoint (port 8000)
     const backendUrl = this.baseURL.replace('http://', 'ws://').replace('https://', 'wss://');
     const wsUrl = `${backendUrl}/ws/qr-updates?token=${token}`;
-    console.log('🔗 Connecting to WebSocket:', wsUrl);
+    console.log('Connecting to WebSocket:', wsUrl);
     this.websocket = new WebSocket(wsUrl);
 
     this.websocket.onopen = () => {
-      console.log('🔗 WebSocket connected for real-time QR updates');
+      console.log('WebSocket connected for real-time QR updates');
       this.websocketConnected = true;
     };
 
     this.websocket.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        console.log('📨 WebSocket message received:', data);
-        console.log('🔍 Message type:', data.type);
-        console.log('🎯 Full message data:', JSON.stringify(data, null, 2));
+        console.log('WebSocket message received:', data);
+        console.log('Message type:', data.type);
+        console.log('Full message data:', JSON.stringify(data, null, 2));
 
         // Handle QR status updates
         if (data.type === 'qr_status_update') {
-          console.log('🎯 QR status update received:', data);
-          console.log('🔄 Dispatching qrStatusUpdate event with data:', data);
+          console.log('QR status update received:', data);
+          console.log('Dispatching qrStatusUpdate event with data:', data);
           // Dispatch custom event that components can listen to
           window.dispatchEvent(new CustomEvent('qrStatusUpdate', {
             detail: data
           }));
-          console.log('✅ qrStatusUpdate event dispatched');
+          console.log('qrStatusUpdate event dispatched');
         } else {
-          console.log('⚠️ Unknown message type:', data.type);
+          console.log('Unknown message type:', data.type);
         }
       } catch (error) {
-        console.error('❌ Error parsing WebSocket message:', error);
-        console.error('❌ Raw message:', event.data);
+        console.error('Error parsing WebSocket message:', error);
+        console.error('Raw message:', event.data);
       }
     };
 
     this.websocket.onclose = () => {
-      console.log('🔌 WebSocket disconnected');
+      console.log('WebSocket disconnected');
       this.websocketConnected = false;
       // Auto-reconnect after 5 seconds
       setTimeout(() => {
         if (this.websocketConnected === false) {
-          console.log('🔄 Attempting to reconnect WebSocket...');
+          console.log('Attempting to reconnect WebSocket...');
           this.connectWebSocket(token);
         }
       }, 5000);
     };
 
     this.websocket.onerror = (error) => {
-      console.error('❌ WebSocket error:', error);
+      console.error('WebSocket error:', error);
     };
   }
 
@@ -679,6 +913,44 @@ class ApiService {
       this.websocket = null;
       this.websocketConnected = false;
     }
+  }
+
+  // =========================================================================
+  // ML BENCHMARKING METHODS
+  // =========================================================================
+
+  /**
+   * Run a new benchmark evaluation
+   * Evaluates all baseline models and stores results
+   */
+  async runBenchmark() {
+    return this.request('/api/ml/benchmark/run', {
+      method: 'POST',
+    });
+  }
+
+  /**
+   * Get the latest benchmark results
+   * Returns metrics for all models from the most recent run
+   */
+  async getLatestBenchmark() {
+    return this.request('/api/ml/benchmark/latest');
+  }
+
+  /**
+   * Get benchmark history
+   * @param {number} limit - Number of historical runs to retrieve (default 10)
+   */
+  async getBenchmarkHistory(limit = 10) {
+    return this.request(`/api/ml/benchmark/history?limit=${limit}`);
+  }
+
+  /**
+   * Get detailed comparison of all baseline models
+   * Returns comprehensive metrics for model comparison
+   */
+  async getBaselineComparison() {
+    return this.request('/api/ml/benchmark/comparison');
   }
 }
 
