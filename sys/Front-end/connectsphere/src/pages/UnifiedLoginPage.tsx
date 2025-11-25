@@ -165,16 +165,12 @@ const UnifiedLoginPage = () => {
           </p>
           <div className="flex justify-center gap-4 text-xs text-blue-700">
             <span className="flex items-center gap-1">
-              <User className="w-3 h-3" />
+            
               Trader
             </span>
             <span className="flex items-center gap-1">
-              <Building2 className="w-3 h-3" />
+            
               Supplier
-            </span>
-            <span className="flex items-center gap-1">
-              <Shield className="w-3 h-3" />
-              Admin
             </span>
           </div>
         </div>

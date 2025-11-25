@@ -38,24 +38,34 @@ interface Group {
   id: number;
   name: string;
   category: string;
-  price: number;
-  original_price: number;
-  participants: number;
-  max_participants: number;
+  price?: number;
+  original_price?: number;
+  participants?: number;
+  max_participants?: number;
+  members?: number;
+  targetMembers?: number;
   status: string;
-  end_date: string;
+  end_date?: string;
+  dueDate?: string;
   created_at: string;
+  image_url?: string;
+  product_image_url?: string;
+  product?: {
+    name: string;
+    image: string;
+    bulkPrice: number;
+    regularPrice: number;
+  };
 }
 
 interface Payment {
   id: number;
-  payment_reference: string;
-  order_number: string;
+  reference_number: string;
   amount: number;
   status: string;
   payment_method: string;
   processed_at: string;
-  expected_transfer_date?: string;
+  created_at: string;
 }
 
 
@@ -82,7 +92,7 @@ export default function SupplierDashboard() {
         const [metricsData, ordersData, groupsData, paymentsData] = await Promise.all([
           apiService.get('/api/supplier/dashboard/metrics'),
           apiService.get('/api/supplier/orders'),
-          apiService.get('/api/supplier/groups'),
+          apiService.get('/api/supplier/groups/active'),
           apiService.get('/api/supplier/payments')
         ]);
 
@@ -306,7 +316,8 @@ export default function SupplierDashboard() {
                                 order.status === 'pending' ? 'warning' :
                                 order.status === 'confirmed' ? 'info' :
                                 order.status === 'shipped' ? 'secondary' :
-                                order.status === 'delivered' ? 'success' : 'ghost'
+                                order.status === 'delivered' ? 'success' :
+                                order.status === 'ready_for_pickup'? 'warning': 'ghost'
                               }
                               size="sm"
                             >
@@ -356,7 +367,8 @@ export default function SupplierDashboard() {
                                   order.status === 'pending' ? 'warning' :
                                   order.status === 'confirmed' ? 'info' :
                                   order.status === 'shipped' ? 'secondary' :
-                                  order.status === 'delivered' ? 'success' : 'ghost'
+                                  order.status === 'delivered' ? 'success' :
+                                  order.status === 'ready_for_pickup'? 'warning': 'ghost'
                                 }
                               >
                                 {order.status}
@@ -421,22 +433,50 @@ export default function SupplierDashboard() {
                   </Button>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {groups.map((group) => (
-                    <Card key={group.id} variant="elevated" padding="lg">
-                      <div className="space-y-4">
-                        <div>
-                          <div className="flex items-start justify-between mb-2">
-                            <h3 className="heading-5 flex-1">{group.name}</h3>
-                            <Badge 
-                              variant={
-                                group.status === 'active' ? 'success' :
-                                group.status === 'completed' ? 'secondary' : 'ghost'
-                              }
-                            >
-                              {group.status}
-                            </Badge>
+                {groups.length === 0 ? (
+                  <EmptyState
+                    icon="package"
+                    title="No active groups"
+                    description="Create your first group buy to start selling"
+                  />
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {groups.map((group) => (
+                    <Card key={group.id} variant="elevated" padding="none" className="overflow-hidden">
+                      {/* Product Image */}
+                      <div className="relative h-48 bg-gray-100 flex items-center justify-center">
+                        {(group.image_url || group.product_image_url || group.product?.image) ? (
+                          <img 
+                            src={group.image_url || group.product_image_url || group.product?.image || ''} 
+                            alt={group.name} 
+                            className="h-full w-full object-cover" 
+                            onError={(e) => {
+                              e.currentTarget.src = 'https://via.placeholder.com/400x300?text=No+Image';
+                            }}
+                          />
+                        ) : (
+                          <div className="flex flex-col items-center justify-center text-gray-400">
+                            <Package className="h-12 w-12 mb-2" />
+                            <span className="text-sm">No image</span>
                           </div>
+                        )}
+                        {/* Status Badge */}
+                        <div className="absolute top-3 right-3">
+                          <Badge 
+                            variant={
+                              group.status === 'active' ? 'success' :
+                              group.status === 'completed' ? 'secondary' : 'ghost'
+                            }
+                          >
+                            {group.status}
+                          </Badge>
+                        </div>
+                      </div>
+
+                      {/* Card Content */}
+                      <div className="p-6 space-y-4">
+                        <div>
+                          <h3 className="heading-5 mb-2">{group.name}</h3>
                           <p className="body-sm text-gray-600">{group.category}</p>
                         </div>
 
@@ -444,14 +484,18 @@ export default function SupplierDashboard() {
                           <div>
                             <p className="body-sm text-gray-600">Price</p>
                             <div className="flex items-center gap-2">
-                              <p className="text-xl font-bold text-gray-900">${group.price}</p>
-                              <p className="body-sm text-gray-500 line-through">${group.original_price}</p>
+                              <p className="text-xl font-bold text-gray-900">
+                                {group.product?.bulkPrice || group.price || 0}
+                              </p>
+                              <p className="body-sm text-gray-500 line-through">
+                                ${group.product?.regularPrice || group.original_price || 0}
+                              </p>
                             </div>
                           </div>
                           <div className="text-right">
                             <p className="body-sm text-gray-600">Participants</p>
                             <p className="text-xl font-bold text-primary-600">
-                              {group.participants}/{group.max_participants}
+                              {group.members || group.participants || 0}/{group.targetMembers || group.max_participants || 0}
                             </p>
                           </div>
                         </div>
@@ -459,7 +503,7 @@ export default function SupplierDashboard() {
                         <div className="pt-3 border-t border-gray-200">
                           <div className="flex items-center justify-between body-sm text-gray-600">
                             <span>End Date</span>
-                            <span>{new Date(group.end_date).toLocaleDateString()}</span>
+                            <span>{new Date(group.dueDate || group.end_date || new Date()).toLocaleDateString()}</span>
                           </div>
                         </div>
 
@@ -476,6 +520,7 @@ export default function SupplierDashboard() {
                     </Card>
                   ))}
                 </div>
+                )}
               </div>
             )}
 
@@ -486,45 +531,51 @@ export default function SupplierDashboard() {
                   <h2 className="heading-3">Payments</h2>
                 </div>
 
-                <div className="grid grid-cols-1 gap-4">
-                  {payments.map((payment) => (
-                    <Card key={payment.id} variant="elevated" padding="lg">
-                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2">
-                            <h3 className="heading-5">Payment #{payment.payment_reference}</h3>
-                            <Badge 
-                              variant={
-                                payment.status === 'completed' ? 'success' :
-                                payment.status === 'processing' ? 'info' :
-                                payment.status === 'pending' ? 'warning' : 'ghost'
-                              }
-                            >
-                              {payment.status}
-                            </Badge>
-                          </div>
-                          <div className="space-y-1 body-sm text-gray-600">
-                            <p>Order: {payment.order_number}</p>
-                            <p>Method: {payment.payment_method}</p>
-                            <p>Processed: {new Date(payment.processed_at).toLocaleDateString()}</p>
-                            {payment.expected_transfer_date && (
-                              <p className="text-primary-600 font-medium">
-                                Expected Transfer: {new Date(payment.expected_transfer_date).toLocaleDateString()}
+                {payments.length === 0 ? (
+                  <EmptyState
+                    icon="dollar-sign"
+                    title="No payments yet"
+                    description="Payments from completed orders will appear here"
+                  />
+                ) : (
+                  <div className="grid grid-cols-1 gap-4">
+                    {payments.map((payment) => (
+                      <Card key={payment.id} variant="elevated" padding="lg">
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-2">
+                              <h3 className="heading-5">Payment #{payment.reference_number}</h3>
+                              <Badge 
+                                variant={
+                                  payment.status === 'completed' ? 'success' :
+                                  payment.status === 'processing' ? 'info' :
+                                  payment.status === 'pending' ? 'warning' : 'ghost'
+                                }
+                              >
+                                {payment.status}
+                              </Badge>
+                            </div>
+                            <div className="space-y-1 body-sm text-gray-600">
+                              <p>Reference: {payment.reference_number}</p>
+                              <p>Method: {payment.payment_method}</p>
+                              <p>Processed: {new Date(payment.processed_at || payment.created_at).toLocaleDateString()}</p>
+                              <p className="text-xs text-gray-500">
+                                Created: {new Date(payment.created_at).toLocaleString()}
                               </p>
-                            )}
+                            </div>
+                          </div>
+
+                          <div className="text-right">
+                            <p className="body-sm text-gray-600 mb-1">Amount Received</p>
+                            <p className="text-3xl font-bold text-success-600">
+                              ${payment.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </p>
                           </div>
                         </div>
-
-                        <div className="text-right">
-                          <p className="body-sm text-gray-600 mb-1">Amount</p>
-                          <p className="text-3xl font-bold text-success-600">
-                            ${payment.amount.toLocaleString()}
-                          </p>
-                        </div>
-                      </div>
-                    </Card>
-                  ))}
-                </div>
+                      </Card>
+                    ))}
+                  </div>
+                )}
 
                 <Card variant="default" padding="lg" className="bg-primary-50 border-primary-200">
                   <div className="flex items-start gap-3">
