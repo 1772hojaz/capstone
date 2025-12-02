@@ -1,7 +1,0 @@
-Public key
-FLWPUBK_TEST-9451b8a5c95b08dae2ae0366bd89a079-X
-Secret key
-FLWSECK_TEST-d55e0d7ae8a0e08b6d6078ba1f5094c2-X
-Encryption key
-FLWSECK_TEST4ff4b95e2452
-
