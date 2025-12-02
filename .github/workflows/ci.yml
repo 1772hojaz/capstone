@@ -35,8 +35,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Install Node deps
-        run: npm ci
+          cache: 'npm'
+          cache-dependency-path: sys/Front-end/connectsphere/package-lock.json
+      - name: Clean install dependencies
+        run: |
+          rm -rf node_modules/.vite node_modules/.tmp dist
+          npm ci
       - name: Typecheck and build
         run: |
           npm run build
