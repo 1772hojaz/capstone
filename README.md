@@ -1,5 +1,6 @@
 # ConnectSphere
 
+
 ConnectSphere is an AI-powered group-buying platform designed to democratize bulk purchasing for informal traders in Harare, Zimbabwe. The platform connects traders through intelligent group recommendations, enabling collaborative purchasing and providing real-time analytics for market optimization.
 
 ## Table of Contents
