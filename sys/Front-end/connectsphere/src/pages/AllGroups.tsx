@@ -9,7 +9,7 @@ import { PageContainer, PageHeader } from '../components/layout/index';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
-import { Input } from '../components/ui/input';
+import { Input } from '../components/ui/Input';
 import { Dropdown } from '../components/ui/Dropdown';
 import { SkeletonCard } from '../components/feedback/Skeleton';
 import { ErrorAlert } from '../components/feedback/ErrorAlert';
@@ -300,6 +300,9 @@ export default function AllGroups() {
 
                     {/* Progress */}
                     <div className="space-y-1">
+                      <div className="flex justify-between text-xs text-gray-600 mb-1">
+                        <span>Progress: {((group.current_amount || 0) / (group.target_amount || 1) * 100).toFixed(1)}%</span>
+                      </div>
                       <div className="flex justify-between text-xs text-gray-600">
                         <span>${(group.current_amount || 0).toFixed(0)} raised</span>
                         <span>${(group.target_amount || 0).toFixed(0)} target</span>
@@ -398,6 +401,9 @@ export default function AllGroups() {
 
                       {/* Progress */}
                       <div className="mb-3">
+                        <div className="flex justify-between text-xs text-gray-600 mb-1">
+                          <span>Progress: {((group.current_amount || 0) / (group.target_amount || 1) * 100).toFixed(1)}%</span>
+                        </div>
                         <div className="flex justify-between text-xs text-gray-600 mb-1">
                           <span>${(group.current_amount || 0).toFixed(0)} raised</span>
                           <span>${(group.target_amount || 0).toFixed(0)} target</span>

@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Mail, Lock, User, MapPin, DollarSign, TrendingUp, Users, Calendar, Eye, EyeOff, AlertCircle, CheckCircle, Loader, ArrowLeft, ArrowRight, Check } from 'lucide-react';
+import { Mail, Lock, User, MapPin, DollarSign, TrendingUp, Users, Calendar, Eye, EyeOff, AlertCircle, CheckCircle, Loader, ArrowLeft, ArrowRight, Check, FileText, Shield } from 'lucide-react';
 import apiService from '../services/api';
 import metadataService from '../services/metadataService';
+import LegalDocumentModal from '../components/legal/LegalDocumentModal';
 
 interface RegistrationData {
   // Step 1: Basic Info
@@ -30,6 +31,12 @@ const EnhancedRegistrationPage = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<{[key: string]: string}>({});
   const [successMessage, setSuccessMessage] = useState('');
+  
+  // Legal agreement state
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
+  const [agreedToPrivacy, setAgreedToPrivacy] = useState(false);
+  const [showTermsModal, setShowTermsModal] = useState(false);
+  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
   
   // Dynamic data from API
   const [categories, setCategories] = useState<string[]>([]);
@@ -112,6 +119,14 @@ const EnhancedRegistrationPage = () => {
       // Experience & Preferences
       if (formData.preferred_group_sizes.length === 0) {
         newErrors.preferred_group_sizes = 'Please select at least one group size preference';
+      }
+      
+      // Legal agreements
+      if (!agreedToTerms) {
+        newErrors.termsAgreement = 'You must agree to the Terms of Service';
+      }
+      if (!agreedToPrivacy) {
+        newErrors.privacyAgreement = 'You must agree to the Privacy Policy';
       }
     }
 
@@ -574,6 +589,93 @@ const EnhancedRegistrationPage = () => {
                     </div>
                   </div>
                 </div>
+
+                {/* Legal Agreements */}
+                <div className="mt-8 space-y-4">
+                  <h4 className="font-semibold text-gray-900 mb-4 flex items-center">
+                    <Shield className="w-5 h-5 mr-2 text-blue-600" />
+                    Legal Agreements
+                  </h4>
+                  
+                  {/* Terms of Service */}
+                  <div className={`border-2 rounded-lg p-4 transition-colors ${
+                    errors.termsAgreement ? 'border-red-300 bg-red-50' : 'border-gray-200 bg-gray-50'
+                  }`}>
+                    <label className="flex items-start cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={agreedToTerms}
+                        onChange={(e) => {
+                          setAgreedToTerms(e.target.checked);
+                          if (errors.termsAgreement) {
+                            setErrors(prev => ({ ...prev, termsAgreement: '' }));
+                          }
+                        }}
+                        className="mt-1 h-5 w-5 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                      />
+                      <span className="ml-3 text-sm text-gray-700">
+                        I have read and agree to the{' '}
+                        <button
+                          type="button"
+                          onClick={() => setShowTermsModal(true)}
+                          className="text-blue-600 hover:text-blue-700 font-semibold underline inline-flex items-center"
+                        >
+                          <FileText className="w-4 h-4 mr-1" />
+                          Terms of Service
+                        </button>
+                      </span>
+                    </label>
+                    {errors.termsAgreement && (
+                      <p className="mt-2 ml-8 text-sm text-red-600 flex items-center">
+                        <AlertCircle className="w-4 h-4 mr-1" />
+                        {errors.termsAgreement}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Privacy Policy */}
+                  <div className={`border-2 rounded-lg p-4 transition-colors ${
+                    errors.privacyAgreement ? 'border-red-300 bg-red-50' : 'border-gray-200 bg-gray-50'
+                  }`}>
+                    <label className="flex items-start cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={agreedToPrivacy}
+                        onChange={(e) => {
+                          setAgreedToPrivacy(e.target.checked);
+                          if (errors.privacyAgreement) {
+                            setErrors(prev => ({ ...prev, privacyAgreement: '' }));
+                          }
+                        }}
+                        className="mt-1 h-5 w-5 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                      />
+                      <span className="ml-3 text-sm text-gray-700">
+                        I have read and agree to the{' '}
+                        <button
+                          type="button"
+                          onClick={() => setShowPrivacyModal(true)}
+                          className="text-blue-600 hover:text-blue-700 font-semibold underline inline-flex items-center"
+                        >
+                          <Shield className="w-4 h-4 mr-1" />
+                          Privacy Policy
+                        </button>
+                      </span>
+                    </label>
+                    {errors.privacyAgreement && (
+                      <p className="mt-2 ml-8 text-sm text-red-600 flex items-center">
+                        <AlertCircle className="w-4 h-4 mr-1" />
+                        {errors.privacyAgreement}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Legal Notice */}
+                  <div className="bg-gray-100 border border-gray-300 rounded-lg p-3">
+                    <p className="text-xs text-gray-600">
+                      <strong>🇿🇼 Zimbabwe Legal Compliance:</strong> This platform complies with Zimbabwe's Cyber and Data Protection Act [Chapter 12:07] and Consumer Protection Act [Chapter 14:44]. By creating an account, you acknowledge that you are at least 18 years old and agree to be bound by these terms.
+                    </p>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -635,7 +737,41 @@ const EnhancedRegistrationPage = () => {
             </button>
           </p>
         </div>
+
+        {/* Legal Links */}
+        <div className="text-center mt-4 pt-4 border-t border-gray-200">
+          <p className="text-sm text-gray-600">
+            <button
+              onClick={() => navigate('/terms-of-service')}
+              className="text-blue-600 hover:text-blue-700 hover:underline"
+            >
+              Terms of Service
+            </button>
+            {' '}<span className="text-gray-400">•</span>{' '}
+            <button
+              onClick={() => navigate('/privacy-policy')}
+              className="text-blue-600 hover:text-blue-700 hover:underline"
+            >
+              Privacy Policy
+            </button>
+          </p>
+        </div>
       </div>
+
+      {/* Legal Document Modals */}
+      <LegalDocumentModal
+        isOpen={showTermsModal}
+        onClose={() => setShowTermsModal(false)}
+        title="Terms of Service"
+        type="tos"
+      />
+      
+      <LegalDocumentModal
+        isOpen={showPrivacyModal}
+        onClose={() => setShowPrivacyModal(false)}
+        title="Privacy Policy"
+        type="privacy"
+      />
     </div>
   );
 };

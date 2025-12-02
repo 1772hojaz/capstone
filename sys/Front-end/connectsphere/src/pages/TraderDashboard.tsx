@@ -183,6 +183,9 @@ const TraderDashboard = () => {
                     
                     {/* Progress */}
                     <div className="space-y-1">
+                      <div className="flex justify-between text-xs text-gray-600 mb-1">
+                        <span>Progress: {(product.amount_progress || product.moq_progress || 0).toFixed(1)}%</span>
+                      </div>
                       <div className="flex items-center justify-between text-xs text-gray-600">
                         <span>${(product.current_amount || 0).toFixed(0)} raised</span>
                         <span>${(product.target_amount || 0).toFixed(0)} target</span>

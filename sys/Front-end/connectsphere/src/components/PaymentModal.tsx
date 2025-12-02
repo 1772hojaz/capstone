@@ -9,6 +9,7 @@ interface PaymentModalProps {
   txRef: string;
   email: string;
   description?: string;
+  paymentUrl?: string;  // Payment URL from backend (if already initialized)
   onSuccess?: (data: any) => void;
   onError?: (error: string) => void;
 }
@@ -21,11 +22,12 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   txRef,
   email,
   description = 'Payment for group purchase',
+  paymentUrl: initialPaymentUrl,  // Renamed to avoid conflict with state
   onSuccess,
   onError,
 }) => {
   const [isLoading, setIsLoading] = useState(false);
-  const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
+  const [paymentUrl, setPaymentUrl] = useState<string | null>(initialPaymentUrl || null);
   const [fee, setFee] = useState<number | null>(null);
   const [totalAmount, setTotalAmount] = useState(amount);
 
@@ -50,6 +52,17 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   const handlePayment = async () => {
     setIsLoading(true);
     try {
+      // If payment URL is already provided (from join_group), use it directly
+      if (initialPaymentUrl) {
+        setPaymentUrl(initialPaymentUrl);
+        // Open payment link in new window/tab
+        window.open(initialPaymentUrl, '_blank');
+        onSuccess?.({ data: { link: initialPaymentUrl } });
+        setIsLoading(false);
+        return;
+      }
+
+      // Otherwise, initialize payment (fallback for other flows)
       const paymentData = {
         amount: totalAmount,
         currency,

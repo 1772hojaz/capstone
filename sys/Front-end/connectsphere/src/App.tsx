@@ -11,7 +11,6 @@ const EnhancedRegistrationPage = lazy(() => import('./pages/EnhancedRegistration
 const SupplierLandingPage = lazy(() => import('./pages/SupplierLandingPage'));
 const SupplierLoginPage = lazy(() => import('./pages/SupplierLoginPage'));
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
-const TraderDashboard = lazy(() => import('./pages/TraderDashboard'));
 const SupplierDashboard = lazy(() => import('./pages/SupplierDashboard'));
 const QRScanner = lazy(() => import('./pages/QRScanner'));
 const GroupList = lazy(() => import('./pages/GroupList'));
@@ -32,9 +31,12 @@ const ContactPage = lazy(() => import('./pages/ContactPage'));
 const AnalyticsDashboard = lazy(() => import('./components/analytics/AnalyticsDashboard'));
 const Products = lazy(() => import('./pages/Products'));
 const CreateGroup = lazy(() => import('./pages/CreateGroup'));
+const TermsOfService = lazy(() => import('./pages/TermsOfService'));
+const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
 
-// Eager load DashboardLayout since it's needed frequently
+// Eager load frequently used components
 import DashboardLayout from './components/DashboardLayout';
+import TraderDashboard from './pages/TraderDashboard';
 
 // Loading fallback component
 const PageLoader = () => (
@@ -220,6 +222,18 @@ function App() {
           } />
 
           <Route path="/analytics" element={<AnalyticsDashboard />} />
+
+          <Route path="/terms-of-service" element={
+            <MainLayout>
+              <TermsOfService />
+            </MainLayout>
+          } />
+
+          <Route path="/privacy-policy" element={
+            <MainLayout>
+              <PrivacyPolicy />
+            </MainLayout>
+          } />
         </Routes>
       </Suspense>
     </Router>

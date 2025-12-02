@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { 
   Search, Shield, Plus, Users, Package, DollarSign, 
   CheckCircle2, Clock, Eye, Edit2, Trash2, AlertCircle,
-  TrendingUp, ShoppingBag, Calendar, XCircle, Loader2, Upload
+  TrendingUp, ShoppingBag, Calendar, XCircle, Loader2, Upload, Send
 } from 'lucide-react';
 import apiService from '../services/api';
 import TopNavigation from '../components/navigation/TopNavigation';
@@ -500,6 +500,8 @@ const GroupModeration = () => {
                           onClick={() => {
                             console.log(`Switching to tab: ${tab.id}`);
                             setActiveTab(tab.id as TabType);
+                            // Clear search when switching tabs
+                            setSearchQuery('');
                           }}
                           className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
                             activeTab === tab.id
@@ -1235,12 +1237,15 @@ const GroupCard = ({ group, onView, onEdit, onDelete, onProcessPayment, showPaym
   return (
     <Card variant="elevated" padding="lg" className="hover:shadow-xl transition-shadow">
       <div className="flex gap-4 mb-4">
-        {/* Image */}
-        {group.product?.image && (
+        {/* Image - Check multiple sources for image */}
+        {(group.product?.image || group.image) && (
           <img
-            src={group.product.image}
-            alt={group.product.name}
+            src={group.product?.image || group.image || 'https://via.placeholder.com/96x96?text=Product'}
+            alt={group.product?.name || group.name}
             className="w-24 h-24 object-cover rounded-lg flex-shrink-0"
+            onError={(e) => {
+              e.currentTarget.src = 'https://via.placeholder.com/96x96?text=No+Image';
+            }}
           />
         )}
 
@@ -1276,23 +1281,86 @@ const GroupCard = ({ group, onView, onEdit, onDelete, onProcessPayment, showPaym
                           </div>
 
       {/* Product Info */}
-      {group.product && (
-        <div className="bg-gray-50 rounded-lg p-3 mb-4">
-          <div className="flex items-center gap-2 mb-2">
-            <Package className="h-4 w-4 text-primary-600" />
-            <span className="font-semibold text-sm">{group.product.name}</span>
+      <div className="bg-gray-50 rounded-lg p-3 mb-4">
+        <div className="flex items-center gap-2 mb-2">
+          <Package className="h-4 w-4 text-primary-600" />
+          <span className="font-semibold text-sm">{group.product?.name || group.name}</span>
+        </div>
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <div>
+            <span className="text-gray-500">Regular:</span>
+            <span className="font-semibold ml-1">{group.product?.regularPrice || group.product?.unit_price || group.original_price || 'N/A'}</span>
           </div>
-          <div className="grid grid-cols-2 gap-2 text-xs">
-                          <div>
-              <span className="text-gray-500">Regular:</span>
-              <span className="font-semibold ml-1">{group.product.regularPrice || group.product.unit_price}</span>
-                          </div>
-                          <div>
-              <span className="text-success-600">Bulk:</span>
-              <span className="font-semibold ml-1 text-success-700">{group.product.bulkPrice || group.product.bulk_price}</span>
-                          </div>
-                        </div>
-                      </div>
+          <div>
+            <span className="text-success-600">Bulk:</span>
+            <span className="font-semibold ml-1 text-success-700">{group.product?.bulkPrice || group.product?.bulk_price || group.price || 'N/A'}</span>
+          </div>
+        </div>
+        {/* Additional details */}
+        <div className="mt-2 pt-2 border-t border-gray-200 text-xs space-y-1">
+          <div className="flex justify-between">
+            <span className="text-gray-500">Current Amount:</span>
+            <span className="font-semibold text-success-700">{group.currentAmount || group.current_amount || '$0.00'}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-500">Target Amount:</span>
+            <span className="font-semibold text-gray-700">{group.targetAmount || group.target_amount || '$0.00'}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Collection Tracking - Only show for completed groups */}
+      {group.collection_tracking && (
+        <div className="bg-blue-50 rounded-lg p-3 mb-4 border border-blue-200">
+          <div className="flex items-center gap-2 mb-2">
+            <Users className="h-4 w-4 text-blue-600" />
+            <span className="font-semibold text-sm text-blue-900">
+              Collection Progress: {group.collection_tracking.collection_progress}
+            </span>
+          </div>
+          
+          {/* Collection Summary */}
+          <div className="grid grid-cols-2 gap-2 text-xs mb-3">
+            <div className="bg-green-100 rounded px-2 py-1">
+              <span className="text-gray-600">Collected:</span>
+              <span className="font-semibold ml-1 text-green-700">{group.collection_tracking.collected_count}</span>
+            </div>
+            <div className="bg-orange-100 rounded px-2 py-1">
+              <span className="text-gray-600">Pending:</span>
+              <span className="font-semibold ml-1 text-orange-700">{group.collection_tracking.pending_count}</span>
+            </div>
+          </div>
+
+          {/* Collected Users */}
+          {group.collection_tracking.collected_users.length > 0 && (
+            <div className="mb-2">
+              <p className="text-xs font-semibold text-green-700 mb-1">✓ Collected:</p>
+              <div className="space-y-1">
+                {group.collection_tracking.collected_users.map((user: any) => (
+                  <div key={user.id} className="text-xs bg-white rounded px-2 py-1 flex items-center justify-between">
+                    <span className="text-gray-700">{user.name}</span>
+                    <span className="text-gray-500">×{user.quantity}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Pending Users */}
+          {group.collection_tracking.pending_users.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-orange-700 mb-1">⏳ Pending Collection:</p>
+              <div className="space-y-1">
+                {group.collection_tracking.pending_users.map((user: any) => (
+                  <div key={user.id} className="text-xs bg-white rounded px-2 py-1 flex items-center justify-between">
+                    <span className="text-gray-700">{user.name}</span>
+                    <span className="text-gray-500">×{user.quantity}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       {/* Actions */}
@@ -1317,13 +1385,13 @@ const GroupCard = ({ group, onView, onEdit, onDelete, onProcessPayment, showPaym
         </Button>
         {showPaymentButton && (
           <Button
-            variant="primary"
+            variant={group.supplier_confirmed ? "success" : "primary"}
             size="sm"
-            leftIcon={<DollarSign className="h-4 w-4" />}
+            leftIcon={group.supplier_confirmed ? <DollarSign className="h-4 w-4" /> : <Send className="h-4 w-4" />}
             className="flex-1"
             onClick={() => onProcessPayment(group)}
           >
-            Process
+            {group.action_needed || (group.supplier_confirmed ? "Pay Now" : "Send")}
           </Button>
         )}
         <Button

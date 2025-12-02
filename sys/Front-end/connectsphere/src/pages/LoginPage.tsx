@@ -405,6 +405,25 @@ const LoginPage = () => {
             </a>
           </p>
         </div>
+
+        {/* Legal Links */}
+        <div className="mt-4 pt-4 border-t border-gray-200 text-center">
+          <p className="text-xs text-gray-500">
+            <button
+              onClick={() => navigate('/terms-of-service')}
+              className="text-blue-600 hover:text-blue-700 hover:underline"
+            >
+              Terms of Service
+            </button>
+            {' '}<span className="text-gray-400">•</span>{' '}
+            <button
+              onClick={() => navigate('/privacy-policy')}
+              className="text-blue-600 hover:text-blue-700 hover:underline"
+            >
+              Privacy Policy
+            </button>
+          </p>
+        </div>
       </div>
     </div>
   );

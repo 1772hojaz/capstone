@@ -14,7 +14,7 @@ import { PageContainer, PageHeader } from '../components/layout/index';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
-import { Input } from '../components/ui/input';
+import { Input } from '../components/ui/Input';
 import { Spinner } from '../components/feedback/Spinner';
 import { ErrorAlert } from '../components/feedback/ErrorAlert';
 import PaymentModal from '../components/PaymentModal';
@@ -72,6 +72,7 @@ export default function GroupDetail() {
   const [paymentData, setPaymentData] = useState<{
     txRef: string;
     amount: number;
+    paymentUrl?: string;
   } | null>(null);
   const [isWishlisted, setIsWishlisted] = useState(false);
   const [showShareMenu, setShowShareMenu] = useState(false);
@@ -308,7 +309,8 @@ export default function GroupDetail() {
       if (response.payment_url || response.tx_ref) {
         setPaymentData({
           txRef: response.tx_ref || response.transaction_id || `tx_${Date.now()}`,
-          amount: (groupData?.bulk_price || groupData?.price || 0) * quantity
+          amount: (groupData?.bulk_price || groupData?.price || 0) * quantity,
+          paymentUrl: response.payment_url  // Pass the payment URL from backend
         });
         setShowPaymentModal(true);
 
@@ -911,7 +913,7 @@ export default function GroupDetail() {
                   <p className="body-sm text-gray-600 mb-1">Group Price</p>
                   <div className="flex items-baseline justify-center gap-2">
                     <span className="text-4xl font-bold text-gray-900">
-                      ${productPrice}
+                      {productPrice}
                     </span>
                     {originalPrice && (
                       <span className="text-lg text-gray-500 line-through">
@@ -1103,6 +1105,7 @@ export default function GroupDetail() {
           amount={paymentData.amount}
           email={currentUser?.email || 'user@example.com'}
           description={`Group buy: ${productName} (Qty: ${quantity})`}
+          paymentUrl={paymentData.paymentUrl}  // Pass the payment URL from backend
           onSuccess={handlePaymentSuccess}
           onError={handlePaymentError}
         />

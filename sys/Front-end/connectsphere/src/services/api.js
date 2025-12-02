@@ -323,7 +323,9 @@ class ApiService {
 
   // Groups methods
   async getMyGroups() {
-    return this.request('/api/groups/my-groups');
+    // Add cache-busting parameter to ensure fresh data
+    const timestamp = new Date().getTime();
+    return this.request(`/api/groups/my-groups?_t=${timestamp}`);
   }
 
   async joinGroup(groupId, joinData) {
@@ -446,19 +448,27 @@ class ApiService {
   }
 
   async getGroupModerationStats() {
-    return this.request('/api/admin/groups/moderation-stats');
+    // Add cache-busting parameter to ensure fresh data
+    const timestamp = new Date().getTime();
+    return this.request(`/api/admin/groups/moderation-stats?_t=${timestamp}`);
   }
 
   async getActiveGroups() {
-    return this.request('/api/admin/groups/active');
+    // Add cache-busting parameter to ensure fresh data
+    const timestamp = new Date().getTime();
+    return this.request(`/api/admin/groups/active?_t=${timestamp}`);
   }
 
   async getReadyForPaymentGroups() {
-    return this.request('/api/admin/groups/ready-for-payment');
+    // Add cache-busting parameter to ensure fresh data
+    const timestamp = new Date().getTime();
+    return this.request(`/api/admin/groups/ready-for-payment?_t=${timestamp}`);
   }
 
   async getCompletedGroups() {
-    return this.request('/api/admin/groups/completed');
+    // Add cache-busting parameter to ensure fresh data
+    const timestamp = new Date().getTime();
+    return this.request(`/api/admin/groups/completed?_t=${timestamp}`);
   }
 
   async processGroupPayment(groupId) {
@@ -600,7 +610,9 @@ class ApiService {
 
   // Supplier API methods
   async getSupplierDashboardMetrics() {
-    return this.request('/api/supplier/dashboard/metrics');
+    // Add cache-busting parameter to ensure fresh data
+    const timestamp = new Date().getTime();
+    return this.request(`/api/supplier/dashboard/metrics?_t=${timestamp}`);
   }
 
   async getSupplierProducts() {
@@ -736,11 +748,15 @@ class ApiService {
 
   // Supplier Payments
   async getSupplierPayments() {
-    return this.request('/api/supplier/payments');
+    // Add cache-busting parameter to ensure fresh data
+    const timestamp = new Date().getTime();
+    return this.request(`/api/supplier/payments?_t=${timestamp}`);
   }
 
   async getPaymentDashboard() {
-    return this.request('/api/supplier/payments/dashboard');
+    // Add cache-busting parameter to ensure fresh data
+    const timestamp = new Date().getTime();
+    return this.request(`/api/supplier/payments/dashboard?_t=${timestamp}`);
   }
 
   // Supplier Notifications

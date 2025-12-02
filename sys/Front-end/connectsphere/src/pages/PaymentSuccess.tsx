@@ -116,7 +116,8 @@ const PaymentSuccess = () => {
           sessionStorage.removeItem('paymentSuccessData');
 
         } else {
-          const groupIdMatch = txRef.match(/^group_(\d+)_/);
+          // Parse group ID from tx_ref (format: admin_group_{id}_user_{id}_{uuid} or group_buy_{id}_user_{id}_{uuid})
+          const groupIdMatch = txRef.match(/^(?:admin_group|group_buy)_(\d+)_/);
           if (!groupIdMatch) {
             throw new Error('Invalid transaction reference format');
           }
@@ -150,14 +151,13 @@ const PaymentSuccess = () => {
             special_instructions: stored.special_instructions || stored.specialInstructions || null,
           };
 
-          const finalJoinData = {
-            ...joinData,
-            payment_transaction_id: transactionId,
-            payment_reference: txRef
-          };
-
-          await apiService.joinGroup(groupId, finalJoinData);
-
+          // NOTE: With the new 2-phase payment flow, the backend callback
+          // already created the join record after payment confirmation.
+          // We don't need to call joinGroup again here!
+          
+          // Just verify the payment was successful and mark as complete
+          console.log('Payment successful - join already completed by callback');
+          
           localStorage.removeItem('pendingGroupJoin');
           sessionStorage.removeItem('paymentSuccessData');
 

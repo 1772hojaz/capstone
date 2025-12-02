@@ -165,17 +165,14 @@ const UnifiedLoginPage = () => {
           </p>
           <div className="flex justify-center gap-4 text-xs text-blue-700">
             <span className="flex items-center gap-1">
-              <User className="w-3 h-3" />
+            
               Trader
             </span>
             <span className="flex items-center gap-1">
-              <Building2 className="w-3 h-3" />
+            
               Supplier
             </span>
-            <span className="flex items-center gap-1">
-              <Shield className="w-3 h-3" />
-              Admin
-            </span>
+            
           </div>
         </div>
 
@@ -296,14 +293,14 @@ const UnifiedLoginPage = () => {
               onClick={() => navigate('/register')}
               className="px-4 py-2 text-sm bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition font-medium flex items-center justify-center gap-1"
             >
-              <User className="w-4 h-4" />
+            
               Register as Trader
             </button>
             <button
               onClick={() => navigate('/supplier/register')}
               className="px-4 py-2 text-sm bg-purple-50 text-purple-600 rounded-lg hover:bg-purple-100 transition font-medium flex items-center justify-center gap-1"
             >
-              <Building2 className="w-4 h-4" />
+            
               Register as Supplier
             </button>
           </div>
@@ -313,9 +310,19 @@ const UnifiedLoginPage = () => {
         <div className="mt-6 pt-6 border-t border-gray-200">
           <p className="text-xs text-gray-500 text-center">
             By signing in, you agree to our{' '}
-            <a href="#" className="text-blue-600 hover:text-blue-500">Terms of Service</a>
+            <button
+              onClick={() => navigate('/terms-of-service')}
+              className="text-blue-600 hover:text-blue-700 hover:underline"
+            >
+              Terms of Service
+            </button>
             {' '}and{' '}
-            <a href="#" className="text-blue-600 hover:text-blue-500">Privacy Policy</a>
+            <button
+              onClick={() => navigate('/privacy-policy')}
+              className="text-blue-600 hover:text-blue-700 hover:underline"
+            >
+              Privacy Policy
+            </button>
           </p>
         </div>
       </div>

@@ -47,6 +47,7 @@ export default function QRScanner() {
   const [showSuccess, setShowSuccess] = useState(false);
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [videoReady, setVideoReady] = useState(false);
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -89,19 +90,27 @@ export default function QRScanner() {
     try {
       setScanning(true);
       
-      // Mark QR as used (you may need to add this endpoint or it might happen automatically)
-      await apiService.post(`/api/admin/qr/mark-used/${scanResult.qr_status.generated_at}`, {
+      // Mark QR as used - use the QR code ID, not the timestamp
+      if (!scanResult.qr_status.id) {
+        setError('QR code ID not found. Please scan again.');
+        setScanning(false);
+        return;
+      }
+      
+      const response = await apiService.post(`/api/admin/qr/mark-used/${scanResult.qr_status.id}`, {
         qr_code_data: qrCode
       });
 
+      console.log('QR marked as used successfully:', response);
       setShowSuccess(true);
+      setError(null); // Clear any previous errors
       
-      // Reset after 3 seconds
+      // Reset after 4 seconds (give more time to read)
       setTimeout(() => {
         setQrCode('');
         setScanResult(null);
         setShowSuccess(false);
-      }, 3000);
+      }, 4000);
 
     } catch (err: any) {
       setError(err.message || 'Failed to confirm pickup');
@@ -122,19 +131,84 @@ export default function QRScanner() {
     try {
       setCameraError(null);
       setError(null);
+      setCameraActive(true); // Set immediately to show the video container
+      
+      console.log('🎥 Step 1: Requesting camera access...');
       
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' } // Use back camera on mobile
+        video: { 
+          facingMode: 'environment',
+          width: { min: 640, ideal: 1280 },
+          height: { min: 480, ideal: 720 }
+        }
       });
+      
+      const videoTrack = stream.getVideoTracks()[0];
+      console.log('✅ Step 2: Camera stream obtained:', videoTrack.label);
+      console.log('   Settings:', videoTrack.getSettings());
       
       streamRef.current = stream;
       
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play();
+      // Wait a tick to ensure video element is mounted
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      if (!videoRef.current) {
+        console.error('❌ Video element not found!');
+        throw new Error('Video element not mounted');
       }
       
-      setCameraActive(true);
+      const video = videoRef.current;
+      console.log('📺 Step 3: Video element found, assigning stream...');
+      
+      // Multiple event listeners for debugging
+      video.onloadstart = () => console.log('   → loadstart event');
+      video.onloadeddata = () => console.log('   → loadeddata event');
+      video.oncanplay = () => console.log('   → canplay event');
+      video.onplaying = () => {
+        console.log('   → playing event');
+        setVideoReady(true);
+      };
+      
+      video.onloadedmetadata = () => {
+        console.log('✅ Step 4: Video metadata loaded!', {
+          width: video.videoWidth,
+          height: video.videoHeight,
+          readyState: video.readyState
+        });
+        setVideoReady(true);
+      };
+      
+      // Assign the stream
+      video.srcObject = stream;
+      video.muted = true;
+      video.playsInline = true;
+      
+      console.log('📺 Step 5: Attempting to play video...');
+      
+      // Try to play
+      const playPromise = video.play();
+      if (playPromise !== undefined) {
+        await playPromise;
+        console.log('✅ Step 6: Video play() successful!');
+      }
+      
+      // Double-check after a moment
+      setTimeout(() => {
+        console.log('🔍 Step 7: Final check:', {
+          videoWidth: video.videoWidth,
+          videoHeight: video.videoHeight,
+          readyState: video.readyState,
+          paused: video.paused,
+          srcObject: video.srcObject !== null
+        });
+        
+        if (video.videoWidth > 0 && video.videoHeight > 0) {
+          console.log('✅ Video is working! Dimensions:', video.videoWidth, 'x', video.videoHeight);
+          setVideoReady(true);
+        } else {
+          console.error('❌ Video dimensions are still 0!');
+        }
+      }, 1000);
       
       // Start scanning for QR codes
       scanIntervalRef.current = window.setInterval(() => {
@@ -142,9 +216,22 @@ export default function QRScanner() {
       }, 300); // Scan every 300ms
       
     } catch (err: any) {
-      console.error('Camera error:', err);
-      setCameraError('Failed to access camera. Please ensure camera permissions are granted.');
+      console.error('❌ Camera error:', err);
+      let errorMessage = 'Failed to access camera. ';
+      
+      if (err.name === 'NotAllowedError') {
+        errorMessage += 'Please allow camera permissions in your browser settings.';
+      } else if (err.name === 'NotFoundError') {
+        errorMessage += 'No camera found on this device.';
+      } else if (err.name === 'NotReadableError') {
+        errorMessage += 'Camera is already in use by another application.';
+      } else {
+        errorMessage += err.message || 'Please ensure camera permissions are granted.';
+      }
+      
+      setCameraError(errorMessage);
       setCameraActive(false);
+      setVideoReady(false);
     }
   };
 
@@ -164,6 +251,7 @@ export default function QRScanner() {
     }
     
     setCameraActive(false);
+    setVideoReady(false);
   };
 
   const scanQRCode = () => {
@@ -261,12 +349,41 @@ export default function QRScanner() {
 
               {/* Camera View */}
               {cameraActive && (
-                <div className="mb-4 relative rounded-lg overflow-hidden bg-black">
+                <div className="mb-4 relative rounded-lg overflow-hidden bg-gray-900" style={{ minHeight: '256px' }}>
                   <video
                     ref={videoRef}
                     className="w-full h-64 object-cover"
+                    autoPlay
+                    muted
                     playsInline
+                    style={{ 
+                      minHeight: '256px',
+                      maxHeight: '256px',
+                      width: '100%',
+                      backgroundColor: '#000',
+                      display: 'block',
+                      transform: 'scaleX(-1)' // Mirror the video horizontally
+                    }}
                   />
+                  
+                  {/* Status indicator */}
+                  {!videoReady && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50">
+                      <div className="text-white text-center">
+                        <Loader2 className="h-8 w-8 animate-spin mx-auto mb-2" />
+                        <p className="text-sm">Loading camera...</p>
+                        <p className="text-xs mt-1 text-gray-300">Check console (F12) if this persists</p>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Debug overlay - shows if video is loaded */}
+                  {videoReady && (
+                    <div className="absolute top-2 left-2 bg-green-500 text-white px-2 py-1 rounded text-xs">
+                      ✓ Camera Active
+                    </div>
+                  )}
+                  
                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                     <div className="border-4 border-blue-500 w-48 h-48 rounded-lg opacity-75"></div>
                   </div>
@@ -274,14 +391,16 @@ export default function QRScanner() {
                     variant="outline"
                     size="sm"
                     onClick={stopCamera}
-                    className="absolute top-2 right-2 bg-white"
+                    className="absolute top-2 right-2 bg-white z-10"
                   >
                     <X className="h-4 w-4 mr-1" />
                     Close Camera
                   </Button>
-                  <div className="absolute bottom-2 left-1/2 transform -translate-x-1/2 bg-black bg-opacity-75 text-white px-4 py-2 rounded-lg text-sm">
-                    Position QR code within the frame
-                  </div>
+                  {videoReady && (
+                    <div className="absolute bottom-2 left-1/2 transform -translate-x-1/2 bg-black bg-opacity-75 text-white px-4 py-2 rounded-lg text-sm">
+                      Position QR code within the frame
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -384,11 +503,13 @@ export default function QRScanner() {
 
               {/* Success Message */}
               {showSuccess && (
-                <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg flex items-start gap-3">
-                  <CheckCircle className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-sm font-medium text-green-900">Pickup Confirmed!</p>
-                    <p className="text-sm text-green-700 mt-1">Product handed over successfully</p>
+                <div className="mt-4 p-5 bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-400 rounded-xl shadow-lg flex items-start gap-3 animate-pulse">
+                  <div className="bg-green-500 rounded-full p-1">
+                    <CheckCircle className="h-6 w-6 text-white flex-shrink-0" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-lg font-bold text-green-900">✅ Pickup Confirmed!</p>
+                    <p className="text-base text-green-700 mt-1 font-medium">Product handed over successfully. Order marked as delivered.</p>
                   </div>
                 </div>
               )}
@@ -408,7 +529,16 @@ export default function QRScanner() {
                 </div>
               </div>
 
-              {!scanResult ? (
+              {showSuccess ? (
+                <div className="text-center py-12">
+                  <div className="inline-flex p-4 bg-green-100 rounded-full mb-4">
+                    <CheckCircle className="h-16 w-16 text-green-600" />
+                  </div>
+                  <h3 className="text-2xl font-bold text-green-900 mb-2">Success!</h3>
+                  <p className="text-green-700 text-lg">Product handover completed</p>
+                  <p className="text-gray-600 text-sm mt-2">Resetting scanner...</p>
+                </div>
+              ) : !scanResult ? (
                 <div className="text-center py-12">
                   <div className="inline-flex p-4 bg-gray-100 rounded-full mb-4">
                     <Camera className="h-12 w-12 text-gray-400" />
@@ -417,15 +547,49 @@ export default function QRScanner() {
                 </div>
               ) : (
                 <div className="space-y-6">
-                  {/* QR Status Alert */}
-                  {scanResult.qr_status.is_used && (
-                    <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg flex items-start gap-3">
-                      <AlertTriangle className="h-5 w-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+                  {/* QR Status Alert - PROMINENT WARNING FOR USED CODES */}
+                  {scanResult.qr_status.is_used ? (
+                    <div className="p-6 bg-gradient-to-r from-red-50 to-orange-50 border-4 border-red-400 rounded-xl shadow-xl">
+                      <div className="flex items-start gap-4">
+                        <div className="bg-red-500 rounded-full p-3">
+                          <AlertTriangle className="h-8 w-8 text-white flex-shrink-0" />
+                        </div>
+                        <div className="flex-1">
+                          <h3 className="text-2xl font-bold text-red-900 mb-2">⚠️ ALREADY USED</h3>
+                          <p className="text-lg text-red-800 font-semibold mb-3">
+                            This QR code has already been scanned and marked as used!
+                          </p>
+                          <div className="bg-white/80 rounded-lg p-4 space-y-2 text-sm">
+                            <div className="flex justify-between">
+                              <span className="font-medium text-gray-700">Used on:</span>
+                              <span className="text-red-700 font-bold">
+                                {new Date(scanResult.qr_status.used_at!).toLocaleString()}
+                              </span>
+                            </div>
+                            {scanResult.qr_status.used_by_staff && (
+                              <div className="flex justify-between">
+                                <span className="font-medium text-gray-700">Used by:</span>
+                                <span className="text-red-700 font-bold">
+                                  {scanResult.qr_status.used_by_staff}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                          <p className="text-red-900 font-semibold mt-4 text-base">
+                            ❌ Product has already been collected. Do not hand over again!
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-4 bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-400 rounded-lg flex items-start gap-3">
+                      <div className="bg-green-500 rounded-full p-1">
+                        <CheckCircle className="h-5 w-5 text-white flex-shrink-0" />
+                      </div>
                       <div>
-                        <p className="text-sm font-medium text-yellow-900">Already Used</p>
-                        <p className="text-sm text-yellow-700 mt-1">
-                          This QR code was already used on {new Date(scanResult.qr_status.used_at!).toLocaleString()}
-                          {scanResult.qr_status.used_by_staff && ` by ${scanResult.qr_status.used_by_staff}`}
+                        <p className="text-base font-bold text-green-900">✅ Valid QR Code</p>
+                        <p className="text-sm text-green-700 mt-1">
+                          This code is valid and has not been used yet. Safe to proceed.
                         </p>
                       </div>
                     </div>
@@ -527,13 +691,13 @@ export default function QRScanner() {
                     </Badge>
                   </div>
 
-                  {/* Confirm Button */}
-                  {!scanResult.qr_status.is_used && (
+                  {/* Confirm Button - Show different button based on used status */}
+                  {!scanResult.qr_status.is_used ? (
                     <Button
                       variant="primary"
                       onClick={handleConfirmPickup}
                       disabled={scanning}
-                      className="w-full"
+                      className="w-full text-lg py-4"
                     >
                       {scanning ? (
                         <>
@@ -546,6 +710,15 @@ export default function QRScanner() {
                           Confirm Product Handover
                         </>
                       )}
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="danger"
+                      disabled={true}
+                      className="w-full text-lg py-4 cursor-not-allowed opacity-75"
+                    >
+                      <XCircle className="h-5 w-5 mr-2" />
+                      Already Collected - Do Not Hand Over
                     </Button>
                   )}
                 </div>

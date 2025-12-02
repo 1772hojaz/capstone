@@ -9,8 +9,8 @@
  */
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
-// 🔴 TEMPORARILY DISABLED - Set to false to disable event tracking
-const ANALYTICS_ENABLED = false;
+// ✅ ENABLED - Event tracking is active
+const ANALYTICS_ENABLED = true;
 
 class AnalyticsService {
   constructor() {

@@ -162,68 +162,79 @@ const LandingPage = () => {
 
             {/* Right Content - Mockup */}
             <div className="relative">
-              <div className="relative bg-white rounded-3xl shadow-2xl p-8 transform hover:scale-105 transition duration-300">
-                {/* Mock Product Card */}
-                <div className="space-y-6">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-xl font-bold text-gray-900">Active Group Buys</h3>
-                    <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-sm font-semibold">
-                      Live
+              {/* Real Group Buy Card - Matching actual app design */}
+              <div className="relative bg-white rounded-2xl shadow-2xl overflow-hidden transform hover:scale-105 transition duration-300">
+                {/* Product Image */}
+                <div className="relative h-48 bg-gray-100 flex items-center justify-center">
+                  <img 
+                    src="https://images.unsplash.com/photo-1587829741301-dc798b83add3?w=500&h=400&fit=crop" 
+                    alt="Wireless Mechanical Keyboard"
+                    className="h-full w-full object-cover"
+                  />
+                  {/* Category Badge */}
+                  <div className="absolute top-3 left-3">
+                    <span className="bg-white/90 backdrop-blur-sm text-gray-700 px-3 py-1 rounded-full text-xs font-semibold shadow-md">
+                      Electronics
+                    </span>
+                  </div>
+                </div>
+
+                {/* Content */}
+                <div className="p-6 space-y-4">
+                  <h3 className="text-xl font-bold text-gray-900 line-clamp-2">Wireless Mechanical Keyboard</h3>
+                  
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-3xl font-bold text-gray-900">$59.99</span>
+                    <span className="text-base text-gray-500 line-through">
+                      $89.99
                     </span>
                   </div>
 
-                  <div className="bg-gradient-to-br from-blue-50 to-purple-50 rounded-2xl p-6 space-y-4">
-                    <div className="flex items-center gap-4">
-                      <div className="w-20 h-20 bg-gradient-to-br from-blue-400 to-purple-400 rounded-xl flex items-center justify-center text-4xl">
-                        ⌨️
-                      </div>
-                      <div className="flex-1">
-                        <h4 className="font-bold text-gray-900 text-lg">Wireless Keyboard</h4>
-                        <p className="text-sm text-gray-600">35 members joined</p>
-                      </div>
+                  {/* Progress */}
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-xs text-gray-600 mb-1">
+                      <span>Progress: 84.0%</span>
                     </div>
-
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-600">Progress</span>
-                        <span className="font-semibold text-purple-600">87%</span>
-                      </div>
-                      <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
-                        <div className="h-full bg-gradient-to-r from-purple-500 to-pink-500 rounded-full" style={{ width: '87%' }}></div>
-                      </div>
+                    <div className="flex justify-between text-xs text-gray-600">
+                      <span>$2520 raised</span>
+                      <span>$3000 target</span>
                     </div>
-
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm text-gray-600">Price</p>
-                        <p className="text-2xl font-bold text-gray-900">
-                          $62.99
-                          <span className="text-sm text-gray-500 line-through ml-2">$89.99</span>
-                        </p>
-                      </div>
-                      <div className="bg-green-500 text-white px-4 py-2 rounded-lg font-bold">
-                        Save 30%
-                      </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div 
+                        className="bg-gradient-to-r from-purple-600 to-blue-600 h-2 rounded-full transition-all"
+                        style={{ width: '84%' }}
+                      />
                     </div>
+                    <p className="text-xs text-gray-500 text-center">
+                      42 people joined
+                    </p>
                   </div>
 
-                  <div className="flex gap-2">
-                    <button className="flex-1 bg-gradient-to-r from-purple-600 to-blue-600 text-white py-3 rounded-xl font-semibold hover:shadow-lg transition">
-                      Join Group
+                  {/* Actions */}
+                  <div className="flex gap-2 pt-2">
+                    <button className="flex-1 border-2 border-gray-300 text-gray-700 py-2 px-4 rounded-lg font-semibold hover:bg-gray-50 transition-colors flex items-center justify-center gap-2">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                      View
                     </button>
-                    <button className="px-6 border-2 border-purple-600 text-purple-600 py-3 rounded-xl font-semibold hover:bg-purple-50 transition">
-                      Details
+                    <button className="flex-1 bg-gradient-to-r from-purple-600 to-blue-600 text-white py-2 px-4 rounded-lg font-semibold hover:shadow-lg transition-all flex items-center justify-center gap-2">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
+                      </svg>
+                      Join
                     </button>
                   </div>
                 </div>
               </div>
 
               {/* Floating Elements */}
-              <div className="absolute -top-6 -right-6 bg-yellow-400 text-yellow-900 px-4 py-2 rounded-full font-bold shadow-lg animate-bounce">
-                30% OFF
+              <div className="absolute -top-4 -right-4 bg-green-500 text-white px-4 py-2 rounded-full font-bold shadow-xl animate-pulse">
+                Save 33%
               </div>
-              <div className="absolute -bottom-6 -left-6 bg-green-400 text-green-900 px-4 py-2 rounded-full font-bold shadow-lg">
-                Verified
+              <div className="absolute -bottom-4 -left-4 bg-blue-600 text-white px-4 py-2 rounded-full font-bold shadow-xl">
+                Live Deal
               </div>
             </div>
           </div>

@@ -132,7 +132,7 @@ export default function ProfilePage() {
         setStats([
           { label: 'Orders Fulfilled', value: userProfile.total_orders_fulfilled?.toString() || '0', icon: Package },
           { label: 'Active Groups', value: supplierStats.active_groups?.toString() || '0', icon: TrendingUp },
-          { label: 'Total Revenue', value: `$${supplierStats.total_revenue?.toString() || '0'}`, icon: CreditCard },
+          { label: 'Total Revenue', value: `${Number(supplierStats.total_revenue || 0).toFixed(2)}`, icon: CreditCard },
           { label: 'Supplier Rating', value: `${userProfile.supplier_rating?.toFixed(1) || '0'}/5`, icon: CheckCircle },
         ]);
       } else {
@@ -141,7 +141,7 @@ export default function ProfilePage() {
         setStats([
           { label: 'Groups Joined', value: userStats.completed_groups?.toString() || '0', icon: Package },
           { label: 'Active Deals', value: activeGroups.toString(), icon: TrendingUp },
-          { label: 'Total Savings', value: `$${userStats.all_time_savings?.toString() || '0'}`, icon: CreditCard },
+          { label: 'Total Savings', value: `${Number(userStats.all_time_savings || 0).toFixed(2)}`, icon: CreditCard },
           { label: 'Success Rate', value: `${userStats.success_rate?.toString() || '0'}%`, icon: CheckCircle },
         ]);
       }

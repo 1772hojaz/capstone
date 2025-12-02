@@ -24,6 +24,9 @@ interface Group {
   participants_count: number;
   moq: number;
   moq_progress?: number; // Optional since it might be undefined
+  current_amount?: number; // Money raised so far
+  target_amount?: number; // Target amount to reach
+  amount_progress?: number; // Progress percentage
   status: string;
   is_completed: boolean;
   delivery_location?: string;
@@ -245,7 +248,9 @@ export default function GroupList() {
                     {activeTab === 'active' && (
                       <div className="flex justify-between">
                         <span className="text-gray-600">Progress:</span>
-                        <span className="font-medium">{group.moq_progress || 0}%</span>
+                        <span className="font-medium">
+                          {(group.amount_progress || group.moq_progress || 0).toFixed(1)}%
+                        </span>
                       </div>
                     )}
                     {group.delivery_location && activeTab === 'ready' && (

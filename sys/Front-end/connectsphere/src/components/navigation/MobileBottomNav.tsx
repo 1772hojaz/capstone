@@ -1,5 +1,7 @@
 import { Link, useLocation } from 'react-router-dom';
 import { Home, ShoppingCart, Package, Users, Settings, Shield, QrCode, Brain } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import apiService from '../../services/apiWithMock';
 
 interface NavItem {
   label: string;
@@ -13,6 +15,29 @@ interface MobileBottomNavProps {
 
 const MobileBottomNav = ({ userRole = 'trader' }: MobileBottomNavProps) => {
   const location = useLocation();
+  const [readyCount, setReadyCount] = useState(0);
+
+  // Fetch ready for pickup count for traders
+  useEffect(() => {
+    if (userRole === 'trader') {
+      const fetchReadyCount = async () => {
+        try {
+          const groups = await apiService.getMyGroups();
+          const count = groups.filter((g: any) => 
+            g.is_completed && g.status === 'ready_for_pickup'
+          ).length;
+          setReadyCount(count);
+        } catch (err) {
+          console.error('Failed to fetch ready count:', err);
+        }
+      };
+      
+      fetchReadyCount();
+      // Refresh count every 30 seconds
+      const interval = setInterval(fetchReadyCount, 30000);
+      return () => clearInterval(interval);
+    }
+  }, [userRole, location.pathname]); // Re-fetch when location changes
 
   const getNavItems = (): NavItem[] => {
     if (userRole === 'admin') {
@@ -66,12 +91,18 @@ const MobileBottomNav = ({ userRole = 'trader' }: MobileBottomNavProps) => {
               <div className={`flex flex-col items-center gap-1 ${
                 active ? 'transform scale-110' : ''
               }`}>
-                <div className={`p-2 rounded-xl transition-all ${
+                <div className={`p-2 rounded-xl transition-all relative ${
                   active 
                     ? 'bg-primary-500 text-white shadow-md' 
                     : 'text-gray-500'
                 }`}>
                   <Icon className="h-5 w-5" />
+                  {/* Show badge for My Groups if there are ready items */}
+                  {item.label === 'My Groups' && readyCount > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full h-5 w-5 flex items-center justify-center shadow-md">
+                      {readyCount}
+                    </span>
+                  )}
                 </div>
                 <span className={`text-[10px] transition-all ${
                   active 
