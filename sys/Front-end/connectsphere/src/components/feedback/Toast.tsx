@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { X, CheckCircle, AlertCircle, Info, AlertTriangle } from 'lucide-react';
-import { cn } from '../../lib/utils';
+import { cn } from '@/lib/utils';
 
 type ToastType = 'success' | 'error' | 'warning' | 'info';
 
@@ -145,8 +145,6 @@ export const toast = {
     return { type: 'info' as const, title, message, duration };
   },
 };
-
-
 
 
 

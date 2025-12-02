@@ -1,5 +1,5 @@
 import { Loader2 } from 'lucide-react';
-import { cn } from '../../lib/utils';
+import { cn } from '@/lib/utils';
 
 interface SpinnerProps {
   size?: 'sm' | 'md' | 'lg' | 'xl';
@@ -48,8 +48,6 @@ const LoadingOverlay = ({ message = 'Loading...' }: LoadingOverlayProps) => (
 );
 
 export { Spinner, LoadingOverlay };
-
-
 
 
 

@@ -1,5 +1,5 @@
 import { ReactNode } from 'react';
-import { cn } from '../../lib/utils';
+import { cn } from '@/lib/utils';
 
 interface ContentSectionProps {
   children: ReactNode;
@@ -78,8 +78,6 @@ const ContentSection = ({
 };
 
 export default ContentSection;
-
-
 
 
 

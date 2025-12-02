@@ -1,4 +1,4 @@
-import { cn } from '../../lib/utils';
+import { cn } from '@/lib/utils';
 
 interface SkeletonProps {
   className?: string;
@@ -89,8 +89,6 @@ const SkeletonTable = ({ rows = 5 }: { rows?: number }) => (
 );
 
 export { Skeleton, SkeletonText, SkeletonCard, SkeletonTable };
-
-
 
 
 
