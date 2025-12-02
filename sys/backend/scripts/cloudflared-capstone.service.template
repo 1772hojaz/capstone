@@ -1,0 +1,20 @@
+[Unit]
+Description=Cloudflared Tunnel - capstone-tunnel (template)
+After=network-online.target
+
+[Service]
+Type=simple
+# Replace 'youruser' with the system user that will run the tunnel
+User=youruser
+Environment=HOME=/home/youruser
+# Adjust the cloudflared binary path if necessary
+ExecStart=/usr/local/bin/cloudflared tunnel run capstone-tunnel
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
+
+# Save this file as /etc/systemd/system/cloudflared-capstone.service and then:
+# sudo systemctl daemon-reload
+# sudo systemctl enable --now cloudflared-capstone.service

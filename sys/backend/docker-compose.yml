@@ -1,0 +1,42 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: capstone-backend:latest
+    # By default use the environment file in your home `~/capstone/.env`.
+    # You can override by setting the ENV_FILE environment variable before running
+    # docker-compose, e.g. `ENV_FILE=./.env docker compose up`
+    # By default use the repo-local .env. Override with ENV_FILE to point elsewhere
+    env_file:
+      - ${ENV_FILE:-./.env}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./logs:/app/logs
+      - ./ml_models:/app/ml_models:rw
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+
+  # Optional: cloudflared service to expose the backend via a Cloudflare Tunnel
+  # Requires you to have run `cloudflared tunnel create <name>` locally and have
+  # the credentials JSON and config in ./cloudflared directory. Do NOT commit
+  # credentials to git. See CLOUDFLARE_TUNNEL.md for details.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel run capstone-tunnel --config /etc/cloudflared/config.yml
+    volumes:
+      - ./cloudflared:/etc/cloudflared:ro
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  redis-data:
