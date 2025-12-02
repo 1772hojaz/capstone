@@ -1169,7 +1169,7 @@ capstone/
 
 #### Orders Management
 
-![Supplier Orders](docs/assets/supplieroders.png)
+![Supplier Orders](docs/assets/supplieroderspage.png)
 *Supplier order management showing pending, active, and completed group orders.*
 
 #### Payment Processing
