@@ -1,13 +1,10 @@
 """
-Email Service
-Handles sending email notifications to users
-Supports SMTP and various email providers (SendGrid, Mailgun, etc.)
+Email Service - Resend Integration
+Handles sending email notifications to users via Resend API
 """
 
 import os
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import requests
 from typing import List, Dict, Optional
 from datetime import datetime
 import logging
@@ -16,22 +13,22 @@ logger = logging.getLogger(__name__)
 
 
 class EmailService:
-    """Service for sending email notifications"""
+    """Service for sending email notifications via Resend"""
     
     def __init__(self):
-        """Initialize email service with configuration from environment"""
-        self.smtp_host = os.getenv('SMTP_HOST', 'smtp.gmail.com')
-        self.smtp_port = int(os.getenv('SMTP_PORT', '587'))
-        self.smtp_user = os.getenv('SMTP_USER', '')
-        self.smtp_password = os.getenv('SMTP_PASSWORD', '')
-        self.from_email = os.getenv('FROM_EMAIL', self.smtp_user)
-        self.from_name = os.getenv('FROM_NAME', 'ConnectSphere')
+        """Initialize email service with Resend API key"""
+        self.api_key = os.getenv('RESEND_API_KEY', '')
+        self.from_email = os.getenv('FROM_EMAIL', 'onboarding@resend.dev')
+        self.from_name = os.getenv('FROM_NAME', 'ConnectAfrica')
+        self.api_url = "https://api.resend.com/emails"
         
-        # Test mode - if no credentials, run in simulation mode
-        self.simulation_mode = not (self.smtp_user and self.smtp_password)
+        # Test mode - if no API key, run in simulation mode
+        self.simulation_mode = not self.api_key
         
         if self.simulation_mode:
-            logger.warning("Email service running in SIMULATION MODE (no SMTP credentials)")
+            logger.warning("Email service running in SIMULATION MODE (no RESEND_API_KEY)")
+        else:
+            logger.info(f"Email service initialized with Resend (from: {self.from_email})")
     
     def send_email(
         self, 
@@ -41,7 +38,7 @@ class EmailService:
         body_text: Optional[str] = None
     ) -> Dict:
         """
-        Send a single email
+        Send a single email via Resend API
         
         Args:
             to_email: Recipient email address
@@ -63,34 +60,43 @@ class EmailService:
             }
         
         try:
-            # Create message
-            msg = MIMEMultipart('alternative')
-            msg['From'] = f"{self.from_name} <{self.from_email}>"
-            msg['To'] = to_email
-            msg['Subject'] = subject
-            
-            # Attach plain text version
-            if body_text:
-                part1 = MIMEText(body_text, 'plain')
-                msg.attach(part1)
-            
-            # Attach HTML version
-            part2 = MIMEText(body_html, 'html')
-            msg.attach(part2)
-            
-            # Send email
-            with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
-                server.starttls()
-                server.login(self.smtp_user, self.smtp_password)
-                server.send_message(msg)
-            
-            logger.info(f"Email sent successfully to {to_email}")
-            return {
-                "status": "sent",
-                "message": "Email sent successfully",
-                "to": to_email,
-                "subject": subject
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
             }
+            
+            payload = {
+                "from": f"{self.from_name} <{self.from_email}>",
+                "to": [to_email],
+                "subject": subject,
+                "html": body_html
+            }
+            
+            # Add plain text if provided
+            if body_text:
+                payload["text"] = body_text
+            
+            response = requests.post(self.api_url, headers=headers, json=payload)
+            
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(f"Email sent successfully to {to_email}, ID: {result.get('id')}")
+                return {
+                    "status": "sent",
+                    "message": "Email sent successfully",
+                    "to": to_email,
+                    "subject": subject,
+                    "id": result.get('id')
+                }
+            else:
+                error_msg = response.json().get('message', response.text)
+                logger.error(f"Failed to send email to {to_email}: {error_msg}")
+                return {
+                    "status": "failed",
+                    "message": error_msg,
+                    "to": to_email,
+                    "subject": subject
+                }
             
         except Exception as e:
             logger.error(f"Failed to send email to {to_email}: {e}")
@@ -112,14 +118,6 @@ class EmailService:
     ) -> Dict:
         """
         Send notification when a group is deleted by admin
-        
-        Args:
-            user_email: User's email address
-            user_name: User's full name
-            group_name: Name of the deleted group
-            group_id: Group ID
-            refund_amount: Amount being refunded
-            refund_status: Status of refund (pending, completed, failed)
         """
         subject = f"Group Buy Cancelled - {group_name}"
         
@@ -129,11 +127,11 @@ class EmailService:
             <style>
                 body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
                 .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                .header {{ background-color: #f44336; color: white; padding: 20px; text-align: center; }}
+                .header {{ background-color: #f44336; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }}
                 .content {{ padding: 20px; background-color: #f9f9f9; }}
-                .info-box {{ background-color: white; padding: 15px; margin: 15px 0; border-left: 4px solid #2196F3; }}
+                .info-box {{ background-color: white; padding: 15px; margin: 15px 0; border-left: 4px solid #2196F3; border-radius: 4px; }}
                 .footer {{ padding: 20px; text-align: center; font-size: 12px; color: #666; }}
-                .button {{ background-color: #2196F3; color: white; padding: 10px 20px; text-decoration: none; display: inline-block; margin: 10px 0; }}
+                .button {{ background-color: #2196F3; color: white; padding: 10px 20px; text-decoration: none; display: inline-block; margin: 10px 0; border-radius: 4px; }}
             </style>
         </head>
         <body>
@@ -144,7 +142,7 @@ class EmailService:
                 <div class="content">
                     <p>Dear {user_name},</p>
                     
-                    <p>We regret to inform you that the following group buy has been cancelled by our admin team:</p>
+                    <p>We regret to inform you that the following group buy has been cancelled:</p>
                     
                     <div class="info-box">
                         <strong>Group:</strong> {group_name}<br>
@@ -155,13 +153,13 @@ class EmailService:
                     
                     <p>Your refund has been processed automatically. Please allow 3-5 business days for the funds to appear in your account.</p>
                     
-                    <p>If you have any questions or concerns, please don't hesitate to contact our support team.</p>
+                    <p>If you have any questions, please contact our support team.</p>
                     
-                    <a href="http://localhost:5173/support" class="button">Contact Support</a>
+                    <a href="http://connectafrica.store/contact" class="button">Contact Support</a>
                 </div>
                 <div class="footer">
-                    <p>This is an automated message from ConnectSphere. Please do not reply to this email.</p>
-                    <p>&copy; 2024 ConnectSphere. All rights reserved.</p>
+                    <p>This is an automated message from ConnectAfrica.</p>
+                    <p>&copy; 2024 ConnectAfrica. All rights reserved.</p>
                 </div>
             </div>
         </body>
@@ -169,22 +167,22 @@ class EmailService:
         """
         
         body_text = f"""
-        Group Buy Cancelled
-        
-        Dear {user_name},
-        
-        We regret to inform you that the following group buy has been cancelled by our admin team:
-        
-        Group: {group_name}
-        Group ID: #{group_id}
-        Refund Amount: ${refund_amount:.2f}
-        Refund Status: {refund_status.upper()}
-        
-        Your refund has been processed automatically. Please allow 3-5 business days for the funds to appear in your account.
-        
-        If you have any questions or concerns, please contact our support team.
-        
-        This is an automated message from ConnectSphere.
+Group Buy Cancelled
+
+Dear {user_name},
+
+We regret to inform you that the following group buy has been cancelled:
+
+Group: {group_name}
+Group ID: #{group_id}
+Refund Amount: ${refund_amount:.2f}
+Refund Status: {refund_status.upper()}
+
+Your refund has been processed automatically. Please allow 3-5 business days for the funds to appear in your account.
+
+If you have any questions, please contact our support team.
+
+This is an automated message from ConnectAfrica.
         """
         
         return self.send_email(user_email, subject, body_html, body_text)
@@ -199,13 +197,6 @@ class EmailService:
     ) -> Dict:
         """
         Send confirmation when a refund is processed
-        
-        Args:
-            user_email: User's email address
-            user_name: User's full name
-            refund_amount: Amount refunded
-            refund_reference: Refund transaction reference
-            reason: Reason for refund
         """
         subject = f"Refund Processed - ${refund_amount:.2f}"
         
@@ -215,16 +206,16 @@ class EmailService:
             <style>
                 body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
                 .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                .header {{ background-color: #4CAF50; color: white; padding: 20px; text-align: center; }}
+                .header {{ background-color: #4CAF50; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }}
                 .content {{ padding: 20px; background-color: #f9f9f9; }}
-                .info-box {{ background-color: white; padding: 15px; margin: 15px 0; border-left: 4px solid #4CAF50; }}
+                .info-box {{ background-color: white; padding: 15px; margin: 15px 0; border-left: 4px solid #4CAF50; border-radius: 4px; }}
                 .footer {{ padding: 20px; text-align: center; font-size: 12px; color: #666; }}
             </style>
         </head>
         <body>
             <div class="container">
                 <div class="header">
-                    <h1>Refund Processed</h1>
+                    <h1>✓ Refund Processed</h1>
                 </div>
                 <div class="content">
                     <p>Dear {user_name},</p>
@@ -243,8 +234,8 @@ class EmailService:
                     <p>Thank you for your patience and understanding.</p>
                 </div>
                 <div class="footer">
-                    <p>This is an automated message from ConnectSphere. Please do not reply to this email.</p>
-                    <p>&copy; 2024 ConnectSphere. All rights reserved.</p>
+                    <p>This is an automated message from ConnectAfrica.</p>
+                    <p>&copy; 2024 ConnectAfrica. All rights reserved.</p>
                 </div>
             </div>
         </body>
@@ -252,22 +243,166 @@ class EmailService:
         """
         
         body_text = f"""
-        Refund Processed
+Refund Processed
+
+Dear {user_name},
+
+Your refund has been successfully processed:
+
+Refund Amount: ${refund_amount:.2f}
+Reference: {refund_reference}
+Reason: {reason}
+Date: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
+
+The funds should appear in your original payment method within 3-5 business days.
+
+Thank you for your patience and understanding.
+
+This is an automated message from ConnectAfrica.
+        """
         
-        Dear {user_name},
+        return self.send_email(user_email, subject, body_html, body_text)
+    
+    def send_welcome_email(
+        self,
+        user_email: str,
+        user_name: str
+    ) -> Dict:
+        """Send welcome email to new users"""
+        subject = "Welcome to ConnectAfrica! 🎉"
         
-        Your refund has been successfully processed:
+        body_html = f"""
+        <html>
+        <head>
+            <style>
+                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                .header {{ background-color: #6366f1; color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }}
+                .content {{ padding: 20px; background-color: #f9f9f9; }}
+                .footer {{ padding: 20px; text-align: center; font-size: 12px; color: #666; }}
+                .button {{ background-color: #6366f1; color: white; padding: 12px 24px; text-decoration: none; display: inline-block; margin: 10px 0; border-radius: 6px; font-weight: bold; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>Welcome to ConnectAfrica!</h1>
+                </div>
+                <div class="content">
+                    <p>Hi {user_name},</p>
+                    
+                    <p>Thank you for joining ConnectAfrica! We're excited to have you on board.</p>
+                    
+                    <p>With ConnectAfrica, you can:</p>
+                    <ul>
+                        <li>Join group buys to get better prices</li>
+                        <li>Discover products recommended just for you</li>
+                        <li>Connect with other traders in your area</li>
+                    </ul>
+                    
+                    <p style="text-align: center;">
+                        <a href="http://connectafrica.store" class="button">Start Exploring</a>
+                    </p>
+                    
+                    <p>If you have any questions, feel free to reach out to our support team.</p>
+                    
+                    <p>Happy trading!<br>The ConnectAfrica Team</p>
+                </div>
+                <div class="footer">
+                    <p>&copy; 2024 ConnectAfrica. All rights reserved.</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
         
-        Refund Amount: ${refund_amount:.2f}
-        Reference: {refund_reference}
-        Reason: {reason}
-        Date: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
+        body_text = f"""
+Welcome to ConnectAfrica!
+
+Hi {user_name},
+
+Thank you for joining ConnectAfrica! We're excited to have you on board.
+
+With ConnectAfrica, you can:
+- Join group buys to get better prices
+- Discover products recommended just for you
+- Connect with other traders in your area
+
+Visit http://connectafrica.store to start exploring!
+
+Happy trading!
+The ConnectAfrica Team
+        """
         
-        The funds should appear in your original payment method within 3-5 business days.
+        return self.send_email(user_email, subject, body_html, body_text)
+    
+    def send_payment_confirmation(
+        self,
+        user_email: str,
+        user_name: str,
+        group_name: str,
+        amount: float,
+        transaction_ref: str
+    ) -> Dict:
+        """Send payment confirmation email"""
+        subject = f"Payment Confirmed - {group_name}"
         
-        Thank you for your patience and understanding.
+        body_html = f"""
+        <html>
+        <head>
+            <style>
+                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                .header {{ background-color: #10b981; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }}
+                .content {{ padding: 20px; background-color: #f9f9f9; }}
+                .info-box {{ background-color: white; padding: 15px; margin: 15px 0; border-left: 4px solid #10b981; border-radius: 4px; }}
+                .footer {{ padding: 20px; text-align: center; font-size: 12px; color: #666; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>✓ Payment Confirmed</h1>
+                </div>
+                <div class="content">
+                    <p>Dear {user_name},</p>
+                    
+                    <p>Your payment has been successfully processed!</p>
+                    
+                    <div class="info-box">
+                        <strong>Group:</strong> {group_name}<br>
+                        <strong>Amount Paid:</strong> ${amount:.2f}<br>
+                        <strong>Transaction Ref:</strong> {transaction_ref}<br>
+                        <strong>Date:</strong> {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
+                    </div>
+                    
+                    <p>You will be notified when the group buy reaches its goal and your order is ready for pickup.</p>
+                    
+                    <p>Thank you for using ConnectAfrica!</p>
+                </div>
+                <div class="footer">
+                    <p>&copy; 2024 ConnectAfrica. All rights reserved.</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
         
-        This is an automated message from ConnectSphere.
+        body_text = f"""
+Payment Confirmed
+
+Dear {user_name},
+
+Your payment has been successfully processed!
+
+Group: {group_name}
+Amount Paid: ${amount:.2f}
+Transaction Ref: {transaction_ref}
+Date: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
+
+You will be notified when the group buy reaches its goal and your order is ready for pickup.
+
+Thank you for using ConnectAfrica!
         """
         
         return self.send_email(user_email, subject, body_html, body_text)
@@ -309,4 +444,3 @@ class EmailService:
 
 # Global instance
 email_service = EmailService()
-
