@@ -28,7 +28,7 @@ export default defineConfig({
     host: "0.0.0.0",
     port: Number(process.env.PORT) || 4173,
 
-    // 🔥 Required for Render HTTPS domain
-    allowedHosts: ["connectsphere-p5t9.onrender.com"],
+    // Production domains
+    allowedHosts: ["connectafrica.store", "www.connectafrica.store", "localhost"],
   },
 })
