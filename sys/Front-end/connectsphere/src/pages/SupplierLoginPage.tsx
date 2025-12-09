@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { Mail, Building2, Eye, EyeOff, AlertCircle, CheckCircle, Loader, ArrowLeft, Lock } from 'lucide-react';
 import apiService from '../services/api';
 
@@ -497,12 +497,12 @@ const SupplierLoginPage = () => {
                 />
                 <span className="text-gray-600">Remember me</span>
               </label>
-              <button
-                type="button"
+              <Link
+                to="/forgot-password"
                 className="text-blue-600 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded"
               >
                 Forgot password?
-              </button>
+              </Link>
             </div>
           )}
 

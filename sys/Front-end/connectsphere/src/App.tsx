@@ -33,6 +33,8 @@ const Products = lazy(() => import('./pages/Products'));
 const CreateGroup = lazy(() => import('./pages/CreateGroup'));
 const TermsOfService = lazy(() => import('./pages/TermsOfService'));
 const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
+const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage'));
+const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage'));
 
 // Eager load frequently used components
 import DashboardLayout from './components/DashboardLayout';
@@ -232,6 +234,18 @@ function App() {
           <Route path="/privacy-policy" element={
             <MainLayout>
               <PrivacyPolicy />
+            </MainLayout>
+          } />
+
+          <Route path="/forgot-password" element={
+            <MainLayout>
+              <ForgotPasswordPage />
+            </MainLayout>
+          } />
+
+          <Route path="/reset-password" element={
+            <MainLayout>
+              <ResetPasswordPage />
             </MainLayout>
           } />
         </Routes>
