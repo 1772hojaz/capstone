@@ -69,7 +69,7 @@ function App() {
 
           <Route path="/register" element={
             <MainLayout>
-              <LoginPage />
+              <EnhancedRegistrationPage />
             </MainLayout>
           } />
 

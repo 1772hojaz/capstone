@@ -583,11 +583,11 @@ async def get_my_groups(
                 
                 # Calculate financial metrics for AdminGroup
                 target_amount = admin_group.price * admin_group.max_participants
-                # Calculate actual current amount from all joins (sum of paid amounts)
-                total_paid_sum = db.query(func.sum(AdminGroupJoin.paid_amount)).filter(
+                # Calculate actual current amount from all joins (quantity * price is more accurate)
+                total_quantity_sum = db.query(func.sum(AdminGroupJoin.quantity)).filter(
                     AdminGroupJoin.admin_group_id == admin_group.id
                 ).scalar() or 0
-                current_amount = float(total_paid_sum)
+                current_amount = float(total_quantity_sum) * admin_group.price
                 amount_progress = (current_amount / target_amount * 100) if target_amount > 0 else 0
                 
                 group_data = {
@@ -621,7 +621,8 @@ async def get_my_groups(
                     "category": admin_group.category or "General",
                     "endDate": admin_group.end_date.strftime("%Y-%m-%dT%H:%M:%SZ") if admin_group.end_date else None,
                     "quantity": join.quantity,  # Add user's quantity
-                    "total_paid": round(join.paid_amount or admin_group.price * join.quantity, 2),  # User's contribution amount
+                    # Always calculate from quantity * price to ensure accuracy
+                    "total_paid": round(admin_group.price * join.quantity, 2),  # User's total contribution
                     # Money tracking (same as GroupBuy for consistency)
                     "current_amount": round(current_amount, 2),
                     "target_amount": round(target_amount, 2),
@@ -797,11 +798,11 @@ async def get_all_groups(
         
         # Calculate money tracking for AdminGroups
         target_amount = group.price * group.max_participants
-        # Calculate current amount from all joins (sum of paid amounts)
-        total_paid_sum = db.query(func.sum(AdminGroupJoin.paid_amount)).filter(
+        # Calculate current amount from all joins (quantity * price is more accurate)
+        total_quantity_sum = db.query(func.sum(AdminGroupJoin.quantity)).filter(
             AdminGroupJoin.admin_group_id == group.id
         ).scalar() or 0
-        current_amount = float(total_paid_sum)
+        current_amount = float(total_quantity_sum) * group.price
         
         # Calculate dynamic status based on deadline and progress
         now = datetime.utcnow()
@@ -843,8 +844,8 @@ async def get_all_groups(
             discountPercentage=group.discount_percentage,
             shippingInfo=group.shipping_info,
             estimatedDelivery=group.estimated_delivery,
-            features=group.features or [],
-            requirements=group.requirements or [],
+            features=json.loads(group.features) if isinstance(group.features, str) else (group.features or []),
+            requirements=json.loads(group.requirements) if isinstance(group.requirements, str) else (group.requirements or []),
             longDescription=group.long_description,
             status=group_status,
             orderStatus=order_status,
@@ -987,11 +988,11 @@ async def get_group_detail(
     if admin_group:
         # Calculate money tracking for AdminGroups
         target_amount = admin_group.price * admin_group.max_participants
-        # Calculate current amount from all joins (sum of paid amounts)
-        total_paid_sum = db.query(func.sum(AdminGroupJoin.paid_amount)).filter(
+        # Calculate current amount from all joins (quantity * price is more accurate)
+        total_quantity_sum = db.query(func.sum(AdminGroupJoin.quantity)).filter(
             AdminGroupJoin.admin_group_id == admin_group.id
         ).scalar() or 0
-        current_amount = float(total_paid_sum)
+        current_amount = float(total_quantity_sum) * admin_group.price
         
         return GroupDetailResponse(
             id=admin_group.id,
@@ -1237,7 +1238,7 @@ async def join_group(
                     email=user.email,
                     tx_ref=tx_ref,
                     currency="USD",
-                    redirect_url=f"{os.getenv('BACKEND_URL', 'http://connectafrica.store')}/api/payment/callback?group_id={group_id}"
+                    redirect_url=f"{os.getenv('BACKEND_URL', 'http://localhost:8000')}/api/payment/callback?group_id={group_id}"
                 )
                 
                 # Check if payment initialization was successful
@@ -1358,7 +1359,7 @@ async def join_group(
                     email=user.email,
                     tx_ref=tx_ref,
                     currency="USD",
-                    redirect_url=f"{os.getenv('BACKEND_URL', 'http://connectafrica.store')}/api/payment/callback?group_id={group_id}"
+                    redirect_url=f"{os.getenv('BACKEND_URL', 'http://localhost:8000')}/api/payment/callback?group_id={group_id}"
                 )
                 
                 payment_status = payment_result.get("status")
@@ -1508,20 +1509,40 @@ async def update_group_quantity(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Requested quantity increase ({request.quantity_increase}) exceeds available stock ({admin_group.total_stock})"
                 )
+            
+            # Check if adding this quantity would exceed the target amount
+            if admin_group.max_participants:
+                # Calculate current total quantity in the group
+                current_total_qty = db.query(func.sum(AdminGroupJoin.quantity)).filter(
+                    AdminGroupJoin.admin_group_id == group_id
+                ).scalar() or 0
+                
+                # Calculate how much room is left
+                remaining_capacity = admin_group.max_participants - current_total_qty
+                
+                if request.quantity_increase > remaining_capacity:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Cannot add {request.quantity_increase} units. Only {remaining_capacity} units remaining to reach the group target."
+                    )
 
             # Update the join record
             old_quantity = existing_join.quantity
             existing_join.quantity += request.quantity_increase
+
+            # Calculate additional amount needed
+            unit_price = admin_group.price
+            additional_amount = request.quantity_increase * unit_price
+            
+            # Update paid_amount to reflect the new total
+            old_paid = existing_join.paid_amount or 0
+            existing_join.paid_amount = old_paid + additional_amount
 
             # Update payment info if provided
             if request.payment_transaction_id:
                 existing_join.payment_transaction_id = request.payment_transaction_id
             if request.payment_reference:
                 existing_join.payment_reference = request.payment_reference
-
-            # Calculate additional amount needed
-            unit_price = admin_group.price
-            additional_amount = request.quantity_increase * unit_price
 
             # Create transaction record for the additional quantity
             if admin_group.product_id:
@@ -1575,6 +1596,22 @@ async def update_group_quantity(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Quantity increase must be greater than 0"
                 )
+            
+            # Check if adding this quantity would exceed the target (MOQ)
+            if group_buy.product.moq:
+                remaining_to_target = group_buy.product.moq - group_buy.total_quantity
+                
+                if remaining_to_target <= 0:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Group has already reached its target. No more units can be added."
+                    )
+                
+                if request.quantity_increase > remaining_to_target:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Cannot add {request.quantity_increase} units. Only {remaining_to_target} units remaining to reach the group target."
+                    )
 
             # Calculate additional amount needed
             unit_price = group_buy.product.bulk_price

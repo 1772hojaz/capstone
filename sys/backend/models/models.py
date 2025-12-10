@@ -58,6 +58,10 @@ class User(Base):
     
     created_at = Column(DateTime, default=datetime.utcnow)
     
+    # Password reset fields
+    password_reset_token = Column(String, nullable=True)
+    password_reset_expires = Column(DateTime, nullable=True)
+    
     # Relationships
     created_groups = relationship("GroupBuy", back_populates="creator", foreign_keys="GroupBuy.creator_id")
     contributions = relationship("Contribution", back_populates="user")

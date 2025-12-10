@@ -1133,6 +1133,130 @@ async def get_recommendations(
     
     return recommendations
 
+
+# ===== RECOMMENDATION EVENT TRACKING ENDPOINTS =====
+
+@router.post("/recommendations/{group_id}/click")
+async def track_recommendation_click(
+    group_id: int,
+    user: User = Depends(verify_trader),
+    db: Session = Depends(get_db)
+):
+    """Track when a user clicks on a recommendation to view details"""
+    from models import RecommendationEvent
+    
+    # Find the most recent recommendation event for this user and group
+    event = db.query(RecommendationEvent).filter(
+        RecommendationEvent.user_id == user.id,
+        RecommendationEvent.group_buy_id == group_id,
+        RecommendationEvent.clicked == False
+    ).order_by(RecommendationEvent.shown_at.desc()).first()
+    
+    if event:
+        event.clicked = True
+        event.clicked_at = datetime.utcnow()
+        db.commit()
+        return {"status": "success", "message": "Click tracked", "event_id": event.id}
+    
+    # If no unclicked event found, create a new one
+    new_event = RecommendationEvent(
+        user_id=user.id,
+        group_buy_id=group_id,
+        recommendation_score=0.0,
+        recommendation_reasons=["Direct click"],
+        shown_at=datetime.utcnow(),
+        clicked=True,
+        clicked_at=datetime.utcnow()
+    )
+    db.add(new_event)
+    db.commit()
+    
+    return {"status": "success", "message": "Click tracked (new event)", "event_id": new_event.id}
+
+
+@router.post("/recommendations/{group_id}/join")
+async def track_recommendation_join(
+    group_id: int,
+    user: User = Depends(verify_trader),
+    db: Session = Depends(get_db)
+):
+    """Track when a user joins a group from a recommendation"""
+    from models import RecommendationEvent
+    
+    # Find the recommendation event for this user and group (prefer clicked ones)
+    event = db.query(RecommendationEvent).filter(
+        RecommendationEvent.user_id == user.id,
+        RecommendationEvent.group_buy_id == group_id,
+        RecommendationEvent.joined == False
+    ).order_by(
+        RecommendationEvent.clicked.desc(),  # Prefer clicked events
+        RecommendationEvent.shown_at.desc()
+    ).first()
+    
+    if event:
+        event.joined = True
+        event.joined_at = datetime.utcnow()
+        # Also mark as clicked if not already
+        if not event.clicked:
+            event.clicked = True
+            event.clicked_at = datetime.utcnow()
+        db.commit()
+        return {"status": "success", "message": "Join tracked", "event_id": event.id}
+    
+    # If no event found, create a new one
+    new_event = RecommendationEvent(
+        user_id=user.id,
+        group_buy_id=group_id,
+        recommendation_score=0.0,
+        recommendation_reasons=["Direct join"],
+        shown_at=datetime.utcnow(),
+        clicked=True,
+        clicked_at=datetime.utcnow(),
+        joined=True,
+        joined_at=datetime.utcnow()
+    )
+    db.add(new_event)
+    db.commit()
+    
+    return {"status": "success", "message": "Join tracked (new event)", "event_id": new_event.id}
+
+
+@router.get("/recommendations/stats")
+async def get_recommendation_stats(
+    user: User = Depends(verify_trader),
+    db: Session = Depends(get_db)
+):
+    """Get recommendation funnel stats for the current user"""
+    from models import RecommendationEvent
+    
+    shown = db.query(RecommendationEvent).filter(
+        RecommendationEvent.user_id == user.id
+    ).count()
+    
+    clicked = db.query(RecommendationEvent).filter(
+        RecommendationEvent.user_id == user.id,
+        RecommendationEvent.clicked == True
+    ).count()
+    
+    joined = db.query(RecommendationEvent).filter(
+        RecommendationEvent.user_id == user.id,
+        RecommendationEvent.joined == True
+    ).count()
+    
+    click_rate = (clicked / shown * 100) if shown > 0 else 0
+    join_rate = (joined / clicked * 100) if clicked > 0 else 0
+    conversion_rate = (joined / shown * 100) if shown > 0 else 0
+    
+    return {
+        "shown": shown,
+        "clicked": clicked,
+        "joined": joined,
+        "click_rate": round(click_rate, 1),
+        "join_rate": round(join_rate, 1),
+        "conversion_rate": round(conversion_rate, 1)
+    }
+
+
 @router.get("/clusters", response_model=List[ClusterInfo])
 async def get_clusters(
     admin = Depends(verify_admin),
@@ -1872,6 +1996,13 @@ def get_fallback_recommendations(user: User, db: Session, limit: int = 10) -> Li
         
         # Filter out groups user has already joined
         available_groups = [g for g in active_groups if g.id not in user_joined_group_ids]
+        
+        # If no GroupBuys available, fall back to AdminGroups
+        if not available_groups:
+            logger.info(f"No active GroupBuys, falling back to AdminGroups for user {user.id}")
+            admin_groups = db.query(AdminGroup).filter(AdminGroup.is_active == True).all()
+            if admin_groups:
+                return get_admin_group_recommendations(user, admin_groups, db)
         
         # Format recommendations
         recommendations = []

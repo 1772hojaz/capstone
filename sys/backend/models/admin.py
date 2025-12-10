@@ -774,7 +774,7 @@ async def process_admin_group_payment(
             transaction = Transaction(
                 user_id=join.user_id,
                 group_buy_id=None,  # Admin groups don't have group_buy_id
-                product_id=None,  # Will be set when product is assigned
+                product_id=group.product_id or 1,  # Use group's product_id or default
                 quantity=join.quantity,
                 amount=join.quantity * group.price,  # Full amount now that payment is processed
                 transaction_type="final",
@@ -820,25 +820,47 @@ async def process_admin_group_payment(
                 print(f"   ✅ Order updated: Total=${total_amount:.2f}, Status={supplier_order.status}")
                 should_create_payment = False
         else:
-            # Create new order with PENDING status (waiting for supplier confirmation)
+            # Create new order
             order_number = f"ORD-AG-{group_id}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
-            print(f"   ➕ Creating new PENDING order #{order_number} (awaiting supplier confirmation)")
-            supplier_order = SupplierOrder(
-                supplier_id=group.supplier_id,  # Can be None for admin-created groups
-                admin_group_id=group_id,
-                order_number=order_number,
-                status="pending",  # PENDING - waiting for supplier confirmation BEFORE payment
-                total_value=total_amount,
-                total_savings=(group.original_price - group.price) * sum(join.quantity for join in joins),
-                delivery_method="pickup",
-                admin_verification_status="verified",
-                admin_verified_at=datetime.utcnow(),
-                created_at=datetime.utcnow()
-            )
-            db.add(supplier_order)
-            db.flush()  # Flush to get supplier_order.id
-            print(f"   ✅ Order created with ID: {supplier_order.id}, Status: {supplier_order.status}")
-            should_create_payment = False  # Don't create payment for new orders
+            
+            # For admin-created groups WITHOUT a supplier, process directly (no supplier confirmation needed)
+            if not group.supplier_id:
+                print(f"   ➕ Creating order #{order_number} (NO SUPPLIER - admin handles fulfillment)")
+                supplier_order = SupplierOrder(
+                    supplier_id=None,  # No supplier - admin handles fulfillment
+                    admin_group_id=group_id,
+                    order_number=order_number,
+                    status="ready_for_pickup",  # Ready immediately since admin handles it
+                    total_value=total_amount,
+                    total_savings=(group.original_price - group.price) * sum(join.quantity for join in joins),
+                    delivery_method="pickup",
+                    admin_verification_status="verified",
+                    admin_verified_at=datetime.utcnow(),
+                    created_at=datetime.utcnow()
+                )
+                db.add(supplier_order)
+                db.flush()
+                print(f"   ✅ Order created with ID: {supplier_order.id}, Status: ready_for_pickup (admin fulfillment)")
+                should_create_payment = False  # No payment needed - no supplier to pay
+            else:
+                # Has supplier - create PENDING order for supplier confirmation
+                print(f"   ➕ Creating new PENDING order #{order_number} (awaiting supplier confirmation)")
+                supplier_order = SupplierOrder(
+                    supplier_id=group.supplier_id,
+                    admin_group_id=group_id,
+                    order_number=order_number,
+                    status="pending",  # PENDING - waiting for supplier confirmation BEFORE payment
+                    total_value=total_amount,
+                    total_savings=(group.original_price - group.price) * sum(join.quantity for join in joins),
+                    delivery_method="pickup",
+                    admin_verification_status="verified",
+                    admin_verified_at=datetime.utcnow(),
+                    created_at=datetime.utcnow()
+                )
+                db.add(supplier_order)
+                db.flush()
+                print(f"   ✅ Order created with ID: {supplier_order.id}, Status: {supplier_order.status}")
+                should_create_payment = False  # Don't create payment for new orders - wait for confirmation
 
         # Create payment ONLY if supplier confirmed
         print(f"\n📋 Payment Creation Check:")
@@ -905,6 +927,17 @@ async def process_admin_group_payment(
                 "status": "completed",
                 "processed_at": datetime.utcnow().isoformat()
             }
+        elif supplier_order.status == "ready_for_pickup" and not group.supplier_id:
+            # Admin handles fulfillment directly (no supplier)
+            print(f"✅ Order ready for pickup - admin fulfillment (no supplier)")
+            return {
+                "message": "Order processed successfully - ready for pickup (admin fulfillment)",
+                "group_id": group_id,
+                "total_participants": total_participants,
+                "total_amount": round(total_amount, 2),
+                "status": "ready_for_pickup",
+                "processed_at": datetime.utcnow().isoformat()
+            }
         else:
             print(f"📬 Order sent to supplier - awaiting confirmation before payment")
             return {
@@ -918,9 +951,14 @@ async def process_admin_group_payment(
 
     except HTTPException:
         raise
-    except Exception:
-        # Handle exception without unused variable
-        pass
+    except Exception as e:
+        print(f"Error processing payment for group {group_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to process payment: {str(e)}"
+        )
 
 @router.get("/reports", response_model=ReportData)
 async def get_reports(

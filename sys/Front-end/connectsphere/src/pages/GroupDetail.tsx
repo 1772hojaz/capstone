@@ -32,7 +32,10 @@ interface GroupData {
   price?: number;
   unit_price?: number;
   original_price?: number;
+  originalPrice?: number;
   savings_factor?: number;
+  discountPercentage?: number;
+  savings?: number;
   participants_count?: number;
   participants?: number;
   moq?: number;
@@ -59,10 +62,22 @@ export default function GroupDetail() {
   const activeTab = location.state?.activeTab; // Tab from My Groups
   const groupData: GroupData | null = recommendation || group;
 
+  // Helper to parse price from string or number
+  const parsePrice = (value: string | number | undefined | null): number => {
+    if (value === undefined || value === null) return 0;
+    if (typeof value === 'number') return value;
+    if (typeof value === 'string') {
+      const cleaned = value.replace(/[$,]/g, '');
+      const parsed = parseFloat(cleaned);
+      return isNaN(parsed) ? 0 : parsed;
+    }
+    return 0;
+  };
+
   // Product details
   const productName = groupData?.product_name || groupData?.name || 'Product';
-  const productPrice = groupData?.bulk_price || groupData?.price || 0;
-  const originalPrice = groupData?.unit_price || groupData?.original_price;
+  const productPrice = parsePrice(groupData?.bulk_price) || parsePrice(groupData?.price) || 0;
+  const originalPrice = parsePrice(groupData?.originalPrice) || parsePrice(groupData?.unit_price) || parsePrice(groupData?.original_price);
 
   // State
   const [error, setError] = useState<string | null>(null);
@@ -274,7 +289,7 @@ export default function GroupDetail() {
     }
   };
 
-  // Handle join group
+  // Handle join group or add more products
   const handleJoinGroup = async () => {
     if (!agreeToTerms) {
       setError('You must agree to the terms and conditions');
@@ -286,48 +301,102 @@ export default function GroupDetail() {
       return;
     }
 
+    // Check if user is adding more - either from my-groups OR if they already have quantity in this group
+    const hasExistingQuantity = groupData?.quantity && groupData.quantity > 0;
+    const isAddingMore = source === 'my-groups' || hasExistingQuantity;
+    const actionType = isAddingMore ? 'quantity_increase' : 'join';
+
     try {
       setJoiningGroup(true);
       setError(null);
 
-      const response = await apiService.joinGroup(groupId, {
-        quantity,
-        delivery_method: deliveryMethod,
-        payment_method: "card"  // Payment will be handled through Flutterwave
-      });
+      let response;
+      
+      if (isAddingMore) {
+        // User is adding more to an existing group - use quantity update endpoint
+        // First, we need to initialize a payment for the additional amount
+        const additionalAmount = productPrice * quantity;
+        const txRef = `quantity_increase_${groupId}_${Date.now()}`;
+        
+        // Get user email - either from store or fetch from API
+        let userEmail = currentUser?.email;
+        if (!userEmail) {
+          try {
+            const userInfo = await apiService.getCurrentUser();
+            userEmail = userInfo?.email;
+          } catch (e) {
+            console.error('Failed to get user info:', e);
+          }
+        }
+        
+        if (!userEmail) {
+          setError('Unable to get user information. Please try logging in again.');
+          setJoiningGroup(false);
+          return;
+        }
+        
+        // Initialize payment for the additional amount
+        response = await apiService.initializePayment({
+          amount: additionalAmount,
+          email: userEmail,
+          tx_ref: txRef,
+          currency: 'USD'
+        });
+        
+        // Store the quantity increase info for after payment
+        if (response.data?.link || response.payment_url) {
+          sessionStorage.setItem('paymentSuccessData', JSON.stringify({
+            groupId,
+            quantityIncrease: quantity,
+            amount: additionalAmount,
+            isQuantityIncrease: true
+          }));
+        }
+      } else {
+        // New join - use the join endpoint
+        response = await apiService.joinGroup(groupId, {
+          quantity,
+          delivery_method: deliveryMethod,
+          payment_method: "card"
+        });
+      }
 
-      // Track analytics - Join click
+      // Track analytics
       analyticsService.trackGroupJoinClick(groupId, {
-        name: groupData?.product_name || groupData?.name,
+        name: productName,
         quantity,
-        price: groupData?.bulk_price || groupData?.price,
-        total_amount: (groupData?.bulk_price || groupData?.price || 0) * quantity,
-        source: location.state?.source || 'direct'
+        price: productPrice,
+        total_amount: productPrice * quantity,
+        source: location.state?.source || 'direct',
+        action: actionType
       });
 
       // Open payment modal with correct props
-      if (response.payment_url || response.tx_ref) {
+      const paymentUrl = response.data?.link || response.payment_url;
+      const txRef = response.data?.tx_ref || response.tx_ref || response.transaction_id || `tx_${Date.now()}`;
+      
+      if (paymentUrl || txRef) {
         setPaymentData({
-          txRef: response.tx_ref || response.transaction_id || `tx_${Date.now()}`,
-          amount: (groupData?.bulk_price || groupData?.price || 0) * quantity,
-          paymentUrl: response.payment_url  // Pass the payment URL from backend
+          txRef: txRef,
+          amount: productPrice * quantity,
+          paymentUrl: paymentUrl
         });
         setShowPaymentModal(true);
 
         // Track payment initiated
         analyticsService.trackPaymentInitiated({
-          tx_ref: response.tx_ref || response.transaction_id,
-          amount: (groupData?.bulk_price || groupData?.price || 0) * quantity,
+          tx_ref: txRef,
+          amount: productPrice * quantity,
           group_id: groupId,
-          action: 'join',
+          action: actionType,
           quantity
         });
       }
 
     } catch (err: any) {
-      console.error('Failed to join group:', err);
-      setError(err.response?.data?.detail || 'Failed to join group. Please try again.');
-      analyticsService.trackError('join_group_failed', err.message, {
+      console.error(`Failed to ${isAddingMore ? 'add more products' : 'join group'}:`, err);
+      setError(err.response?.data?.detail || err.message || `Failed to ${isAddingMore ? 'add more products' : 'join group'}. Please try again.`);
+      analyticsService.trackError(`${actionType}_failed`, err.message, {
         group_id: groupId
       });
     } finally {
@@ -337,6 +406,11 @@ export default function GroupDetail() {
 
   const handlePaymentSuccess = (data: any) => {
     if (groupId) {
+      // Track recommendation join event in the database
+      apiService.trackRecommendationJoin(groupId).catch(err => {
+        console.warn('Failed to track recommendation join:', err);
+      });
+
       analyticsService.trackPaymentSuccess({
         tx_ref: data.tx_ref,
         transaction_id: data.transaction_id,
@@ -913,17 +987,20 @@ export default function GroupDetail() {
                   <p className="body-sm text-gray-600 mb-1">Group Price</p>
                   <div className="flex items-baseline justify-center gap-2">
                     <span className="text-4xl font-bold text-gray-900">
-                      {productPrice}
+                      ${productPrice}
                     </span>
-                    {originalPrice && (
+                    {originalPrice && originalPrice > productPrice && (
                       <span className="text-lg text-gray-500 line-through">
                         ${originalPrice}
                       </span>
                     )}
                   </div>
-                  {groupData.savings_factor && (
+                  {/* Show discount percentage */}
+                  {(groupData.discountPercentage || (originalPrice && originalPrice > productPrice)) && (
                     <Badge variant="success" className="mt-2">
-                      Save {Math.round(groupData.savings_factor * 100)}%
+                      Save {groupData.discountPercentage 
+                        ? Math.round(groupData.discountPercentage) 
+                        : Math.round((1 - productPrice / originalPrice) * 100)}%
                     </Badge>
                   )}
                 </div>
@@ -956,7 +1033,7 @@ export default function GroupDetail() {
                     size="lg"
                     leftIcon={<Package className="h-5 w-5" />}
                   >
-                    {source === 'my-groups' && !isGoalReached 
+                    {(source === 'my-groups' || (groupData?.quantity && groupData.quantity > 0)) && !isGoalReached 
                       ? 'Add More Products' 
                       : isGoalReached 
                         ? 'Group Full' 
@@ -964,15 +1041,37 @@ export default function GroupDetail() {
                   </Button>
                 ) : (
                   <div className="space-y-4">
-                    <Input
-                      type="number"
-                      label={source === 'my-groups' ? 'Additional Quantity' : 'Quantity'}
-                      value={quantity}
-                      onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
-                      min={1}
-                      max={100}
-                      inputSize="lg"
-                    />
+                    {/* Calculate remaining capacity */}
+                    {(() => {
+                      const targetQty = groupData?.maxParticipants || groupData?.max_participants || groupData?.moq || 30;
+                      const currentQty = groupData?.participants || groupData?.participants_count || 0;
+                      const remainingCapacity = Math.max(0, targetQty - currentQty);
+                      const maxAllowed = Math.min(remainingCapacity, 100);
+                      
+                      return (
+                        <>
+                          <Input
+                            type="number"
+                            label={(source === 'my-groups' || (groupData?.quantity && groupData.quantity > 0)) ? 'Additional Quantity' : 'Quantity'}
+                            value={quantity}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value) || 1;
+                              setQuantity(Math.min(val, maxAllowed));
+                            }}
+                            min={1}
+                            max={maxAllowed}
+                            inputSize="lg"
+                          />
+                          {remainingCapacity < 100 && (
+                            <p className="text-xs text-gray-500 -mt-2">
+                              {remainingCapacity > 0 
+                                ? `Only ${remainingCapacity} units remaining to reach target`
+                                : 'Group target has been reached'}
+                            </p>
+                          )}
+                        </>
+                      );
+                    })()}
 
                     <div>
                       <label className="block body-sm font-medium text-gray-700 mb-2">

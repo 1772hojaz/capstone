@@ -392,6 +392,25 @@ class ApiService {
     return this.request('/api/ml/hybrid-recommendations');
   }
 
+  // Track recommendation click (when user clicks to view details)
+  async trackRecommendationClick(groupId) {
+    return this.request(`/api/ml/recommendations/${groupId}/click`, {
+      method: 'POST'
+    });
+  }
+
+  // Track recommendation join (when user joins the group)
+  async trackRecommendationJoin(groupId) {
+    return this.request(`/api/ml/recommendations/${groupId}/join`, {
+      method: 'POST'
+    });
+  }
+
+  // Get recommendation stats for current user
+  async getRecommendationStats() {
+    return this.request('/api/ml/recommendations/stats');
+  }
+
   // Admin methods (only available to admin users)
   async getAllUsers() {
     return this.request("/api/admin/users");

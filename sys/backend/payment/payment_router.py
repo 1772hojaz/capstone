@@ -253,8 +253,8 @@ async def payment_callback(
     try:
         logger.info(f"💳 Payment callback received: tx_ref={tx_ref}, transaction_id={transaction_id}, status={status}")
 
-        # Use environment variable or production URL
-        frontend_url = os.getenv("FRONTEND_URL", "http://connectafrica.store")
+        # Use environment variable or localhost for development
+        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
         
         # For test/development, skip Flutterwave verification if status is already "successful"
         if status == "successful" or status == "success":
@@ -318,7 +318,7 @@ async def payment_callback(
 
     except Exception as e:
         logger.error(f" Callback processing failed: {str(e)}", exc_info=True)
-        frontend_url = os.getenv("FRONTEND_URL", "http://connectafrica.store")
+        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
         redirect_url = f"{frontend_url}/payment/failure?tx_ref={tx_ref}&transaction_id={transaction_id}&status=error"
         
         html_content = f"""

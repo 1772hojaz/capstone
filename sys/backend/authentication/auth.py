@@ -6,6 +6,7 @@ import bcrypt
 from datetime import datetime, timedelta
 import jwt
 import os
+import secrets
 from typing import List, Optional
 from db.database import get_db
 from models.models import User
@@ -134,6 +135,13 @@ class NotificationSettings(BaseModel):
 
 class PasswordChange(BaseModel):
     current_password: str
+    new_password: str
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+class ResetPasswordRequest(BaseModel):
+    token: str
     new_password: str
 
 # Helper Functions
@@ -392,6 +400,136 @@ async def change_password(
     db.commit()
     
     return {"message": "Password changed successfully"}
+
+@router.post("/forgot-password")
+async def forgot_password(
+    request: ForgotPasswordRequest,
+    db: Session = Depends(get_db)
+):
+    """Request a password reset email"""
+    # Find user by email
+    user = db.query(User).filter(User.email == request.email).first()
+    
+    # Always return success to prevent email enumeration attacks
+    if not user:
+        return {
+            "message": "If an account with that email exists, a password reset link has been sent.",
+            "status": "sent"
+        }
+    
+    # Generate a secure reset token
+    reset_token = secrets.token_urlsafe(32)
+    
+    # Set token expiration (1 hour from now)
+    expires_at = datetime.utcnow() + timedelta(hours=1)
+    
+    # Save token to user record
+    user.password_reset_token = reset_token
+    user.password_reset_expires = expires_at
+    db.commit()
+    
+    # Send password reset email
+    try:
+        from services.email_service import email_service
+        
+        # Create reset URL (frontend URL)
+        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
+        reset_url = f"{frontend_url}/reset-password?token={reset_token}"
+        
+        result = email_service.send_password_reset_email(
+            user_email=user.email,
+            user_name=user.full_name or "User",
+            reset_url=reset_url,
+            expires_in_minutes=60
+        )
+        
+        if result.get("status") in ["sent", "simulated"]:
+            return {
+                "message": "If an account with that email exists, a password reset link has been sent.",
+                "status": "sent"
+            }
+        else:
+            # Log error but don't expose to user
+            print(f"Failed to send password reset email: {result}")
+            return {
+                "message": "If an account with that email exists, a password reset link has been sent.",
+                "status": "sent"
+            }
+    except Exception as e:
+        print(f"Error sending password reset email: {e}")
+        return {
+            "message": "If an account with that email exists, a password reset link has been sent.",
+            "status": "sent"
+        }
+
+@router.post("/reset-password")
+async def reset_password(
+    request: ResetPasswordRequest,
+    db: Session = Depends(get_db)
+):
+    """Reset password using token from email"""
+    # Find user by reset token
+    user = db.query(User).filter(User.password_reset_token == request.token).first()
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset token"
+        )
+    
+    # Check if token has expired
+    if user.password_reset_expires and user.password_reset_expires < datetime.utcnow():
+        # Clear the expired token
+        user.password_reset_token = None
+        user.password_reset_expires = None
+        db.commit()
+        
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Reset token has expired. Please request a new password reset."
+        )
+    
+    # Validate new password
+    if len(request.new_password) < 6:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must be at least 6 characters long"
+        )
+    
+    # Update password and clear reset token
+    user.hashed_password = hash_password(request.new_password)
+    user.password_reset_token = None
+    user.password_reset_expires = None
+    db.commit()
+    
+    # Send confirmation email
+    try:
+        from services.email_service import email_service
+        email_service.send_email(
+            to_email=user.email,
+            subject="Password Changed Successfully - ConnectAfrica",
+            body_html=f"""
+            <html>
+            <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+                <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+                    <h2 style="color: #10b981;">Password Changed Successfully</h2>
+                    <p>Hi {user.full_name or 'there'},</p>
+                    <p>Your password has been successfully changed.</p>
+                    <p>If you did not make this change, please contact our support team immediately.</p>
+                    <p>Best regards,<br>The ConnectAfrica Team</p>
+                </div>
+            </body>
+            </html>
+            """,
+            body_text=f"Hi {user.full_name or 'there'}, Your password has been successfully changed. If you did not make this change, please contact support immediately."
+        )
+    except Exception as e:
+        print(f"Failed to send password change confirmation: {e}")
+    
+    return {
+        "message": "Password has been reset successfully. You can now log in with your new password.",
+        "status": "success"
+    }
 
 @router.get("/supplier/profile", response_model=SupplierProfile)
 async def get_supplier_profile(user: User = Depends(verify_token), db: Session = Depends(get_db)):

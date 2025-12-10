@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { CheckCircle2, ArrowRight, RefreshCw, AlertCircle } from 'lucide-react';
 import { Button } from '../components/ui/button';
@@ -14,6 +14,9 @@ const PaymentSuccess = () => {
   const location = useLocation();
   const [isProcessing, setIsProcessing] = useState(true);
   const [joinStatus, setJoinStatus] = useState<'pending' | 'success' | 'error'>('pending');
+  
+  // Prevent duplicate API calls (React Strict Mode runs effects twice)
+  const hasProcessedRef = useRef(false);
 
   const txRef = searchParams.get('tx_ref');
   const transactionId = searchParams.get('transaction_id');
@@ -58,11 +61,20 @@ const PaymentSuccess = () => {
     }
 
     const completePayment = async () => {
+      // Prevent duplicate processing (React Strict Mode runs effects twice)
+      if (hasProcessedRef.current) {
+        console.log('Payment already processed, skipping duplicate call');
+        return;
+      }
+      
       if (!txRef || !transactionId || status !== 'success') {
         setJoinStatus('error');
         setIsProcessing(false);
         return;
       }
+      
+      // Mark as processed immediately to prevent race conditions
+      hasProcessedRef.current = true;
 
       if (!apiService.isAuthenticated()) {
         sessionStorage.setItem('pendingPaymentSuccess', JSON.stringify({

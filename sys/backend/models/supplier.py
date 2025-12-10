@@ -470,8 +470,16 @@ async def get_supplier_orders(
     supplier: User = Depends(verify_supplier),
     db: Session = Depends(get_db)
 ):
-    """Get orders for the supplier"""
-    query = db.query(SupplierOrder).filter(SupplierOrder.supplier_id == supplier.id)
+    """Get orders for the supplier - includes unassigned orders that any supplier can claim"""
+    from sqlalchemy import or_
+    
+    # Show orders assigned to this supplier OR unassigned orders (supplier_id is None)
+    query = db.query(SupplierOrder).filter(
+        or_(
+            SupplierOrder.supplier_id == supplier.id,
+            SupplierOrder.supplier_id == None  # Unassigned orders from admin-created groups
+        )
+    )
 
     if status_filter:
         query = query.filter(SupplierOrder.status == status_filter)
@@ -533,11 +541,17 @@ async def process_order_action(
     supplier: User = Depends(verify_supplier),
     db: Session = Depends(get_db)
 ):
-    """Confirm or reject a supplier order"""
+    """Confirm or reject a supplier order - suppliers can claim unassigned orders"""
+    from sqlalchemy import or_
+    
     try:
+        # Allow suppliers to process orders assigned to them OR unassigned orders
         order = db.query(SupplierOrder).filter(
             SupplierOrder.id == order_id,
-            SupplierOrder.supplier_id == supplier.id
+            or_(
+                SupplierOrder.supplier_id == supplier.id,
+                SupplierOrder.supplier_id == None  # Unassigned orders can be claimed
+            )
         ).first()
         if not order:
             raise HTTPException(status_code=404, detail="Order not found")
@@ -546,6 +560,11 @@ async def process_order_action(
             raise HTTPException(status_code=400, detail="Order has already been processed")
 
         if action_request.action == "confirm":
+            # If order is unassigned, claim it by assigning this supplier
+            if order.supplier_id is None:
+                order.supplier_id = supplier.id
+                print(f"Supplier {supplier.id} claimed unassigned order {order_id}")
+            
             order.status = "confirmed"
             order.confirmed_at = datetime.utcnow()
             order.delivery_method = action_request.delivery_method

@@ -122,8 +122,19 @@ export default function AllGroups() {
   }, [searchQuery, selectedCategory, sortBy, filteredAndSortedGroups.length]);
 
   const handleViewGroup = (group: any) => {
-    analyticsService.trackGroupView(group.id, { ...group, source: 'browse' });
-    navigate(`/group/${group.id}`, { state: { group, mode: 'view', source: 'all-groups' } });
+    const groupId = group.id || group.group_buy_id;
+    
+    // Track group view in analytics
+    analyticsService.trackGroupView(groupId, { ...group, source: 'browse' });
+    
+    // Track recommendation click in the database (for groups from recommendations)
+    if (groupId) {
+      apiService.trackRecommendationClick(groupId).catch(err => {
+        console.warn('Failed to track recommendation click:', err);
+      });
+    }
+    
+    navigate(`/group/${groupId}`, { state: { group, mode: 'view', source: 'all-groups' } });
   };
 
   return (
@@ -289,12 +300,20 @@ export default function AllGroups() {
                   <div className="p-4 space-y-3">
                     <h3 className="heading-5 line-clamp-2">{group.name}</h3>
                     
-                    <div className="flex items-baseline gap-2">
+                    <div className="flex items-baseline gap-2 flex-wrap">
                       <span className="text-2xl font-bold text-gray-900">${group.price}</span>
-                      {group.original_price && (
+                      {(group.originalPrice || group.original_price) && (group.originalPrice || group.original_price) > group.price && (
                         <span className="text-sm text-gray-500 line-through">
-                          ${group.original_price}
+                          ${group.originalPrice || group.original_price}
                         </span>
+                      )}
+                      {/* Discount Badge */}
+                      {(group.discountPercentage || ((group.originalPrice || group.original_price) && (group.originalPrice || group.original_price) > group.price)) && (
+                        <Badge variant="success" size="sm">
+                          {group.discountPercentage 
+                            ? `${Math.round(group.discountPercentage)}% OFF`
+                            : `${Math.round((1 - group.price / (group.originalPrice || group.original_price)) * 100)}% OFF`}
+                        </Badge>
                       )}
                     </div>
 
@@ -385,16 +404,24 @@ export default function AllGroups() {
                           )}
                         </div>
                         <div className="flex-shrink-0 text-right">
-                          <div className="flex items-baseline gap-2 justify-end">
+                          <div className="flex items-baseline gap-2 justify-end flex-wrap">
                             <span className="text-2xl font-bold text-gray-900">${group.price}</span>
-                            {group.original_price && (
+                            {(group.originalPrice || group.original_price) && (group.originalPrice || group.original_price) > group.price && (
                               <span className="text-sm text-gray-500 line-through">
-                                ${group.original_price}
+                                ${group.originalPrice || group.original_price}
                               </span>
                             )}
                           </div>
+                          {/* Discount Badge */}
+                          {(group.discountPercentage || ((group.originalPrice || group.original_price) && (group.originalPrice || group.original_price) > group.price)) && (
+                            <Badge variant="success" size="sm" className="mt-1">
+                              {group.discountPercentage 
+                                ? `${Math.round(group.discountPercentage)}% OFF`
+                                : `${Math.round((1 - group.price / (group.originalPrice || group.original_price)) * 100)}% OFF`}
+                            </Badge>
+                          )}
                           {group.category && (
-                            <Badge variant="secondary" size="sm" className="mt-2">{group.category}</Badge>
+                            <Badge variant="secondary" size="sm" className="mt-1 ml-1">{group.category}</Badge>
                           )}
                         </div>
                       </div>
