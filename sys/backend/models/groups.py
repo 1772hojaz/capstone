@@ -464,6 +464,9 @@ async def get_my_groups(
                     status = "unknown"
                     order_status = "Status unknown"
                 
+                # Determine if group is completed (ready for pickup or delivered)
+                is_completed = status in ["ready_for_pickup", "completed", "delivered", "collected"]
+                
                 group_data = {
                     "id": group_buy.id,
                     "name": group_buy.product.name,
@@ -474,6 +477,7 @@ async def get_my_groups(
                     "originalPrice": f"${group_buy.product.unit_price:.2f}",
                     "image": group_buy.product.image_url or "https://via.placeholder.com/300x200?text=Product",
                     "status": status,
+                    "is_completed": is_completed,  # For frontend filtering
                     "progress": progress,
                     "dueDate": due_date,
                     "pickupLocation": pickup_location,
@@ -590,6 +594,9 @@ async def get_my_groups(
                 current_amount = float(total_quantity_sum) * admin_group.price
                 amount_progress = (current_amount / target_amount * 100) if target_amount > 0 else 0
                 
+                # Determine if group is completed (ready for pickup or delivered)
+                is_completed = status in ["ready_for_pickup", "completed", "delivered", "collected"]
+                
                 group_data = {
                     "id": admin_group.id,
                     "name": admin_group.name,
@@ -600,6 +607,7 @@ async def get_my_groups(
                     "originalPrice": f"${admin_group.original_price:.2f}",
                     "image": admin_group.image or "https://via.placeholder.com/300x200?text=Product",
                     "status": status,
+                    "is_completed": is_completed,  # For frontend filtering
                     "progress": progress,
                     "dueDate": due_date,
                     "pickupLocation": pickup_location,

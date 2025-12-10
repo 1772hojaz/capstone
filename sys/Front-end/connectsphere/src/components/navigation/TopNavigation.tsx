@@ -23,7 +23,6 @@ const TopNavigation = ({ userRole }: TopNavigationProps) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [readyCount, setReadyCount] = useState(0);
 
   // Fetch current user
   useEffect(() => {
@@ -47,27 +46,6 @@ const TopNavigation = ({ userRole }: TopNavigationProps) => {
   // Determine user role
   const role = userRole || (user?.is_admin ? 'admin' : user?.is_supplier ? 'supplier' : 'trader');
 
-  // Fetch ready for pickup count for traders
-  useEffect(() => {
-    if (role === 'trader') {
-      const fetchReadyCount = async () => {
-        try {
-          const groups = await apiService.getMyGroups();
-          const count = groups.filter((g: any) => 
-            g.is_completed && g.status === 'ready_for_pickup'
-          ).length;
-          setReadyCount(count);
-        } catch (err) {
-          console.error('Failed to fetch ready count:', err);
-        }
-      };
-      
-      fetchReadyCount();
-      // Refresh count every 30 seconds
-      const interval = setInterval(fetchReadyCount, 30000);
-      return () => clearInterval(interval);
-    }
-  }, [role, location.pathname]); // Re-fetch when location changes
 
   // Navigation items based on role
   const getNavigationItems = () => {
@@ -138,12 +116,6 @@ const TopNavigation = ({ userRole }: TopNavigationProps) => {
                 >
                   <Icon className="h-4 w-4" />
                   <span>{item.label}</span>
-                  {/* Show badge for My Groups if there are ready items */}
-                  {item.label === 'My Groups' && readyCount > 0 && (
-                    <span className="bg-red-500 text-white text-[10px] font-bold rounded-full h-5 w-5 flex items-center justify-center shadow-md">
-                      {readyCount}
-                    </span>
-                  )}
                 </Link>
               );
             })}
@@ -234,12 +206,6 @@ const TopNavigation = ({ userRole }: TopNavigationProps) => {
                 >
                   <Icon className={`h-5 w-5 ${active ? 'text-white' : 'text-gray-500'}`} />
                   <span className="flex-1">{item.label}</span>
-                  {/* Show badge for My Groups if there are ready items */}
-                  {item.label === 'My Groups' && readyCount > 0 && (
-                    <span className="bg-red-500 text-white text-xs font-bold rounded-full h-6 w-6 flex items-center justify-center shadow-md">
-                      {readyCount}
-                    </span>
-                  )}
                   {active && (
                     <svg className="ml-auto h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
