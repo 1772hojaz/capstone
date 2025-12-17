@@ -334,6 +334,18 @@ class ApiService {
     });
   }
 
+  async deleteAccount(password, confirmation) {
+    const response = await this.request('/api/auth/account', {
+      method: 'DELETE',
+      body: JSON.stringify({ password, confirmation }),
+    });
+    
+    // Clear token after successful account deletion
+    localStorage.removeItem('token');
+    
+    return response;
+  }
+
   async updateContribution(groupId, quantity) {
     return this.request(`/api/groups/${groupId}/contribution`, {
       method: 'PUT',

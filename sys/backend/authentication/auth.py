@@ -151,6 +151,10 @@ class VerifyOTPRequest(BaseModel):
 class ResendOTPRequest(BaseModel):
     email: EmailStr
 
+class DeleteAccountRequest(BaseModel):
+    password: str
+    confirmation: str  # User must type "DELETE" to confirm
+
 # Helper Functions
 def hash_password(password: str) -> str:
     # Bcrypt has a 72-byte limit, truncate password if necessary
@@ -690,6 +694,59 @@ async def change_password(
     db.commit()
     
     return {"message": "Password changed successfully"}
+
+@router.delete("/account")
+async def delete_account(
+    request: DeleteAccountRequest,
+    user: User = Depends(verify_token),
+    db: Session = Depends(get_db)
+):
+    """
+    Delete user account permanently
+    Requires password verification and confirmation text
+    """
+    # Verify password
+    if not verify_password(request.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Incorrect password"
+        )
+    
+    # Verify confirmation text
+    if request.confirmation.upper() != "DELETE":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Please type DELETE to confirm account deletion"
+        )
+    
+    # Don't allow admin account deletion through this endpoint
+    if user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin accounts cannot be deleted through this endpoint. Please contact support."
+        )
+    
+    try:
+        # Soft delete: Mark account as inactive (preserves data integrity)
+        # This is industry standard to maintain transaction history and relationships
+        user.is_active = False
+        user.email = f"deleted_{user.id}_{user.email}"  # Prevent email reuse
+        user.password_reset_token = None
+        user.password_reset_expires = None
+        
+        db.commit()
+        
+        return {
+            "message": "Account deleted successfully",
+            "status": "deleted"
+        }
+    except Exception as e:
+        db.rollback()
+        print(f"Error deleting account: {e}")  # Log the actual error
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete account: {str(e)}"
+        )
 
 @router.post("/forgot-password")
 async def forgot_password(
