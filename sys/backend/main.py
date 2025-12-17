@@ -113,7 +113,7 @@ app = FastAPI(
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000","http://connectsphere-p5t9.onrender.com","https://connectsphere-p5t9.onrender.com", "http://localhost:3001", "http://localhost:5173"],  # React dev server (Vite default)
+    allow_origins=["http://localhost:3000","http://connectsphere-p5t9.onrender.com","https://connectsphere-p5t9.onrender.com", "http://localhost:3001", "http://localhost:5173", "https://connectafrica.store"],  # React dev server (Vite default) + Production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

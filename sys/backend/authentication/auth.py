@@ -780,7 +780,7 @@ async def forgot_password(
         from services.email_service import email_service
         
         # Create reset URL (frontend URL)
-        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
+        frontend_url = os.getenv("FRONTEND_URL", "https://connectafrica.store")
         reset_url = f"{frontend_url}/reset-password?token={reset_token}"
         
         result = email_service.send_password_reset_email(
