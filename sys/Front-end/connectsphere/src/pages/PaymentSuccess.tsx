@@ -63,7 +63,6 @@ const PaymentSuccess = () => {
     const completePayment = async () => {
       // Prevent duplicate processing (React Strict Mode runs effects twice)
       if (hasProcessedRef.current) {
-        console.log('Payment already processed, skipping duplicate call');
         return;
       }
       
@@ -85,8 +84,7 @@ const PaymentSuccess = () => {
       }
 
       try {
-        const currentUser = await apiService.getCurrentUser();
-        console.log('Current authenticated user:', currentUser.email);
+        await apiService.getCurrentUser();
       } catch (userError) {
         console.error('Failed to get current user:', userError);
         navigate('/login?returnUrl=' + encodeURIComponent(window.location.pathname + window.location.search));
@@ -95,8 +93,6 @@ const PaymentSuccess = () => {
 
       try {
         if (isQuantityIncrease) {
-          console.log('Processing quantity increase payment:', finalPaymentData);
-
           try {
             analyticsService.trackPaymentSuccess({
               tx_ref: txRef,
@@ -166,9 +162,6 @@ const PaymentSuccess = () => {
           // NOTE: With the new 2-phase payment flow, the backend callback
           // already created the join record after payment confirmation.
           // We don't need to call joinGroup again here!
-          
-          // Just verify the payment was successful and mark as complete
-          console.log('Payment successful - join already completed by callback');
           
           localStorage.removeItem('pendingGroupJoin');
           sessionStorage.removeItem('paymentSuccessData');

@@ -253,10 +253,30 @@ class ApiService {
       body: JSON.stringify(userData),
     });
 
-    // Store token on successful registration
+    // Note: No token is returned - user must verify OTP first
+    // Token will be stored after successful OTP verification
+    return response;
+  }
+
+  async verifyOtp(email, otpCode) {
+    const response = await this.request('/api/auth/verify-otp', {
+      method: 'POST',
+      body: JSON.stringify({ email, otp_code: otpCode }),
+    });
+
+    // Store token on successful OTP verification
     if (response.access_token) {
       localStorage.setItem('token', response.access_token);
     }
+
+    return response;
+  }
+
+  async resendOtp(email) {
+    const response = await this.request('/api/auth/resend-otp', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
 
     return response;
   }

@@ -35,12 +35,10 @@ export default function AdminDashboard() {
         setLoading(true);
         setError(null);
         
-        console.log('Fetching admin dashboard data...');
         
         // Fetch dashboard data from the correct backend endpoint
         const dashboardData = await apiService.get('/api/admin/dashboard');
         
-        console.log('Dashboard data received:', dashboardData);
         
         // Map backend response to frontend interface
         const mappedMetrics: AdminMetrics = {

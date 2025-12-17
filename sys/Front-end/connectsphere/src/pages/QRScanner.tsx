@@ -66,14 +66,11 @@ export default function QRScanner() {
     setShowSuccess(false);
 
     try {
-      console.log('Scanning QR code:', qrCode);
-
       // Call the backend API to scan QR code
       const result = await apiService.post('/api/admin/qr/scan', {
         qr_code_data: qrCode.trim()
       });
 
-      console.log('Scan result:', result);
       setScanResult(result);
 
     } catch (err: any) {
@@ -97,11 +94,10 @@ export default function QRScanner() {
         return;
       }
       
-      const response = await apiService.post(`/api/admin/qr/mark-used/${scanResult.qr_status.id}`, {
+      await apiService.post(`/api/admin/qr/mark-used/${scanResult.qr_status.id}`, {
         qr_code_data: qrCode
       });
 
-      console.log('QR marked as used successfully:', response);
       setShowSuccess(true);
       setError(null); // Clear any previous errors
       
@@ -133,8 +129,6 @@ export default function QRScanner() {
       setError(null);
       setCameraActive(true); // Set immediately to show the video container
       
-      console.log('🎥 Step 1: Requesting camera access...');
-      
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { 
           facingMode: 'environment',
@@ -142,10 +136,6 @@ export default function QRScanner() {
           height: { min: 480, ideal: 720 }
         }
       });
-      
-      const videoTrack = stream.getVideoTracks()[0];
-      console.log('✅ Step 2: Camera stream obtained:', videoTrack.label);
-      console.log('   Settings:', videoTrack.getSettings());
       
       streamRef.current = stream;
       
@@ -158,23 +148,12 @@ export default function QRScanner() {
       }
       
       const video = videoRef.current;
-      console.log('📺 Step 3: Video element found, assigning stream...');
       
-      // Multiple event listeners for debugging
-      video.onloadstart = () => console.log('   → loadstart event');
-      video.onloadeddata = () => console.log('   → loadeddata event');
-      video.oncanplay = () => console.log('   → canplay event');
       video.onplaying = () => {
-        console.log('   → playing event');
         setVideoReady(true);
       };
       
       video.onloadedmetadata = () => {
-        console.log('✅ Step 4: Video metadata loaded!', {
-          width: video.videoWidth,
-          height: video.videoHeight,
-          readyState: video.readyState
-        });
         setVideoReady(true);
       };
       
@@ -183,30 +162,16 @@ export default function QRScanner() {
       video.muted = true;
       video.playsInline = true;
       
-      console.log('📺 Step 5: Attempting to play video...');
-      
       // Try to play
       const playPromise = video.play();
       if (playPromise !== undefined) {
         await playPromise;
-        console.log('✅ Step 6: Video play() successful!');
       }
       
-      // Double-check after a moment
+      // Verify video is working after a moment
       setTimeout(() => {
-        console.log('🔍 Step 7: Final check:', {
-          videoWidth: video.videoWidth,
-          videoHeight: video.videoHeight,
-          readyState: video.readyState,
-          paused: video.paused,
-          srcObject: video.srcObject !== null
-        });
-        
         if (video.videoWidth > 0 && video.videoHeight > 0) {
-          console.log('✅ Video is working! Dimensions:', video.videoWidth, 'x', video.videoHeight);
           setVideoReady(true);
-        } else {
-          console.error('❌ Video dimensions are still 0!');
         }
       }, 1000);
       
@@ -297,12 +262,10 @@ export default function QRScanner() {
     setShowSuccess(false);
 
     try {
-      console.log('Scanning detected QR code:', detectedCode);
       const result = await apiService.post('/api/admin/qr/scan', {
         qr_code_data: detectedCode.trim()
       });
 
-      console.log('Scan result:', result);
       setScanResult(result);
     } catch (err: any) {
       console.error('Scan error:', err);

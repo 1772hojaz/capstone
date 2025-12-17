@@ -70,7 +70,6 @@ export default function PaymentPage() {
   const additionalAmount = parseFloat(paymentData.price.replace('$', '')) * quantityIncrease;
 
   const handlePaymentSuccess = (data: any) => {
-    console.log('Payment successful:', data);
     setShowPaymentModal(false);
 
     // Navigate to success page with payment details
