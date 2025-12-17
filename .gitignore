@@ -217,3 +217,45 @@ fix_brevo*.py
 # Temporary migration scripts
 add_*_column.py
 add_*_columns.py
+migrate_*.py
+create_*_table.py
+create_*_user.py
+populate_*.py
+seed_*.py
+cleanup_*.py
+auto_cleanup_*.py
+
+# Temporary test and debug scripts
+test_*.py
+debug_*.py
+check_*.py
+verify_*.py
+validate_*.py
+compare_*.py
+reset_*.py
+update_*.py
+remove_*.py
+retrain_*.py
+recreate_*.py
+
+# Backup files
+*.backup
+*.bak
+*.old
+*_backup/
+settings_backups/
+
+# Database files
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+groupbuy.db
+
+# Package files
+*.deb
+*.rpm
+
+# Personal notes
+me.txt
+notes.txt
