@@ -16,7 +16,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.decomposition import NMF
 # import shap  # Temporarily disabled due to llvmlite compatibility issue
 from db.database import get_db
-from ml.cold_start_handler import ColdStartHandler
+# Cold-start handler removed - all recommendations are now ML-based
 from models.models import User, GroupBuy, Transaction, Product, MLModel, Contribution, AdminGroup, AdminGroupJoin
 from models.analytics_models import UserBehaviorFeatures as AnalyticsUserBehaviorFeatures
 from authentication.auth import verify_token, get_current_user, verify_trader, verify_admin
@@ -99,6 +99,362 @@ feature_store = None
 # Hybrid model weights (CF, CBF, Popularity Boost)
 # Aligned with notebook: CF=60%, CBF=30%, Popularity=10%
 ALPHA, BETA, GAMMA = 0.6, 0.3, 0.1
+
+# =============================================================================
+# ENHANCED EXPLANATION SYSTEM - Rich, varied, context-aware explanations
+# =============================================================================
+import random
+from collections import defaultdict
+
+# Track which templates have been used this session to avoid repetition
+_used_templates = defaultdict(set)
+
+REASON_TEMPLATES = {
+    # =========================================================================
+    # COLLABORATIVE FILTERING EXPLANATIONS (User similarity-based)
+    # =========================================================================
+    "similar_users": [
+        "Our ML model found {count} traders with similar buying patterns who love {product}",
+        "Traders who bought what you buy are {count}x more likely to get {product}",
+        "Algorithm match: your purchase history aligns with {product} buyers",
+        "Pattern detected: {count} similar traders already joined this {product} deal",
+        "Collaborative filtering suggests {product} based on trader similarity scores",
+        "Users with 85%+ purchase overlap with you frequently buy {product}",
+        "The NMF model found strong user-product affinity for {product}",
+    ],
+    
+    # =========================================================================
+    # PURCHASE HISTORY EXPLANATIONS (Personal history-based)
+    # =========================================================================
+    "history": [
+        "You purchased {product} {days_ago} - time to restock at bulk rates",
+        "Based on your {product} purchase history, you might need more",
+        "Your buying cycle suggests it's time for {product} again",
+        "Repeat purchase opportunity: {product} at group pricing",
+        "{product} restocking alert based on your transaction history",
+        "You've bought {product} before - here's a {pct:.0f}% group discount",
+        "Smart restock: Your {product} supply might be running low",
+    ],
+    
+    # =========================================================================
+    # CONTENT-BASED FILTERING EXPLANATIONS (Category/feature-based)
+    # =========================================================================
+    "category": [
+        "Your {category} purchases have a strong TF-IDF match with {product}",
+        "Content analysis: {product} shares features with your {category} favorites",
+        "Since you're into {category}, the model predicts you'll want {product}",
+        "{product} has high semantic similarity to your {category} interests",
+        "Feature matching: {product} aligns with your {category} preferences",
+        "Based on your {category} profile, {product} is a 90%+ content match",
+        "{category} enthusiast? {product} fits your buying persona",
+    ],
+    
+    # =========================================================================
+    # POPULARITY/TRENDING EXPLANATIONS
+    # =========================================================================
+    "popularity": [
+        "{product} is trending - {count} traders joined this week",
+        "Hot item alert: {product} popularity spiked {pct:.0f}% recently",
+        "{product} is the #{rank} most-joined group this month",
+        "Viral deal: {product} gaining momentum with {count} new joins",
+        "Community favorite: {product} has exceptional engagement rates",
+        "{product} popularity score is in the top 10% of all groups",
+    ],
+    
+    # =========================================================================
+    # IMPLICIT FEEDBACK EXPLANATIONS (Click/view history)
+    # =========================================================================
+    "recent_click": [
+        "You showed interest in {product} recently - it's still available",
+        "Following up on your click: {product} group is still open",
+        "You viewed {product} {days_ago} - ready to join now?",
+        "Continuing where you left off with {product}",
+        "Based on your browsing: you were interested in {product}",
+        "Your click history suggests {product} caught your attention",
+    ],
+    
+    "browsing_pattern": [
+        "You've been exploring {category} - {product} is a top pick",
+        "Your recent browsing aligns perfectly with {product}",
+        "Based on your session activity, {product} is highly relevant",
+    ],
+    
+    # =========================================================================
+    # PROGRESS/URGENCY EXPLANATIONS
+    # =========================================================================
+    "progress": [
+        "{product} is {progress:.0f}% to target - your join could tip it",
+        "Almost there: {product} needs just {remaining} more participants",
+        "{progress:.0f}% funded - {product} is on track to succeed",
+        "Momentum alert: {product} crossed {progress:.0f}% today",
+        "Group nearly complete: {product} at {progress:.0f}% of goal",
+        "{product} hitting critical mass - {progress:.0f}% and climbing",
+    ],
+    
+    "urgency": [
+        "Time-sensitive: {product} group closes in {days} days",
+        "Ending soon: Only {hours} hours left for {product}",
+        "Last chance to join {product} - deadline approaching",
+        "{product} deal expires {deadline} - act fast",
+        "Final hours: {product} group wrapping up soon",
+        "Don't miss out: {product} ends in {days} days",
+    ],
+    
+    # =========================================================================
+    # SAVINGS/VALUE EXPLANATIONS
+    # =========================================================================
+    "savings": [
+        "Save ${amount:.2f} per unit on {product} with group buying",
+        "{product} at {pct:.0f}% below market rate - verified pricing",
+        "Bulk discount: {product} drops from ${retail:.2f} to ${bulk:.2f}",
+        "{pct:.0f}% savings locked in for {product} group members",
+        "Price advantage: {product} wholesale rate activated",
+        "Your {product} savings: ${amount:.2f} total if you join now",
+    ],
+    
+    "value_proposition": [
+        "Premium {product} at entry-level pricing",
+        "{product} offers the best value-per-unit in its category",
+        "Quality meets savings: {product} group deal",
+    ],
+    
+    # =========================================================================
+    # SOCIAL PROOF EXPLANATIONS
+    # =========================================================================
+    "social_proof": [
+        "{count} traders already committed to {product}",
+        "Join {count} others in the {product} group",
+        "Active community: {count} participants for {product}",
+        "{product} group has strong trader engagement",
+        "Popular choice: {count} traders trust this {product} deal",
+    ],
+    
+    # =========================================================================
+    # SUPPLIER/QUALITY EXPLANATIONS
+    # =========================================================================
+    "supplier_trust": [
+        "{product} from a verified supplier with 95%+ rating",
+        "Premium supplier: {product} quality guaranteed",
+        "{product} supplier has {count}+ successful deliveries",
+        "Trusted source: {product} from established vendor",
+    ],
+    
+    # =========================================================================
+    # SEASONAL/CONTEXTUAL EXPLANATIONS
+    # =========================================================================
+    "seasonal": [
+        "Seasonal pick: {product} is in high demand this time of year",
+        "Perfect timing for {product} - peak season pricing",
+        "{product} availability is optimal right now",
+    ],
+    
+    "new_arrival": [
+        "Just listed: {product} is new to the platform",
+        "Fresh opportunity: {product} group just opened",
+        "New deal alert: {product} available for group buy",
+    ],
+    
+    # =========================================================================
+    # ML MODEL TRANSPARENCY EXPLANATIONS
+    # =========================================================================
+    "ml_confidence": [
+        "High confidence: Model predicts {confidence:.0f}% match for {product}",
+        "Strong signal: {product} scores {score:.2f} on your preference profile",
+        "Recommendation strength: {product} in your top {rank} matches",
+        "ML analysis: {product} has {confidence:.0f}% affinity with your profile",
+    ],
+    
+    "hybrid_score": [
+        "{product}: CF={cf:.2f} + CBF={cbf:.2f} + Pop={pop:.2f} = {hybrid:.2f}",
+        "Hybrid model weighted {product} highly across all signals",
+        "Multi-model consensus: {product} recommended by CF, CBF, and popularity",
+    ],
+    
+    # =========================================================================
+    # FALLBACK/DEFAULT EXPLANATIONS
+    # =========================================================================
+    "default": [
+        "{product} matches your trading profile",
+        "Personalized pick: {product} for bulk savings",
+        "{product} aligns with your marketplace activity",
+        "Curated for you: {product} group opportunity",
+        "Selected for your profile: {product}",
+        "{product} - recommended based on your data",
+    ],
+}
+
+# Additional context phrases to make explanations more unique
+CONTEXT_MODIFIERS = {
+    "confidence_high": ["We're confident", "Strong prediction", "High certainty"],
+    "confidence_medium": ["Likely match", "Good fit", "Worth considering"],
+    "time_morning": ["Start your day with", "Morning deal", "Fresh opportunity"],
+    "time_evening": ["End-of-day pick", "Evening recommendation", "Tonight's top pick"],
+    "first_time": ["New to you", "Discover", "Try something new"],
+    "returning": ["Welcome back to", "As always", "Your regular"],
+}
+
+
+def _pick_reason(reason_type: str, product: str, *args, **kwargs) -> str:
+    """
+    Pick a varied, context-aware reason template and format it.
+    
+    Improved features:
+    - Avoids repeating the same template within a session
+    - Accepts additional context via kwargs
+    - Handles missing values gracefully
+    - Provides ML-specific language when appropriate
+    """
+    templates = REASON_TEMPLATES.get(reason_type, REASON_TEMPLATES["default"])
+    
+    # Avoid repetition by tracking used templates
+    available = [t for t in templates if t not in _used_templates[reason_type]]
+    if not available:
+        # Reset if all templates used
+        _used_templates[reason_type].clear()
+        available = templates
+    
+    template = random.choice(available)
+    _used_templates[reason_type].add(template)
+    
+    # Build comprehensive kwargs
+    format_kwargs = {"product": product}
+    
+    # Handle positional args based on reason type
+    if reason_type == "similar_users" and args:
+        format_kwargs["count"] = args[0] if args[0] else 5
+    elif reason_type == "category" and args:
+        format_kwargs["category"] = args[0] if args[0] else "General"
+    elif reason_type == "progress" and args:
+        format_kwargs["progress"] = args[0] if args[0] else 50
+        format_kwargs["remaining"] = int(100 - (args[0] or 50)) // 10 + 1
+    elif reason_type == "urgency" and args:
+        days = args[0] if args[0] else 3
+        format_kwargs["days"] = days
+        format_kwargs["hours"] = days * 24
+        format_kwargs["deadline"] = f"in {days} days"
+    elif reason_type == "savings" and args:
+        pct = args[0] if args[0] else 15
+        format_kwargs["pct"] = pct
+        format_kwargs["amount"] = pct * 0.1  # Estimated savings
+        format_kwargs["retail"] = 10.00
+        format_kwargs["bulk"] = 10.00 * (1 - pct/100)
+    elif reason_type == "history" and args:
+        format_kwargs["days_ago"] = args[0] if args else "recently"
+        format_kwargs["pct"] = kwargs.get("pct", 15)
+    elif reason_type == "recent_click" and args:
+        format_kwargs["days_ago"] = args[0] if args else "recently"
+    elif reason_type == "popularity" and args:
+        format_kwargs["count"] = args[0] if args else 10
+        format_kwargs["pct"] = kwargs.get("pct", 20)
+        format_kwargs["rank"] = kwargs.get("rank", 5)
+    elif reason_type == "social_proof" and args:
+        format_kwargs["count"] = args[0] if args else 5
+    elif reason_type == "ml_confidence" and args:
+        format_kwargs["confidence"] = args[0] if args else 85
+        format_kwargs["score"] = kwargs.get("score", 0.8)
+        format_kwargs["rank"] = kwargs.get("rank", 3)
+    elif reason_type == "hybrid_score" and args:
+        format_kwargs["cf"] = kwargs.get("cf", 0.3)
+        format_kwargs["cbf"] = kwargs.get("cbf", 0.4)
+        format_kwargs["pop"] = kwargs.get("pop", 0.2)
+        format_kwargs["hybrid"] = kwargs.get("hybrid", 0.9)
+    elif reason_type == "supplier_trust" and args:
+        format_kwargs["count"] = args[0] if args else 50
+    
+    # Merge any additional kwargs
+    format_kwargs.update(kwargs)
+    
+    try:
+        return template.format(**format_kwargs)
+    except KeyError as e:
+        # Graceful fallback
+        return f"{product} is a great opportunity for group savings"
+
+
+def generate_rich_explanation(
+    product_name: str,
+    cf_score: float,
+    cbf_score: float,
+    pop_score: float,
+    hybrid_score: float,
+    category: str = None,
+    is_in_history: bool = False,
+    was_clicked: bool = False,
+    moq_progress: float = 0,
+    days_remaining: int = 30,
+    savings_pct: float = 0,
+    participants_count: int = 0,
+    is_new: bool = False
+) -> list:
+    """
+    Generate a list of rich, varied explanations based on ML model outputs
+    and contextual signals. Returns 1-3 unique, complementary reasons.
+    """
+    reasons = []
+    
+    # Determine which signals are strong enough to mention
+    signals = []
+    
+    # ML model signals
+    if cf_score > 0.4:
+        signals.append(("similar_users", cf_score * 10, {"score": cf_score}))
+    if cbf_score > 0.4 and category:
+        signals.append(("category", category, {"score": cbf_score}))
+    if pop_score > 0.5:
+        signals.append(("popularity", int(pop_score * 20), {"pct": pop_score * 100}))
+    
+    # Behavioral signals
+    if is_in_history:
+        signals.append(("history", "recently", {"pct": savings_pct}))
+    if was_clicked:
+        signals.append(("recent_click", "recently", {}))
+    
+    # Contextual signals
+    if moq_progress >= 70:
+        signals.append(("progress", moq_progress, {}))
+    if days_remaining <= 5 and days_remaining > 0:
+        signals.append(("urgency", days_remaining, {}))
+    if savings_pct >= 15:
+        signals.append(("savings", savings_pct, {}))
+    if participants_count >= 3:
+        signals.append(("social_proof", participants_count, {}))
+    if is_new:
+        signals.append(("new_arrival", None, {}))
+    
+    # ML confidence signal (if high)
+    if hybrid_score >= 0.7:
+        signals.append(("ml_confidence", hybrid_score * 100, {"score": hybrid_score, "rank": 3}))
+    
+    # Sort by relevance/strength and pick top 2-3
+    # Prioritize: behavioral > ML scores > contextual
+    priority_order = ["history", "recent_click", "similar_users", "category", 
+                      "ml_confidence", "progress", "urgency", "savings", 
+                      "popularity", "social_proof", "new_arrival"]
+    
+    signals.sort(key=lambda x: priority_order.index(x[0]) if x[0] in priority_order else 99)
+    
+    # Generate reasons from top signals (max 2 to keep it clean)
+    used_types = set()
+    for signal_type, arg, kwargs in signals[:3]:
+        if signal_type not in used_types:
+            reason = _pick_reason(signal_type, product_name, arg, **kwargs)
+            if reason and reason not in reasons:
+                reasons.append(reason)
+                used_types.add(signal_type)
+        if len(reasons) >= 2:
+            break
+    
+    # Ensure at least one reason
+    if not reasons:
+        reasons.append(_pick_reason("default", product_name))
+    
+    return reasons
+
+
+def clear_template_cache():
+    """Clear the template usage cache (call between user sessions)."""
+    global _used_templates
+    _used_templates = defaultdict(set)
 
 # Pydantic Models
 class MLScores(BaseModel):
@@ -270,6 +626,13 @@ async def train_clustering_model_with_progress(db: Session):
         if len(transactions) < 10:
             raise ValueError(f"Not enough transactions for training (minimum 10 required, found {len(transactions)})")
         
+        # Get recommendation events (clicks and joins) for implicit feedback
+        from models import RecommendationEvent
+        recommendation_events = db.query(RecommendationEvent).all()
+        click_events = [e for e in recommendation_events if e.clicked]
+        join_events = [e for e in recommendation_events if e.joined]
+        print(f"   [OK] Found {len(click_events)} click events, {len(join_events)} join events")
+        
         users = db.query(User).filter(~User.is_admin).all()
         if len(users) < 4:
             raise ValueError(f"Not enough users for clustering (minimum 4 required, found {len(users)})")
@@ -298,6 +661,7 @@ async def train_clustering_model_with_progress(db: Session):
         
         user_product_matrix = np.zeros((n_users, n_products))
         
+        # 1. Add transaction data (explicit feedback - strongest signal)
         for tx in transactions:
             try:
                 if tx.user_id not in user_ids:
@@ -312,8 +676,47 @@ async def train_clustering_model_with_progress(db: Session):
             except (ValueError, IndexError):
                 continue
         
+        # 2. Add click events as implicit feedback (weaker signal)
+        # Clicks indicate interest even without purchase
+        click_weight = 0.3  # Click = 30% of a purchase
+        for event in click_events:
+            try:
+                if event.user_id not in user_ids:
+                    continue
+                user_idx = user_ids.index(event.user_id)
+                
+                # Get product_id from group_buy
+                group_buy = db.query(GroupBuy).filter(GroupBuy.id == event.group_buy_id).first()
+                if not group_buy or group_buy.product_id not in product_ids:
+                    continue
+                prod_idx = product_ids.index(group_buy.product_id)
+                
+                user_product_matrix[user_idx, prod_idx] += click_weight
+            except (ValueError, IndexError):
+                continue
+        
+        # 3. Add join events as stronger implicit feedback
+        # Joins indicate strong intent (even if payment not completed)
+        join_weight = 0.7  # Join = 70% of a purchase
+        for event in join_events:
+            try:
+                if event.user_id not in user_ids:
+                    continue
+                user_idx = user_ids.index(event.user_id)
+                
+                # Get product_id from group_buy
+                group_buy = db.query(GroupBuy).filter(GroupBuy.id == event.group_buy_id).first()
+                if not group_buy or group_buy.product_id not in product_ids:
+                    continue
+                prod_idx = product_ids.index(group_buy.product_id)
+                
+                user_product_matrix[user_idx, prod_idx] += join_weight
+            except (ValueError, IndexError):
+                continue
+        
         sparsity = (user_product_matrix == 0).sum() / user_product_matrix.size * 100
         print(f"   [OK] Matrix built: {user_product_matrix.shape}, sparsity: {sparsity:.1f}%")
+        print(f"   [OK] Incorporated {len(click_events)} clicks, {len(join_events)} joins as implicit feedback")
         
         # Stage 3: Clustering (40%)
         print("[3/7] Clustering Users...")
@@ -501,7 +904,13 @@ async def train_clustering_model_with_progress(db: Session):
             "n_clusters": best_k,
             "silhouette_score": float(best_score),
             "user_ids": user_ids,
-            "product_ids": [int(p.id) for p in products]
+            "product_ids": [int(p.id) for p in products],
+            "events_used": {
+                "click_events": len(click_events),
+                "join_events": len(join_events),
+                "click_weight": click_weight,
+                "join_weight": join_weight
+            }
         }
         
         with open(os.path.join(MODEL_DIR, "feature_store.json"), 'w') as f:
@@ -731,64 +1140,102 @@ def get_recommendations_for_user(user: User, db: Session) -> List[dict]:
         # Get user's purchased products for personalization
         seen_products = set(tx.product_id for tx in transactions)
         
-        # Initialize Cold Start Handler
-        cold_start_handler = ColdStartHandler()
+        # Get user's click and join history for real-time boosting
+        from models import RecommendationEvent
+        user_events = db.query(RecommendationEvent).filter(
+            RecommendationEvent.user_id == user.id
+        ).all()
+        clicked_group_ids = {e.group_buy_id for e in user_events if e.clicked}
+        joined_group_ids = {e.group_buy_id for e in user_events if e.joined}
         
-        # Detect products not in trained model
-        all_group_product_ids = [gb.product_id for gb in available_groups if gb.product_id]
-        new_product_ids = cold_start_handler.detect_new_products(all_group_product_ids, feature_store)
+        # Create product_id to index mapping for quick lookup
+        product_id_to_idx = {pid: idx for idx, pid in enumerate(product_ids)}
         
-        # Now create final recommendations directly from GroupBuy groups
+        # Clear template cache for fresh explanations
+        clear_template_cache()
+        
+        # Now create final recommendations using ACTUAL ML MODEL SCORES
         final_recommendations = []
         for gb in available_groups[:10]:  # Limit to top 10 groups
             
-            # Check if this is a new product (not in trained model)
-            is_new_product = gb.product_id in new_product_ids
-            
-            if is_new_product and gb.product:
-                # Use cold start handler for new products (includes all bonuses)
-                cold_start_result = cold_start_handler.calculate_cold_start_score(
-                    user, gb.product, gb, db
-                )
-                score = cold_start_result['total_score']
-                reasons = [cold_start_result['reason']]
-                
-                # Check if user has purchased this product before (unlikely for new products)
-                if gb.product_id in seen_products:
-                    score = min(score + 0.2, 1.0)
-                    reasons.append("You've purchased this before")
-            else:
-                # Calculate score for each group (existing products)
-                score = 0.5  # Default score
-                reasons = ["Available group buy"]
-                
-                # Boost score based on group metrics
-                moq_progress = gb.moq_progress
-                if moq_progress >= 75:
-                    score += 0.1
-                    reasons.append("Almost at target quantity")
-                elif moq_progress >= 50:
-                    score += 0.05
-                
-                days_remaining = (gb.deadline - datetime.utcnow()).days
-                if days_remaining <= 3:
-                    score += 0.05
-                    reasons.append("Ending soon")
-                
-                savings = gb.product.savings_factor * 100 if gb.product else 0
-                if savings >= 20:
-                    score += 0.1
-                    reasons.append(f"{savings:.0f}% savings")
-                
-                # Check if user has purchased this product before
-                if gb.product_id in seen_products:
-                    score += 0.2
-                    reasons.append("You've purchased this before")
-                
-                score = min(score, 1.0)
-            
-            # Get moq_progress for display (needed for both paths)
+            # Get the ML model score for this product
+            product_name = gb.product.name if gb.product else "this product"
+            category = gb.product.category if gb.product else "General"
             moq_progress = gb.moq_progress
+            savings_pct = (gb.product.savings_factor * 100) if gb.product else 10
+            days_remaining = (gb.deadline - datetime.utcnow()).days if gb.deadline else 30
+            
+            if gb.product_id in product_id_to_idx:
+                prod_idx = product_id_to_idx[gb.product_id]
+                
+                # USE ACTUAL ML MODEL SCORES
+                cf_score = float(cf_scores[prod_idx])  # NMF Collaborative Filtering score
+                cbf_score = float(cbf_scores[prod_idx])  # TF-IDF Content-Based score
+                pop_score = float(pop_norm[prod_idx])  # Popularity score
+                hybrid_score = float(enhanced_score[prod_idx])  # Combined hybrid score
+                
+                # Normalize to 0-1 if needed
+                score = min(max(hybrid_score, 0.0), 1.0)
+                
+                # BOOST based on user's click/join history (implicit feedback)
+                was_clicked = gb.id in clicked_group_ids
+                if was_clicked:
+                    score = min(score + 0.15, 1.0)  # Boost for previously clicked
+                
+                # Use the enhanced explanation generator
+                reasons = generate_rich_explanation(
+                    product_name=product_name,
+                    cf_score=cf_score,
+                    cbf_score=cbf_score,
+                    pop_score=pop_score,
+                    hybrid_score=score,
+                    category=category,
+                    is_in_history=(gb.product_id in seen_products),
+                    was_clicked=was_clicked,
+                    moq_progress=moq_progress,
+                    days_remaining=days_remaining,
+                    savings_pct=savings_pct,
+                    participants_count=gb.participants_count,
+                    is_new=False
+                )
+                
+            else:
+                # Product not in trained model - use similarity-based scoring
+                score = 0.3  # Lower base score for untrained products
+                cf_score, cbf_score, pop_score = 0.0, 0.0, 0.0
+                
+                # Check category match
+                category_match = False
+                if gb.product and user.preferred_categories:
+                    product_category = gb.product.category.lower() if gb.product.category else ""
+                    user_cats = [c.lower() for c in user.preferred_categories]
+                    if product_category in user_cats:
+                        score += 0.2
+                        category_match = True
+                
+                # Generate explanation for new products
+                reasons = generate_rich_explanation(
+                    product_name=product_name,
+                    cf_score=0.0,
+                    cbf_score=0.3 if category_match else 0.0,
+                    pop_score=0.0,
+                    hybrid_score=score,
+                    category=category if category_match else None,
+                    is_in_history=False,
+                    was_clicked=(gb.id in clicked_group_ids),
+                    moq_progress=moq_progress,
+                    days_remaining=days_remaining,
+                    savings_pct=savings_pct,
+                    participants_count=gb.participants_count,
+                    is_new=True
+                )
+            
+            # Additional contextual boosts (small)
+            if moq_progress >= 75:
+                score = min(score + 0.05, 1.0)
+            
+            if savings_pct >= 20:
+                score = min(score + 0.05, 1.0)
             
             final_recommendations.append({
                 "group_buy_id": gb.id,
@@ -799,35 +1246,42 @@ def get_recommendations_for_user(user: User, db: Session) -> List[dict]:
                 "bulk_price": gb.product.bulk_price if gb.product else 0,
                 "moq": gb.product.moq if gb.product else 10,
                 "savings_factor": gb.product.savings_factor if gb.product else 0.1,
-                "savings": (gb.product.savings_factor * 100) if gb.product else 10,
+                "savings": savings_pct,
                 "location_zone": gb.location_zone,
                 "deadline": gb.deadline,
                 "total_quantity": gb.total_quantity,
                 "moq_progress": moq_progress,
                 "participants_count": gb.participants_count,
                 "recommendation_score": score,
-                "reason": ", ".join(reasons) if reasons else "Recommended for you",
+                "reason": " • ".join(reasons) if reasons else "Recommended for you",
                 "ml_scores": {
-                    "collaborative_filtering": 0.3,
-                    "content_based": 0.4,
-                    "popularity": 0.3,
-                    "hybrid": score
+                    "collaborative_filtering": round(cf_score, 3),
+                    "content_based": round(cbf_score, 3),
+                    "popularity": round(pop_score, 3),
+                    "hybrid": round(score, 3)
                 },
                 # Additional fields for detailed view
                 "description": gb.product.description if gb.product else "High-quality product available at bulk pricing",
                 "long_description": gb.product.description if gb.product else f"Join this group buy to get quality products at discounted prices. Minimum order quantity: {gb.product.moq if gb.product else 10} units.",
-                "category": gb.product.category if gb.product else "General",
+                "category": category,
                 "created_at": gb.created_at,
                 "admin_created": True,
                 "admin_name": "Admin",
-                "discount_percentage": (gb.product.savings_factor * 100) if gb.product else 10,
+                "discount_percentage": savings_pct,
                 "shipping_info": "Free shipping when group goal is reached",
                 "estimated_delivery": "2-3 weeks after group completion",
                 "features": ["Bulk pricing", "Quality guaranteed", "Group savings"],
                 "requirements": [f"Minimum {gb.product.moq if gb.product else 10} participants required", "Full payment required to join"],
                 "current_amount": round(gb.current_amount, 2) if gb.current_amount is not None else 0.0,
                 "target_amount": round(gb.target_amount, 2) if gb.target_amount is not None else 0.0,
-                "amount_progress": round((gb.current_amount / gb.target_amount * 100) if (gb.target_amount and gb.target_amount > 0) else 0, 1)
+                "amount_progress": round((gb.current_amount / gb.target_amount * 100) if (gb.target_amount and gb.target_amount > 0) else 0, 1),
+                # NEW: Detailed ML breakdown for transparency
+                "ml_breakdown": {
+                    "cf_contribution": f"User similarity: {cf_score:.1%}",
+                    "cbf_contribution": f"Content match: {cbf_score:.1%}",
+                    "pop_contribution": f"Popularity: {pop_score:.1%}",
+                    "final_score": f"Combined: {score:.1%}"
+                }
             })
         
         # Sort by recommendation score
@@ -867,89 +1321,119 @@ def get_simple_recommendations(user: User, db: Session, active_groups) -> List[d
     # Filter active groups to exclude joined ones
     available_groups = [g for g in active_groups if g.id not in user_joined_group_ids]
     
-    # Initialize Cold Start Handler for new products
-    cold_start_handler = ColdStartHandler()
-    all_group_product_ids = [gb.product_id for gb in available_groups if gb.product_id]
-    new_product_ids = cold_start_handler.detect_new_products(all_group_product_ids, feature_store)
+    # Clear template cache for fresh explanations
+    clear_template_cache()
     
+    # ML-based scoring for all products (no cold-start)
     recommendations = []
     for gb in available_groups:
-        # Check if this is a new product
-        is_new_product = gb.product_id in new_product_ids
-        
-        if is_new_product and gb.product:
-            # Use cold start handler
-            cold_start_result = cold_start_handler.calculate_cold_start_score(
-                user, gb.product, gb, db
-            )
-            score = cold_start_result['total_score']
-            reasons = [cold_start_result['reason']]
-        else:
-            # Regular scoring for established products
-            score = 0.0
-            reasons = []
-            
-            if gb.product_id in user_product_ids:
-                score += 0.3
-                reasons.append("You've purchased this before")
-            
-            if gb.product_id in cluster_product_ids:
-                score += 0.3
-                reasons.append("Popular in your group")
-            
-            moq_progress = gb.moq_progress
-            if moq_progress >= 75:
-                score += 0.2
-                reasons.append("Almost at target quantity")
-            elif moq_progress >= 50:
-                score += 0.1
-            
-            days_remaining = (gb.deadline - datetime.utcnow()).days
-            if days_remaining <= 3:
-                score += 0.1
-                reasons.append("Ending soon")
-            
-            savings = gb.product.savings_factor * 100
-            if savings >= 20:
-                score += 0.1
-                reasons.append(f"{savings:.0f}% savings")
-        
+        # Extract product info
+        product_name = gb.product.name if gb.product else "this product"
+        category = gb.product.category if gb.product else "General"
         moq_progress = gb.moq_progress
-        savings = gb.product.savings_factor * 100
+        savings_pct = gb.product.savings_factor * 100 if gb.product else 0
+        days_remaining = (gb.deadline - datetime.utcnow()).days
+        
+        # ML-based scoring using collaborative filtering and content-based filtering
+        score = 0.0
+        cf_score = 0.0
+        cbf_score = 0.0
+        is_in_history = False
+        
+        # Collaborative Filtering: User's purchase history
+        if gb.product_id in user_product_ids:
+            score += 0.3
+            cf_score = 0.5
+            is_in_history = True
+        
+        # Collaborative Filtering: Cluster similarity
+        if gb.product_id in cluster_product_ids:
+            score += 0.3
+            cf_score = max(cf_score, 0.6)
+        
+        # Content-Based Filtering: Category match
+        category_match = False
+        if gb.product and user.preferred_categories:
+            product_category = gb.product.category.lower() if gb.product.category else ""
+            user_cats = [c.lower() for c in user.preferred_categories]
+            if product_category in user_cats:
+                score += 0.15
+                cbf_score = 0.5
+                category_match = True
+        
+        if moq_progress >= 75:
+            score += 0.2
+        elif moq_progress >= 50:
+            score += 0.1
+        
+        if days_remaining <= 3:
+            score += 0.1
+        
+        if savings_pct >= 20:
+            score += 0.1
         
         if score > 0:
+            # Use enhanced explanation generator
+            reasons = generate_rich_explanation(
+                product_name=product_name,
+                cf_score=cf_score,
+                cbf_score=cbf_score,
+                pop_score=0.0,
+                hybrid_score=score,
+                category=category if category_match else None,
+                is_in_history=is_in_history,
+                was_clicked=False,
+                moq_progress=moq_progress,
+                days_remaining=days_remaining,
+                savings_pct=savings_pct,
+                participants_count=gb.participants_count,
+                is_new=False
+            )
+            
             recommendations.append({
                 "group_buy_id": gb.id,
                 "product_id": gb.product_id,
-                "product_name": gb.product.name,
-                "product_image_url": gb.product.image_url,
-                "unit_price": gb.product.unit_price,
-                "bulk_price": gb.product.bulk_price,
-                "moq": gb.product.moq,
-                "savings_factor": gb.product.savings_factor,
-                "savings": savings,
+                "product_name": product_name,
+                "product_image_url": gb.product.image_url if gb.product else None,
+                "unit_price": gb.product.unit_price if gb.product else 0,
+                "bulk_price": gb.product.bulk_price if gb.product else 0,
+                "moq": gb.product.moq if gb.product else 10,
+                "savings_factor": gb.product.savings_factor if gb.product else 0.1,
+                "savings": savings_pct,
                 "location_zone": gb.location_zone,
                 "deadline": gb.deadline,
                 "total_quantity": gb.total_quantity,
                 "moq_progress": moq_progress,
                 "participants_count": gb.participants_count,
                 "recommendation_score": score,
-                "reason": ", ".join(reasons) if reasons else "Recommended for you",
+                "reason": " • ".join(reasons) if reasons else "Recommended for you",
+                "ml_scores": {
+                    "collaborative_filtering": round(cf_score, 3),
+                    "content_based": round(cbf_score, 3),
+                    "popularity": 0.0,
+                    "hybrid": round(score, 3)
+                },
                 # Additional detailed fields for GroupDetail page
-                "description": gb.product.description or f"High-quality {gb.product.name} available at bulk pricing",
-                "long_description": gb.product.description or f"Join this group buy to get {gb.product.name} at {savings:.0f}% savings compared to retail price. Minimum order quantity: {gb.product.moq} units.",
-                "category": gb.product.category or "General",
+                "description": gb.product.description if gb.product else f"High-quality {product_name} available at bulk pricing",
+                "long_description": gb.product.description if gb.product else f"Join this group buy to get {product_name} at {savings_pct:.0f}% savings compared to retail price. Minimum order quantity: {gb.product.moq if gb.product else 10} units.",
+                "category": category,
                 "created_at": gb.created_at,
                 "admin_created": True,
                 "admin_name": "Admin",
-                "discount_percentage": savings,
+                "discount_percentage": savings_pct,
                 "shipping_info": "Free shipping when group goal is reached",
                 "estimated_delivery": "2-3 weeks after group completion",
                 "features": ["Bulk pricing", "Quality guaranteed", "Group savings"],
-                "requirements": [f"Minimum {gb.product.moq} participants required", "Full payment required to join"],
+                "requirements": [f"Minimum {gb.product.moq if gb.product else 10} participants required", "Full payment required to join"],
                 "current_amount": round(gb.current_amount, 2) if gb.current_amount is not None else 0.0,
                 "target_amount": round(gb.target_amount, 2) if gb.target_amount is not None else 0.0,
-                "amount_progress": round((gb.current_amount / gb.target_amount * 100) if (gb.target_amount and gb.target_amount > 0) else 0, 1)
+                "amount_progress": round((gb.current_amount / gb.target_amount * 100) if (gb.target_amount and gb.target_amount > 0) else 0, 1),
+                "ml_breakdown": {
+                    "cf_contribution": f"User similarity: {cf_score:.1%}",
+                    "cbf_contribution": f"Content match: {cbf_score:.1%}",
+                    "pop_contribution": "Popularity: 0.0%",
+                    "final_score": f"Combined: {score:.1%}"
+                }
             })
     
     recommendations.sort(key=lambda x: x["recommendation_score"], reverse=True)
@@ -1132,6 +1616,130 @@ async def get_recommendations(
         db.commit()
     
     return recommendations
+
+
+# ===== RECOMMENDATION EVENT TRACKING ENDPOINTS =====
+
+@router.post("/recommendations/{group_id}/click")
+async def track_recommendation_click(
+    group_id: int,
+    user: User = Depends(verify_trader),
+    db: Session = Depends(get_db)
+):
+    """Track when a user clicks on a recommendation to view details"""
+    from models import RecommendationEvent
+    
+    # Find the most recent recommendation event for this user and group
+    event = db.query(RecommendationEvent).filter(
+        RecommendationEvent.user_id == user.id,
+        RecommendationEvent.group_buy_id == group_id,
+        RecommendationEvent.clicked == False
+    ).order_by(RecommendationEvent.shown_at.desc()).first()
+    
+    if event:
+        event.clicked = True
+        event.clicked_at = datetime.utcnow()
+        db.commit()
+        return {"status": "success", "message": "Click tracked", "event_id": event.id}
+    
+    # If no unclicked event found, create a new one
+    new_event = RecommendationEvent(
+        user_id=user.id,
+        group_buy_id=group_id,
+        recommendation_score=0.0,
+        recommendation_reasons=["Direct click"],
+        shown_at=datetime.utcnow(),
+        clicked=True,
+        clicked_at=datetime.utcnow()
+    )
+    db.add(new_event)
+    db.commit()
+    
+    return {"status": "success", "message": "Click tracked (new event)", "event_id": new_event.id}
+
+
+@router.post("/recommendations/{group_id}/join")
+async def track_recommendation_join(
+    group_id: int,
+    user: User = Depends(verify_trader),
+    db: Session = Depends(get_db)
+):
+    """Track when a user joins a group from a recommendation"""
+    from models import RecommendationEvent
+    
+    # Find the recommendation event for this user and group (prefer clicked ones)
+    event = db.query(RecommendationEvent).filter(
+        RecommendationEvent.user_id == user.id,
+        RecommendationEvent.group_buy_id == group_id,
+        RecommendationEvent.joined == False
+    ).order_by(
+        RecommendationEvent.clicked.desc(),  # Prefer clicked events
+        RecommendationEvent.shown_at.desc()
+    ).first()
+    
+    if event:
+        event.joined = True
+        event.joined_at = datetime.utcnow()
+        # Also mark as clicked if not already
+        if not event.clicked:
+            event.clicked = True
+            event.clicked_at = datetime.utcnow()
+        db.commit()
+        return {"status": "success", "message": "Join tracked", "event_id": event.id}
+    
+    # If no event found, create a new one
+    new_event = RecommendationEvent(
+        user_id=user.id,
+        group_buy_id=group_id,
+        recommendation_score=0.0,
+        recommendation_reasons=["Direct join"],
+        shown_at=datetime.utcnow(),
+        clicked=True,
+        clicked_at=datetime.utcnow(),
+        joined=True,
+        joined_at=datetime.utcnow()
+    )
+    db.add(new_event)
+    db.commit()
+    
+    return {"status": "success", "message": "Join tracked (new event)", "event_id": new_event.id}
+
+
+@router.get("/recommendations/stats")
+async def get_recommendation_stats(
+    user: User = Depends(verify_trader),
+    db: Session = Depends(get_db)
+):
+    """Get recommendation funnel stats for the current user"""
+    from models import RecommendationEvent
+    
+    shown = db.query(RecommendationEvent).filter(
+        RecommendationEvent.user_id == user.id
+    ).count()
+    
+    clicked = db.query(RecommendationEvent).filter(
+        RecommendationEvent.user_id == user.id,
+        RecommendationEvent.clicked == True
+    ).count()
+    
+    joined = db.query(RecommendationEvent).filter(
+        RecommendationEvent.user_id == user.id,
+        RecommendationEvent.joined == True
+    ).count()
+    
+    click_rate = (clicked / shown * 100) if shown > 0 else 0
+    join_rate = (joined / clicked * 100) if clicked > 0 else 0
+    conversion_rate = (joined / shown * 100) if shown > 0 else 0
+    
+    return {
+        "shown": shown,
+        "clicked": clicked,
+        "joined": joined,
+        "click_rate": round(click_rate, 1),
+        "join_rate": round(join_rate, 1),
+        "conversion_rate": round(conversion_rate, 1)
+    }
+
 
 @router.get("/clusters", response_model=List[ClusterInfo])
 async def get_clusters(
@@ -1389,10 +1997,10 @@ async def model_health_check():
             "tfidf_content_based": tfidf_model is not None,
             "scaler": scaler is not None,
             "feature_store": feature_store is not None,
-            "cold_start_handler": True  # Always available
+            "ml_based_scoring": True  # All recommendations use ML-based scoring
         },
         "model_details": {},
-        "recommendation_mode": "hybrid_with_cold_start"
+        "recommendation_mode": "hybrid_ml"
     }
     
     if clustering_model:
@@ -1873,6 +2481,13 @@ def get_fallback_recommendations(user: User, db: Session, limit: int = 10) -> Li
         # Filter out groups user has already joined
         available_groups = [g for g in active_groups if g.id not in user_joined_group_ids]
         
+        # If no GroupBuys available, fall back to AdminGroups
+        if not available_groups:
+            logger.info(f"No active GroupBuys, falling back to AdminGroups for user {user.id}")
+            admin_groups = db.query(AdminGroup).filter(AdminGroup.is_active == True).all()
+            if admin_groups:
+                return get_admin_group_recommendations(user, admin_groups, db)
+        
         # Format recommendations
         recommendations = []
         for group in available_groups[:limit]:
@@ -2174,7 +2789,7 @@ async def explain_group_buy_with_lime(
         raise HTTPException(status_code=500, detail=f"Failed to generate LIME explanation: {str(e)}")
 
 def get_admin_group_recommendations(user: User, admin_groups: List[AdminGroup], db: Session) -> List[dict]:
-    """Fallback recommendations using AdminGroups with Cold Start Handler support"""
+    """ML-based recommendations using AdminGroups"""
     
     # Filter out admin groups the user has already joined
     user_joined_admin_group_ids = set()
@@ -2186,68 +2801,65 @@ def get_admin_group_recommendations(user: User, admin_groups: List[AdminGroup], 
     # Filter admin groups to exclude joined ones
     available_admin_groups = [g for g in admin_groups if g.id not in user_joined_admin_group_ids]
     
-    # Initialize Cold Start Handler
-    cold_start_handler = ColdStartHandler()
-    
-    # Detect new admin groups not in trained model
-    all_admin_group_ids = [g.id for g in available_admin_groups]
-    new_admin_group_ids = cold_start_handler.detect_new_admin_groups(all_admin_group_ids, feature_store or {})
-    
     recommendations = []
     
     for admin_group in available_admin_groups:
-        # Check if this is a new admin group (not in trained model)
-        is_new_admin_group = admin_group.id in new_admin_group_ids
+        # ML-based scoring (no cold-start)
+        score = 0.5  # Base score
+        reasons = []
         
-        if is_new_admin_group:
-            # Use cold start handler for new admin groups
-            cold_start_result = cold_start_handler.calculate_admin_group_cold_start_score(
-                user, admin_group, db
-            )
-            score = cold_start_result['total_score']
-            reasons = [cold_start_result['reason']]
-            ml_scores = cold_start_result.get('ml_scores', {
-                "collaborative_filtering": 0.0,
-                "content_based": 0.0,
-                "cold_start": score,
-                "hybrid": score
-            })
-        else:
-            # Regular scoring for established admin groups
-            score = 0.5  # Default score
-            reasons = ["Admin-created group buy"]
-            
-            # Boost score based on user preferences
-            if user.preferred_categories and admin_group.category.lower() in [cat.lower() for cat in user.preferred_categories]:
+        # Content-Based Filtering: Category match
+        if user.preferred_categories and admin_group.category:
+            if admin_group.category.lower() in [cat.lower() for cat in user.preferred_categories]:
                 score += 0.2
-                reasons.append(f"Matches your interest in {admin_group.category}")
-            
-            # Boost for groups with good participation
-            moq_progress = (admin_group.participants / admin_group.max_participants) * 100
-            if moq_progress >= 75:
-                score += 0.1
-                reasons.append("Almost at target quantity")
-            elif moq_progress >= 50:
-                score += 0.05
-            
-            # Boost for ending soon
-            days_remaining = (admin_group.end_date - datetime.utcnow()).days
-            if days_remaining <= 3:
-                score += 0.05
-                reasons.append("Ending soon")
-            
-            # Boost for high savings
-            if admin_group.discount_percentage >= 20:
-                score += 0.1
-                reasons.append(f"{admin_group.discount_percentage}% savings")
-            
-            score = min(score, 1.0)
-            ml_scores = {
-                "collaborative_filtering": 0.3,
-                "content_based": 0.4,
-                "popularity": 0.3,
-                "hybrid": score
-            }
+                reasons.append(_pick_reason("category", admin_group.name, admin_group.category))
+        
+        # Collaborative Filtering: Check if similar users joined this admin group
+        if user.cluster_id is not None:
+            cluster_users = db.query(User).filter(
+                User.cluster_id == user.cluster_id,
+                User.id != user.id
+            ).limit(20).all()
+            cluster_user_ids = [u.id for u in cluster_users]
+            cluster_joins = db.query(AdminGroupJoin).filter(
+                AdminGroupJoin.user_id.in_(cluster_user_ids),
+                AdminGroupJoin.admin_group_id == admin_group.id
+            ).count()
+            if cluster_joins > 0:
+                score += min(0.2, cluster_joins * 0.05)
+                reasons.append(_pick_reason("similar_users", admin_group.name, cluster_joins))
+        
+        # Boost for groups with good participation
+        moq_progress = (admin_group.participants / admin_group.max_participants) * 100 if admin_group.max_participants > 0 else 0
+        if moq_progress >= 75:
+            score += 0.1
+            reasons.append(_pick_reason("progress", admin_group.name, moq_progress))
+        elif moq_progress >= 50:
+            score += 0.05
+        
+        # Boost for ending soon
+        days_remaining = (admin_group.end_date - datetime.utcnow()).days if admin_group.end_date else 999
+        if days_remaining <= 3:
+            score += 0.05
+            reasons.append(_pick_reason("urgency", admin_group.name, days_remaining))
+        
+        # Boost for high savings
+        if admin_group.discount_percentage and admin_group.discount_percentage >= 15:
+            score += 0.1
+            reasons.append(_pick_reason("savings", admin_group.name, admin_group.discount_percentage))
+        
+        score = min(score, 1.0)
+        
+        # Ensure at least one reason
+        if not reasons:
+            reasons.append(_pick_reason("default", admin_group.name))
+        
+        ml_scores = {
+            "collaborative_filtering": 0.3,
+            "content_based": 0.4,
+            "popularity": 0.3,
+            "hybrid": score
+        }
         
         # Calculate actual participant count from joins
         joins_count = db.query(AdminGroupJoin).filter(
@@ -2291,7 +2903,7 @@ def get_admin_group_recommendations(user: User, admin_groups: List[AdminGroup], 
             "estimated_delivery": admin_group.estimated_delivery,
             "features": admin_group.features or [],
             "requirements": admin_group.requirements or [],
-            "is_cold_start": is_new_admin_group,  # Flag to indicate cold start
+            "is_ml_based": True,  # All recommendations are now ML-based
             "current_amount": round(current_amount, 2),
             "target_amount": round(target_amount, 2),
             "amount_progress": round(amount_progress, 1)

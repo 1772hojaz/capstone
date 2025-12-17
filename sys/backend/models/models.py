@@ -5,6 +5,49 @@ from datetime import datetime
 from pydantic import BaseModel
 from .orders import Order, OrderItem
 
+class PendingRegistration(Base):
+    """Temporary storage for registrations pending email verification"""
+    __tablename__ = "pending_registrations"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, unique=True, index=True, nullable=False)
+    hashed_password = Column(String, nullable=False)
+    full_name = Column(String)
+    location_zone = Column(String)
+    
+    # User preferences
+    preferred_categories = Column(JSON, default=list)
+    budget_range = Column(String, default="medium")
+    experience_level = Column(String, default="beginner")
+    preferred_group_sizes = Column(JSON, default=list)
+    participation_frequency = Column(String, default="occasional")
+    
+    # Supplier fields (if registering as supplier)
+    is_supplier = Column(Boolean, default=False)
+    company_name = Column(String)
+    business_address = Column(Text)
+    tax_id = Column(String)
+    phone_number = Column(String)
+    business_type = Column(String)
+    business_description = Column(Text)
+    website_url = Column(String)
+    bank_account_name = Column(String)
+    bank_account_number = Column(String)
+    bank_name = Column(String)
+    payment_terms = Column(String)
+    
+    # OTP verification
+    otp_code = Column(String, nullable=False)  # 6-digit code
+    otp_expires = Column(DateTime, nullable=False)
+    otp_attempts = Column(Integer, default=0)  # Track failed attempts
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Indexes for quick lookup
+    __table_args__ = (
+        Index('idx_email_otp', 'email', 'otp_code'),
+    )
+
 class User(Base):
     __tablename__ = "users"
     
@@ -57,6 +100,13 @@ class User(Base):
     price_alerts = Column(Boolean, default=False)  # Frontend naming compatibility
     
     created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Password reset fields
+    password_reset_token = Column(String, nullable=True)
+    password_reset_expires = Column(DateTime, nullable=True)
+    
+    # Email verification fields (OTP-based via PendingRegistration table)
+    email_verified = Column(Boolean, default=False)
     
     # Relationships
     created_groups = relationship("GroupBuy", back_populates="creator", foreign_keys="GroupBuy.creator_id")

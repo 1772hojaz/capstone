@@ -32,6 +32,13 @@ const EnhancedRegistrationPage = () => {
   const [errors, setErrors] = useState<{[key: string]: string}>({});
   const [successMessage, setSuccessMessage] = useState('');
   
+  // OTP verification state
+  const [showOtpVerification, setShowOtpVerification] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
+  const [registeredEmail, setRegisteredEmail] = useState('');
+  const [otpExpiresIn, setOtpExpiresIn] = useState(600); // 10 minutes in seconds
+  const [canResendOtp, setCanResendOtp] = useState(false);
+  
   // Legal agreement state
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [agreedToPrivacy, setAgreedToPrivacy] = useState(false);
@@ -81,6 +88,23 @@ const EnhancedRegistrationPage = () => {
 
     fetchMetadata();
   }, []);
+
+  // OTP countdown timer
+  useEffect(() => {
+    if (!showOtpVerification) return;
+    
+    const timer = setInterval(() => {
+      setOtpExpiresIn((prev) => {
+        if (prev <= 1) {
+          setCanResendOtp(true);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [showOtpVerification]);
 
   const validateStep = (step: number): boolean => {
     const newErrors: {[key: string]: string} = {};
@@ -167,17 +191,76 @@ const EnhancedRegistrationPage = () => {
         participation_frequency: formData.participation_frequency
       });
 
-      setSuccessMessage('Account created successfully! Redirecting...');
+      // Check if OTP verification is required
+      if (response.status === 'otp_sent') {
+        setRegisteredEmail(formData.email);
+        setShowOtpVerification(true);
+        setSuccessMessage('Verification code sent to your email! Please check your inbox.');
+        setOtpExpiresIn(response.expires_in_minutes * 60 || 600);
+        setCanResendOtp(false);
+      } else {
+        // Old flow (shouldn't happen with new backend)
+        setSuccessMessage('Account created successfully! Redirecting...');
+        setTimeout(() => {
+          navigate('/trader');
+        }, 1500);
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'An error occurred. Please try again.';
+      setErrors({ general: errorMessage });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    if (!otpCode || otpCode.length !== 6) {
+      setErrors({ otp: 'Please enter a valid 6-digit code' });
+      return;
+    }
+
+    setIsLoading(true);
+    setErrors({});
+
+    try {
+      const response = await apiService.verifyOtp(registeredEmail, otpCode);
+      
+      setSuccessMessage('Email verified successfully! Redirecting...');
+      
       setTimeout(() => {
         if (response.is_admin) {
           navigate('/admin');
+        } else if (response.is_supplier) {
+          navigate('/supplier');
         } else {
           navigate('/trader');
         }
       }, 1500);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'An error occurred. Please try again.';
-      setErrors({ general: errorMessage });
+      const errorMessage = error instanceof Error ? error.message : 'Invalid verification code. Please try again.';
+      setErrors({ otp: errorMessage });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    if (!canResendOtp) {
+      return;
+    }
+
+    setIsLoading(true);
+    setErrors({});
+
+    try {
+      await apiService.resendOtp(registeredEmail);
+      setSuccessMessage('New verification code sent! Please check your email.');
+      setOtpExpiresIn(600); // Reset to 10 minutes
+      setCanResendOtp(false);
+      setOtpCode('');
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to resend code. Please try again.';
+      setErrors({ otp: errorMessage });
     } finally {
       setIsLoading(false);
     }
@@ -261,22 +344,138 @@ const EnhancedRegistrationPage = () => {
 
         {/* Form Card */}
         <div className="bg-white rounded-2xl shadow-xl p-8">
-          <form onSubmit={handleSubmit}>
-            {/* Success Message */}
-            {successMessage && (
-              <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg flex items-center text-green-700">
-                <CheckCircle className="w-5 h-5 mr-3 flex-shrink-0" />
-                <span>{successMessage}</span>
+          {/* OTP Verification UI */}
+          {showOtpVerification ? (
+            <div className="space-y-6">
+              <div className="text-center">
+                <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 rounded-full mb-4">
+                  <Mail className="w-8 h-8 text-blue-600" />
+                </div>
+                <h2 className="text-2xl font-bold text-gray-900 mb-2">Verify Your Email</h2>
+                <p className="text-gray-600">
+                  We've sent a 6-digit verification code to<br />
+                  <span className="font-semibold">{registeredEmail}</span>
+                </p>
               </div>
-            )}
 
-            {/* General Error */}
-            {errors.general && (
-              <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center text-red-700">
-                <AlertCircle className="w-5 h-5 mr-3 flex-shrink-0" />
-                <span>{errors.general}</span>
+              {/* Success Message */}
+              {successMessage && (
+                <div className="p-4 bg-green-50 border border-green-200 rounded-lg flex items-center text-green-700">
+                  <CheckCircle className="w-5 h-5 mr-3 flex-shrink-0" />
+                  <span>{successMessage}</span>
+                </div>
+              )}
+
+              {/* Error Message */}
+              {errors.otp && (
+                <div className="p-4 bg-red-50 border border-red-200 rounded-lg flex items-center text-red-700">
+                  <AlertCircle className="w-5 h-5 mr-3 flex-shrink-0" />
+                  <span>{errors.otp}</span>
+                </div>
+              )}
+
+              {/* OTP Input */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2 text-center">
+                  Enter Verification Code
+                </label>
+                <input
+                  type="text"
+                  value={otpCode}
+                  onChange={(e) => {
+                    const value = e.target.value.replace(/\D/g, '').slice(0, 6);
+                    setOtpCode(value);
+                    if (errors.otp) {
+                      setErrors({});
+                    }
+                  }}
+                  maxLength={6}
+                  className="w-full text-center text-2xl tracking-widest font-mono px-4 py-3 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="000000"
+                  disabled={isLoading}
+                />
               </div>
-            )}
+
+              {/* Timer */}
+              <div className="text-center">
+                {otpExpiresIn > 0 ? (
+                  <p className="text-sm text-gray-600">
+                    Code expires in{' '}
+                    <span className="font-semibold text-blue-600">
+                      {Math.floor(otpExpiresIn / 60)}:{(otpExpiresIn % 60).toString().padStart(2, '0')}
+                    </span>
+                  </p>
+                ) : (
+                  <p className="text-sm text-red-600 font-semibold">
+                    Code expired. Please request a new one.
+                  </p>
+                )}
+              </div>
+
+              {/* Verify Button */}
+              <button
+                type="button"
+                onClick={handleVerifyOtp}
+                disabled={isLoading || otpCode.length !== 6}
+                className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center"
+              >
+                {isLoading ? (
+                  <>
+                    <Loader className="w-5 h-5 mr-2 animate-spin" />
+                    Verifying...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="w-5 h-5 mr-2" />
+                    Verify Email
+                  </>
+                )}
+              </button>
+
+              {/* Resend Button */}
+              <div className="text-center">
+                <button
+                  type="button"
+                  onClick={handleResendOtp}
+                  disabled={!canResendOtp || isLoading}
+                  className="text-sm text-blue-600 hover:text-blue-700 disabled:text-gray-400 disabled:cursor-not-allowed font-medium"
+                >
+                  {canResendOtp ? 'Resend verification code' : 'Wait to resend code'}
+                </button>
+              </div>
+
+              {/* Back to Registration */}
+              <div className="text-center pt-4 border-t">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowOtpVerification(false);
+                    setOtpCode('');
+                    setErrors({});
+                  }}
+                  className="text-sm text-gray-600 hover:text-gray-900"
+                >
+                  ← Back to registration form
+                </button>
+              </div>
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit}>
+              {/* Success Message */}
+              {successMessage && (
+                <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg flex items-center text-green-700">
+                  <CheckCircle className="w-5 h-5 mr-3 flex-shrink-0" />
+                  <span>{successMessage}</span>
+                </div>
+              )}
+
+              {/* General Error */}
+              {errors.general && (
+                <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center text-red-700">
+                  <AlertCircle className="w-5 h-5 mr-3 flex-shrink-0" />
+                  <span>{errors.general}</span>
+                </div>
+              )}
 
             {/* Step 1: Basic Information */}
             {currentStep === 1 && (
@@ -723,6 +922,7 @@ const EnhancedRegistrationPage = () => {
               )}
             </div>
           </form>
+          )}
         </div>
 
         {/* Login Link */}

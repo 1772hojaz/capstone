@@ -37,6 +37,18 @@ class ApiServiceWrapper {
     return apiService.getRecommendations();
   }
 
+  async trackRecommendationClick(groupId: number) {
+    return apiService.trackRecommendationClick(groupId);
+  }
+
+  async trackRecommendationJoin(groupId: number) {
+    return apiService.trackRecommendationJoin(groupId);
+  }
+
+  async getRecommendationStats() {
+    return apiService.getRecommendationStats();
+  }
+
   // ==================== GROUPS ====================
   
   async getAllGroups() {

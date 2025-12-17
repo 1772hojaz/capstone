@@ -77,14 +77,6 @@ const GroupModeration = () => {
     fetchModerationData();
   }, []);
 
-  // Debug: Log state changes
-  useEffect(() => {
-    console.log('State updated:', {
-      activeGroups: activeGroups.length,
-      readyGroups: readyGroups.length,
-      completedGroups: completedGroups.length
-    });
-  }, [activeGroups, readyGroups, completedGroups]);
 
     const fetchModerationData = async () => {
       try {
@@ -98,23 +90,6 @@ const GroupModeration = () => {
         apiService.getReadyForPaymentGroups(),
         apiService.getCompletedGroups()
       ]);
-
-      console.log('API Response:', { statsData, activeData, readyData, completedData });
-      console.log('Active Groups Count:', activeData?.length || 0);
-      console.log('Ready Groups Count:', readyData?.length || 0);
-      console.log('Completed Groups Count:', completedData?.length || 0);
-      
-      if (readyData && readyData.length > 0) {
-        console.log('Ready for Payment Groups:', readyData);
-      } else {
-        console.warn('No ready for payment groups received from API');
-      }
-      
-      if (completedData && completedData.length > 0) {
-        console.log('Completed Groups:', completedData);
-      } else {
-        console.warn('No completed groups received from API');
-      }
 
       setStats(statsData || {
         active_groups: activeData?.length || 0,
@@ -132,7 +107,6 @@ const GroupModeration = () => {
       setError('Failed to load moderation data. Please try again.');
       } finally {
         setLoading(false);
-      console.log('Loading complete. Stats:', stats);
     }
   };
 
@@ -155,15 +129,12 @@ const GroupModeration = () => {
     switch (activeTab) {
       case 'active':
         groups = filterGroups(activeGroups);
-        console.log(`[${activeTab}] Showing ${groups.length} groups from ${activeGroups.length} total`);
         return groups;
       case 'ready':
         groups = filterGroups(readyGroups);
-        console.log(`[${activeTab}] Showing ${groups.length} groups from ${readyGroups.length} total`);
         return groups;
       case 'completed':
         groups = filterGroups(completedGroups);
-        console.log(`[${activeTab}] Showing ${groups.length} groups from ${completedGroups.length} total`);
         return groups;
       default:
         return [];
@@ -498,7 +469,6 @@ const GroupModeration = () => {
                   <button
                           key={tab.id}
                           onClick={() => {
-                            console.log(`Switching to tab: ${tab.id}`);
                             setActiveTab(tab.id as TabType);
                             // Clear search when switching tabs
                             setSearchQuery('');
@@ -540,13 +510,8 @@ const GroupModeration = () => {
               <div className="p-6">
                 {(() => {
                   const currentGroups = getCurrentGroups();
-                  console.log(`Rendering groups for tab "${activeTab}":`, {
-                    count: currentGroups.length,
-                    groups: currentGroups
-                  });
                   
                   if (currentGroups.length === 0) {
-                    console.log(`No groups to display for tab "${activeTab}"`);
                 return (
                       <EmptyState
                         icon="package"
@@ -556,12 +521,9 @@ const GroupModeration = () => {
                     );
                   }
                   
-                  console.log(`Rendering ${currentGroups.length} group cards`);
                   return (
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                      {currentGroups.map(group => {
-                        console.log(`  Rendering card for: ${group.name || 'Unknown'}`);
-                        return (
+                      {currentGroups.map(group => (
                           <GroupCard
                             key={group.id}
                             group={group}
@@ -571,8 +533,7 @@ const GroupModeration = () => {
                             onProcessPayment={handleProcessPayment}
                             showPaymentButton={activeTab === 'ready'}
                           />
-                        );
-                      })}
+                      ))}
             </div>
                   );
                 })()}

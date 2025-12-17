@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { 
   User, Camera, Mail, MapPin, Calendar, Edit2, Save, X, 
   Shield, Bell, CreditCard, Settings, TrendingUp, Package,
-  CheckCircle, Lock
+  CheckCircle, Lock, AlertCircle
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import apiService from '../services/api';
@@ -49,6 +49,12 @@ export default function ProfilePage() {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  
+  // Delete account state
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleteConfirmation, setDeleteConfirmation] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
   
   const [profileData, setProfileData] = useState({
     full_name: '',
@@ -248,6 +254,37 @@ export default function ProfilePage() {
       setError(err instanceof Error ? err.message : 'Failed to change password');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    // Validation
+    if (!deletePassword) {
+      setError('Please enter your password to confirm deletion');
+      return;
+    }
+
+    if (deleteConfirmation.toUpperCase() !== 'DELETE') {
+      setError('Please type DELETE to confirm account deletion');
+      return;
+    }
+
+    try {
+      setIsDeleting(true);
+      setError(null);
+
+      await apiService.deleteAccount(deletePassword, deleteConfirmation);
+
+      // Account deleted successfully - redirect to home page
+      setSuccessMessage('Account deleted successfully. Goodbye!');
+      
+      setTimeout(() => {
+        navigate('/');
+      }, 2000);
+    } catch (err) {
+      console.error('Failed to delete account:', err);
+      setError(err instanceof Error ? err.message : 'Failed to delete account. Please try again.');
+      setIsDeleting(false);
     }
   };
 
@@ -855,9 +892,102 @@ export default function ProfilePage() {
                         <div className="flex-1">
                           <h4 className="font-semibold text-gray-900 mb-1">Two-Factor Authentication</h4>
                           <p className="text-sm text-gray-600 mb-3">Add an extra layer of security to your account</p>
-                          <Button variant="secondary" size="md">
+                          <Button variant="secondary" size="default">
                             Enable 2FA
                           </Button>
+                        </div>
+                      </div>
+                    </Card>
+
+                    {/* Delete Account Section */}
+                    <Card variant="outlined" padding="lg" className="border-red-200 bg-red-50">
+                      <div className="flex items-start gap-4">
+                        <div className="p-2 bg-red-100 rounded-lg">
+                          <AlertCircle className="w-5 h-5 text-red-600" />
+                        </div>
+                        <div className="flex-1">
+                          <h4 className="font-semibold text-gray-900 mb-1">Delete Account</h4>
+                          <p className="text-sm text-gray-600 mb-3">
+                            Permanently delete your account and all associated data. This action cannot be undone.
+                          </p>
+                          
+                          {!showDeleteConfirm ? (
+                            <Button 
+                              variant="destructive" 
+                              size="default"
+                              onClick={() => setShowDeleteConfirm(true)}
+                            >
+                              Delete My Account
+                            </Button>
+                          ) : (
+                            <div className="space-y-4 mt-4 p-4 bg-white rounded-lg border border-red-200">
+                              <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg">
+                                <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                                <div className="text-sm text-red-800">
+                                  <p className="font-semibold mb-1">Warning: This action is permanent!</p>
+                                  <ul className="list-disc list-inside space-y-1 text-red-700">
+                                    <li>All your group memberships will be removed</li>
+                                    <li>Your order history will be deleted</li>
+                                    <li>Your profile information will be permanently erased</li>
+                                    <li>This action cannot be reversed</li>
+                                  </ul>
+                                </div>
+                              </div>
+
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                  Confirm your password
+                                </label>
+                                <input
+                                  type="password"
+                                  value={deletePassword}
+                                  onChange={(e) => setDeletePassword(e.target.value)}
+                                  className="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                                  placeholder="Enter your password"
+                                  disabled={isDeleting}
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                  Type <span className="font-bold text-red-600">DELETE</span> to confirm
+                                </label>
+                                <input
+                                  type="text"
+                                  value={deleteConfirmation}
+                                  onChange={(e) => setDeleteConfirmation(e.target.value)}
+                                  className="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                                  placeholder="Type DELETE"
+                                  disabled={isDeleting}
+                                />
+                              </div>
+
+                              <div className="flex gap-3">
+                                <Button
+                                  variant="destructive"
+                                  size="lg"
+                                  onClick={handleDeleteAccount}
+                                  disabled={isDeleting || !deletePassword || deleteConfirmation.toUpperCase() !== 'DELETE'}
+                                  className="flex-1"
+                                >
+                                  {isDeleting ? 'Deleting Account...' : 'Permanently Delete Account'}
+                                </Button>
+                                <Button
+                                  variant="secondary"
+                                  size="lg"
+                                  onClick={() => {
+                                    setShowDeleteConfirm(false);
+                                    setDeletePassword('');
+                                    setDeleteConfirmation('');
+                                    setError(null);
+                                  }}
+                                  disabled={isDeleting}
+                                >
+                                  Cancel
+                                </Button>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </Card>

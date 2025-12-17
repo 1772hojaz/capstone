@@ -56,16 +56,32 @@ const TraderDashboard = () => {
     loadRecommendations();
   }, []);
 
-  // View group handler
-  const handleViewGroup = (recommendation: any) => {
-    navigate(`/group/${recommendation.group_buy_id}`, { 
+  // View group handler - tracks recommendation click
+  const handleViewGroup = async (recommendation: any) => {
+    // Track the click in the background (don't wait for it)
+    const groupId = recommendation.group_buy_id || recommendation.id;
+    if (groupId) {
+      apiService.trackRecommendationClick(groupId).catch(err => {
+        console.warn('Failed to track recommendation click:', err);
+      });
+    }
+    
+    navigate(`/group/${groupId}`, { 
       state: { recommendation, mode: 'view', source: 'dashboard' } 
     });
   };
 
-  // Join group handler
-  const handleJoinGroup = (recommendation: any) => {
-    navigate(`/group/${recommendation.group_buy_id}`, { 
+  // Join group handler - tracks recommendation click then navigates to join
+  const handleJoinGroup = async (recommendation: any) => {
+    // Track the click in the background (don't wait for it)
+    const groupId = recommendation.group_buy_id || recommendation.id;
+    if (groupId) {
+      apiService.trackRecommendationClick(groupId).catch(err => {
+        console.warn('Failed to track recommendation click:', err);
+      });
+    }
+    
+    navigate(`/group/${groupId}`, { 
       state: { recommendation, mode: 'join', source: 'dashboard' } 
     });
   };

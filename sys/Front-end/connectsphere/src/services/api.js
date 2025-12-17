@@ -253,10 +253,30 @@ class ApiService {
       body: JSON.stringify(userData),
     });
 
-    // Store token on successful registration
+    // Note: No token is returned - user must verify OTP first
+    // Token will be stored after successful OTP verification
+    return response;
+  }
+
+  async verifyOtp(email, otpCode) {
+    const response = await this.request('/api/auth/verify-otp', {
+      method: 'POST',
+      body: JSON.stringify({ email, otp_code: otpCode }),
+    });
+
+    // Store token on successful OTP verification
     if (response.access_token) {
       localStorage.setItem('token', response.access_token);
     }
+
+    return response;
+  }
+
+  async resendOtp(email) {
+    const response = await this.request('/api/auth/resend-otp', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
 
     return response;
   }
@@ -312,6 +332,18 @@ class ApiService {
       method: 'PUT',
       body: JSON.stringify(passwordData),
     });
+  }
+
+  async deleteAccount(password, confirmation) {
+    const response = await this.request('/api/auth/account', {
+      method: 'DELETE',
+      body: JSON.stringify({ password, confirmation }),
+    });
+    
+    // Clear token after successful account deletion
+    localStorage.removeItem('token');
+    
+    return response;
   }
 
   async updateContribution(groupId, quantity) {
@@ -390,6 +422,25 @@ class ApiService {
 
   async getHybridRecommendations() {
     return this.request('/api/ml/hybrid-recommendations');
+  }
+
+  // Track recommendation click (when user clicks to view details)
+  async trackRecommendationClick(groupId) {
+    return this.request(`/api/ml/recommendations/${groupId}/click`, {
+      method: 'POST'
+    });
+  }
+
+  // Track recommendation join (when user joins the group)
+  async trackRecommendationJoin(groupId) {
+    return this.request(`/api/ml/recommendations/${groupId}/join`, {
+      method: 'POST'
+    });
+  }
+
+  // Get recommendation stats for current user
+  async getRecommendationStats() {
+    return this.request('/api/ml/recommendations/stats');
   }
 
   // Admin methods (only available to admin users)

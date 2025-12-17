@@ -28,7 +28,7 @@ class FlutterwaveService:
                 "tx_ref": tx_ref,
                 "amount": str(amount),
                 "currency": currency,
-                "redirect_url": redirect_url or f"{os.getenv('BACKEND_URL', 'http://connectafrica.store')}/api/payment/callback",
+                "redirect_url": redirect_url or f"{os.getenv('BACKEND_URL', 'http://localhost:8000')}/api/payment/callback",
                 "payment_options": "card,mobilemoney,ussd",
                 "customer": {
                     "email": email,

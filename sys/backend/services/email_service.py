@@ -18,7 +18,7 @@ class EmailService:
     def __init__(self):
         """Initialize email service with Resend API key"""
         self.api_key = os.getenv('RESEND_API_KEY', '')
-        self.from_email = os.getenv('FROM_EMAIL', 'onboarding@resend.dev')
+        self.from_email = os.getenv('FROM_EMAIL', 'noreply@connectafrica.store')
         self.from_name = os.getenv('FROM_NAME', 'ConnectAfrica')
         self.api_url = "https://api.resend.com/emails"
         
@@ -269,7 +269,7 @@ This is an automated message from ConnectAfrica.
         user_name: str
     ) -> Dict:
         """Send welcome email to new users"""
-        subject = "Welcome to ConnectAfrica! 🎉"
+        subject = "Welcome to ConnectAfrica! "
         
         body_html = f"""
         <html>
@@ -403,6 +403,86 @@ Date: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
 You will be notified when the group buy reaches its goal and your order is ready for pickup.
 
 Thank you for using ConnectAfrica!
+        """
+        
+        return self.send_email(user_email, subject, body_html, body_text)
+    
+    def send_password_reset_email(
+        self,
+        user_email: str,
+        user_name: str,
+        reset_url: str,
+        expires_in_minutes: int = 60
+    ) -> Dict:
+        """Send password reset email with secure link"""
+        subject = "Reset Your Password - ConnectAfrica"
+        
+        body_html = f"""
+        <html>
+        <head>
+            <style>
+                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                .header {{ background-color: #6366f1; color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }}
+                .content {{ padding: 30px; background-color: #f9f9f9; }}
+                .button {{ background-color: #6366f1; color: white; padding: 14px 28px; text-decoration: none; display: inline-block; margin: 20px 0; border-radius: 6px; font-weight: bold; font-size: 16px; }}
+                .warning {{ background-color: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; margin: 20px 0; border-radius: 4px; }}
+                .footer {{ padding: 20px; text-align: center; font-size: 12px; color: #666; }}
+                .link-text {{ word-break: break-all; font-size: 12px; color: #666; margin-top: 10px; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1> Password Reset Request</h1>
+                </div>
+                <div class="content">
+                    <p>Hi {user_name},</p>
+                    
+                    <p>We received a request to reset your password for your ConnectAfrica account.</p>
+                    
+                    <p style="text-align: center;">
+                        <a href="{reset_url}" class="button">Reset My Password</a>
+                    </p>
+                    
+                    <div class="warning">
+                        <strong> This link expires in {expires_in_minutes} minutes.</strong><br>
+                        For security reasons, this password reset link can only be used once.
+                    </div>
+                    
+                    <p>If you didn't request a password reset, you can safely ignore this email. Your password will remain unchanged.</p>
+                    
+                    <p>If the button above doesn't work, copy and paste this link into your browser:</p>
+                    <p class="link-text">{reset_url}</p>
+                    
+                    <p>Stay secure,<br>The ConnectAfrica Team</p>
+                </div>
+                <div class="footer">
+                    <p>This is an automated message from ConnectAfrica.</p>
+                    <p>If you didn't request this email, please ignore it or contact support if you have concerns.</p>
+                    <p>&copy; 2024 ConnectAfrica. All rights reserved.</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        
+        body_text = f"""
+Password Reset Request
+
+Hi {user_name},
+
+We received a request to reset your password for your ConnectAfrica account.
+
+Click the link below to reset your password:
+{reset_url}
+
+This link expires in {expires_in_minutes} minutes.
+
+If you didn't request a password reset, you can safely ignore this email. Your password will remain unchanged.
+
+Stay secure,
+The ConnectAfrica Team
         """
         
         return self.send_email(user_email, subject, body_html, body_text)

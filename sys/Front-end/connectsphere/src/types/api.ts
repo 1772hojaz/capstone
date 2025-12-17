@@ -5,6 +5,9 @@ export interface Group {
   category?: string;
   price: number;
   original_price?: number;
+  originalPrice?: number;
+  discountPercentage?: number;
+  savings?: number;
   participants?: number;
   participants_count?: number;
   max_participants?: number;
@@ -12,6 +15,13 @@ export interface Group {
   created?: string;
   admin_group_id?: number;
   product_id?: number;
+  image_url?: string;
+  joined?: boolean;
+  current_amount?: number;
+  target_amount?: number;
+  endDate?: string;
+  end_date?: string;
+  status?: string;
 }
 
 export interface CurrentUser {
@@ -20,6 +30,7 @@ export interface CurrentUser {
   full_name?: string;
   location_zone?: string;
   is_admin?: boolean;
+  is_supplier?: boolean;
 }
 
 export interface PaymentInit {
@@ -31,6 +42,3 @@ export interface PaymentInit {
   originalPrice: string;
   action: string;
 }
-*** End Patch
-```} }}} } }}}  assistant to=functions.apply_patch конец ***!
-
