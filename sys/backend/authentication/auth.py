@@ -9,7 +9,7 @@ import os
 import secrets
 from typing import List, Optional
 from db.database import get_db
-from models.models import User
+from models.models import User, PendingRegistration
 
 router = APIRouter()
 security = HTTPBearer()
@@ -144,6 +144,13 @@ class ResetPasswordRequest(BaseModel):
     token: str
     new_password: str
 
+class VerifyOTPRequest(BaseModel):
+    email: EmailStr
+    otp_code: str
+
+class ResendOTPRequest(BaseModel):
+    email: EmailStr
+
 # Helper Functions
 def hash_password(password: str) -> str:
     # Bcrypt has a 72-byte limit, truncate password if necessary
@@ -187,6 +194,95 @@ def create_access_token(data: dict) -> str:
     expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+def generate_otp() -> str:
+    """Generate a 6-digit OTP code"""
+    return ''.join([str(secrets.randbelow(10)) for _ in range(6)])
+
+def send_otp_email(user_email: str, user_name: str, otp_code: str) -> dict:
+    """Send OTP code via email"""
+    try:
+        from services.email_service import email_service
+        
+        subject = "Your Verification Code - ConnectSphere"
+        
+        body_html = f"""
+        <html>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+            <div style="max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9fafb; border-radius: 10px;">
+                <div style="text-align: center; padding: 20px 0;">
+                    <h1 style="color: #10b981; margin: 0;">Welcome to ConnectSphere!</h1>
+                </div>
+                <div style="background-color: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                    <h2 style="color: #333; margin-top: 0;">Verify Your Email Address</h2>
+                    <p>Hi {user_name},</p>
+                    <p>Thank you for registering with ConnectSphere! To complete your registration, please enter this verification code:</p>
+                    
+                    <div style="background-color: #f0fdf4; border: 2px dashed #10b981; border-radius: 8px; padding: 20px; margin: 30px 0; text-align: center;">
+                        <p style="color: #666; font-size: 14px; margin: 0 0 10px 0;">Your Verification Code</p>
+                        <p style="font-size: 36px; font-weight: bold; color: #10b981; letter-spacing: 8px; margin: 0; font-family: 'Courier New', monospace;">
+                            {otp_code}
+                        </p>
+                    </div>
+                    
+                    <div style="background-color: #fef3c7; border-left: 4px solid #f59e0b; padding: 12px 16px; border-radius: 4px; margin: 20px 0;">
+                        <p style="margin: 0; color: #92400e; font-size: 14px;">
+                            <strong>⏱️ Code expires in 10 minutes</strong><br>
+                            For security, this code can only be used once.
+                        </p>
+                    </div>
+                    
+                    <p style="color: #666; font-size: 14px; margin-top: 20px;">
+                        <strong>Security Tips:</strong>
+                    </p>
+                    <ul style="color: #666; font-size: 14px;">
+                        <li>Never share this code with anyone</li>
+                        <li>ConnectSphere will never ask for this code via phone or SMS</li>
+                        <li>If you didn't request this code, please ignore this email</li>
+                    </ul>
+                </div>
+                <div style="text-align: center; padding: 20px; color: #666; font-size: 12px;">
+                    <p>Best regards,<br>The ConnectSphere Team</p>
+                    <p style="margin-top: 10px; color: #999;">
+                        This is an automated message, please do not reply.
+                    </p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        
+        body_text = f"""
+        Welcome to ConnectSphere!
+        
+        Hi {user_name},
+        
+        Your verification code is: {otp_code}
+        
+        Please enter this code on the registration page to complete your signup.
+        
+        This code expires in 10 minutes and can only be used once.
+        
+        Security Tips:
+        - Never share this code with anyone
+        - ConnectSphere will never ask for this code via phone
+        - If you didn't request this code, please ignore this email
+        
+        Best regards,
+        The ConnectSphere Team
+        """
+        
+        result = email_service.send_email(
+            to_email=user_email,
+            subject=subject,
+            body_html=body_html,
+            body_text=body_text
+        )
+        
+        return result
+    except Exception as e:
+        print(f"Error sending OTP email: {e}")
+        return {"status": "failed", "message": str(e)}
 
 def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security), db: Session = Depends(get_db)):
     try:
@@ -242,15 +338,27 @@ def verify_trader(user: User = Depends(verify_token)):
     return user
 
 # Routes
-@router.post("/register", response_model=Token)
+@router.post("/register")
 async def register(user_data: UserRegister, db: Session = Depends(get_db)):
-    # Check if user exists
+    """Register a new user - sends OTP to email for verification"""
+    # Check if user already exists
     existing_user = db.query(User).filter(User.email == user_data.email).first()
     if existing_user:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
     
-    # Create new user
-    new_user = User(
+    # Check if there's a pending registration for this email
+    pending = db.query(PendingRegistration).filter(PendingRegistration.email == user_data.email).first()
+    if pending:
+        # Delete old pending registration
+        db.delete(pending)
+        db.commit()
+    
+    # Generate OTP
+    otp_code = generate_otp()
+    otp_expires = datetime.utcnow() + timedelta(minutes=10)  # 10 minutes expiry
+    
+    # Create pending registration (user not created yet!)
+    pending_registration = PendingRegistration(
         email=user_data.email,
         hashed_password=hash_password(user_data.password),
         full_name=user_data.full_name,
@@ -260,14 +368,131 @@ async def register(user_data: UserRegister, db: Session = Depends(get_db)):
         experience_level=user_data.experience_level,
         preferred_group_sizes=user_data.preferred_group_sizes,
         participation_frequency=user_data.participation_frequency,
-        is_admin=False
+        is_supplier=False,
+        otp_code=otp_code,
+        otp_expires=otp_expires,
+        otp_attempts=0
     )
     
+    db.add(pending_registration)
+    db.commit()
+    
+    # Send OTP email
+    try:
+        email_result = send_otp_email(
+            user_email=user_data.email,
+            user_name=user_data.full_name or "User",
+            otp_code=otp_code
+        )
+        
+        if email_result.get("status") in ["sent", "simulated"]:
+            return {
+                "message": "Verification code sent! Please check your email and enter the 6-digit code to complete registration.",
+                "email": user_data.email,
+                "status": "otp_sent",
+                "expires_in_minutes": 10
+            }
+        else:
+            # If email fails, delete pending registration
+            db.delete(pending_registration)
+            db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to send verification email. Please try again."
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error during registration: {e}")
+        # Delete pending registration on error
+        db.delete(pending_registration)
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Registration failed. Please try again."
+        )
+
+@router.post("/verify-otp")
+async def verify_otp(request: VerifyOTPRequest, db: Session = Depends(get_db)):
+    """Verify OTP and complete user registration"""
+    # Find pending registration
+    pending = db.query(PendingRegistration).filter(PendingRegistration.email == request.email).first()
+    
+    if not pending:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No pending registration found for this email. Please register first."
+        )
+    
+    # Check if OTP has expired
+    if pending.otp_expires < datetime.utcnow():
+        db.delete(pending)
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="OTP has expired. Please register again to get a new code."
+        )
+    
+    # Check max attempts (prevent brute force)
+    if pending.otp_attempts >= 5:
+        db.delete(pending)
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many failed attempts. Please register again to get a new code."
+        )
+    
+    # Verify OTP
+    if pending.otp_code != request.otp_code:
+        # Increment failed attempts
+        pending.otp_attempts += 1
+        db.commit()
+        
+        remaining = 5 - pending.otp_attempts
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid OTP code. {remaining} attempts remaining."
+        )
+    
+    # OTP is valid! Create the actual user account
+    new_user = User(
+        email=pending.email,
+        hashed_password=pending.hashed_password,
+        full_name=pending.full_name,
+        location_zone=pending.location_zone,
+        preferred_categories=pending.preferred_categories,
+        budget_range=pending.budget_range,
+        experience_level=pending.experience_level,
+        preferred_group_sizes=pending.preferred_group_sizes,
+        participation_frequency=pending.participation_frequency,
+        is_admin=False,
+        is_supplier=pending.is_supplier,
+        email_verified=True,  # Mark as verified since OTP was confirmed
+        is_active=True
+    )
+    
+    # If supplier, add supplier fields
+    if pending.is_supplier:
+        new_user.company_name = pending.company_name
+        new_user.business_address = pending.business_address
+        new_user.tax_id = pending.tax_id
+        new_user.phone_number = pending.phone_number
+        new_user.business_type = pending.business_type
+        new_user.business_description = pending.business_description
+        new_user.website_url = pending.website_url
+        new_user.bank_account_name = pending.bank_account_name
+        new_user.bank_account_number = pending.bank_account_number
+        new_user.bank_name = pending.bank_name
+        new_user.payment_terms = pending.payment_terms
+        new_user.is_verified = False
+        new_user.verification_status = "pending"
+    
     db.add(new_user)
+    db.delete(pending)  # Remove pending registration
     db.commit()
     db.refresh(new_user)
     
-    # Create token
+    # Create access token for immediate login
     access_token = create_access_token({"user_id": new_user.id, "email": new_user.email})
     
     return Token(
@@ -278,8 +503,59 @@ async def register(user_data: UserRegister, db: Session = Depends(get_db)):
         is_supplier=new_user.is_supplier,
         location_zone=new_user.location_zone,
         full_name=new_user.full_name,
-        email=new_user.email
+        email=new_user.email,
+        company_name=new_user.company_name if new_user.is_supplier else None
     )
+
+@router.post("/resend-otp")
+async def resend_otp(request: ResendOTPRequest, db: Session = Depends(get_db)):
+    """Resend OTP code for pending registration"""
+    # Find pending registration
+    pending = db.query(PendingRegistration).filter(PendingRegistration.email == request.email).first()
+    
+    if not pending:
+        # Don't reveal if email has pending registration
+        return {
+            "message": "If there's a pending registration for this email, a new code has been sent.",
+            "status": "sent"
+        }
+    
+    # Generate new OTP
+    otp_code = generate_otp()
+    otp_expires = datetime.utcnow() + timedelta(minutes=10)
+    
+    # Update pending registration
+    pending.otp_code = otp_code
+    pending.otp_expires = otp_expires
+    pending.otp_attempts = 0  # Reset attempts
+    db.commit()
+    
+    # Send OTP email
+    try:
+        email_result = send_otp_email(
+            user_email=pending.email,
+            user_name=pending.full_name or "User",
+            otp_code=otp_code
+        )
+        
+        if email_result.get("status") in ["sent", "simulated"]:
+            return {
+                "message": "New verification code sent! Please check your email.",
+                "status": "sent",
+                "email": pending.email,
+                "expires_in_minutes": 10
+            }
+        else:
+            return {
+                "message": "Failed to send verification code. Please try again later.",
+                "status": "failed"
+            }
+    except Exception as e:
+        print(f"Error resending OTP: {e}")
+        return {
+            "message": "Failed to send verification code. Please try again later.",
+            "status": "failed"
+        }
 
 @router.post("/login", response_model=Token)
 async def login(credentials: UserLogin, db: Session = Depends(get_db)):
@@ -287,6 +563,20 @@ async def login(credentials: UserLogin, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == credentials.email).first()
     if not user or not verify_password(credentials.password, user.hashed_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+    
+    # Check if email is verified
+    if not user.email_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email not verified. Please check your email for the verification link or request a new one."
+        )
+    
+    # Check if account is active
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account has been deactivated. Please contact support."
+        )
     
     # Create token
     access_token = create_access_token({"user_id": user.id, "email": user.email})
@@ -672,9 +962,9 @@ async def get_verification_status(user: User = Depends(verify_token)):
         "description": status_descriptions.get(user.verification_status, "Unknown status")
     }
 
-@router.post("/register-supplier", response_model=Token)
+@router.post("/register-supplier")
 async def register_supplier(supplier_data: SupplierRegister, db: Session = Depends(get_db)):
-    """Register a new supplier with enhanced validation"""
+    """Register a new supplier - sends OTP to email for verification"""
     # Validate password strength
     if not validate_password_strength(supplier_data.password):
         raise HTTPException(
@@ -684,10 +974,9 @@ async def register_supplier(supplier_data: SupplierRegister, db: Session = Depen
     
     # Validate business email (optional warning)
     if not validate_business_email(supplier_data.email):
-        # Just log for now, don't block registration
         print(f"Warning: Personal email domain used for business registration: {supplier_data.email}")
     
-    # Check if user exists
+    # Check if user already exists
     existing_user = db.query(User).filter(User.email == supplier_data.email).first()
     if existing_user:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
@@ -704,19 +993,30 @@ async def register_supplier(supplier_data: SupplierRegister, db: Session = Depen
                 detail="Company name already registered"
             )
     
+    # Check for pending registration
+    pending = db.query(PendingRegistration).filter(PendingRegistration.email == supplier_data.email).first()
+    if pending:
+        db.delete(pending)
+        db.commit()
+    
     # Sanitize phone number
     cleaned_phone = sanitize_phone_number(supplier_data.phone_number)
     
-    # Create new supplier
-    new_supplier = User(
+    # Generate OTP
+    otp_code = generate_otp()
+    otp_expires = datetime.utcnow() + timedelta(minutes=10)
+    
+    # Create pending registration for supplier
+    pending_registration = PendingRegistration(
         email=supplier_data.email,
         hashed_password=hash_password(supplier_data.password),
         full_name=supplier_data.full_name,
+        location_zone=supplier_data.location_zone,
+        is_supplier=True,
         company_name=supplier_data.company_name,
         business_address=supplier_data.business_address,
         tax_id=supplier_data.tax_id,
         phone_number=cleaned_phone,
-        location_zone=supplier_data.location_zone,
         business_type=supplier_data.business_type,
         business_description=supplier_data.business_description,
         website_url=supplier_data.website_url,
@@ -724,31 +1024,44 @@ async def register_supplier(supplier_data: SupplierRegister, db: Session = Depen
         bank_account_number=supplier_data.bank_account_number,
         bank_name=supplier_data.bank_name,
         payment_terms=supplier_data.payment_terms,
-        is_supplier=True,
-        is_admin=False,
-        is_verified=False,
-        verification_status="pending"
+        otp_code=otp_code,
+        otp_expires=otp_expires,
+        otp_attempts=0
     )
     
-    db.add(new_supplier)
+    db.add(pending_registration)
     db.commit()
-    db.refresh(new_supplier)
     
-    # Create token
-    access_token = create_access_token({
-        "user_id": new_supplier.id, 
-        "email": new_supplier.email,
-        "is_supplier": True
-    })
-    
-    return Token(
-        access_token=access_token,
-        token_type="bearer",
-        user_id=new_supplier.id,
-        is_admin=new_supplier.is_admin,
-        is_supplier=new_supplier.is_supplier,
-        location_zone=new_supplier.location_zone,
-        full_name=new_supplier.full_name,
-        email=new_supplier.email,
-        company_name=new_supplier.company_name
-    )
+    # Send OTP email
+    try:
+        email_result = send_otp_email(
+            user_email=supplier_data.email,
+            user_name=supplier_data.full_name or "Supplier",
+            otp_code=otp_code
+        )
+        
+        if email_result.get("status") in ["sent", "simulated"]:
+            return {
+                "message": "Verification code sent! Please check your email and enter the 6-digit code to complete registration.",
+                "email": supplier_data.email,
+                "company_name": supplier_data.company_name,
+                "status": "otp_sent",
+                "expires_in_minutes": 10
+            }
+        else:
+            db.delete(pending_registration)
+            db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to send verification email. Please try again."
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error during supplier registration: {e}")
+        db.delete(pending_registration)
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Registration failed. Please try again."
+        )

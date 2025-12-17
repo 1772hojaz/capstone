@@ -4,6 +4,7 @@ import asyncio
 import logging
 import logging.config
 import os
+from datetime import datetime
 from logging.config import dictConfig
 from dotenv import load_dotenv
 
@@ -21,6 +22,7 @@ from ml.ml import router as ml_router
 from models.admin import router as admin_router
 from models.settings import router as settings_router
 from models.supplier import router as supplier_router
+from models.models import PendingRegistration
 from payment.payment_router import router as payment_router
 from ml.ml_scheduler import scheduler, start_scheduler
 from websocket.websocket_manager import manager
@@ -117,6 +119,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Background task for OTP cleanup
+async def cleanup_expired_otps_task():
+    """Background task to periodically clean up expired OTP records"""
+    while True:
+        await asyncio.sleep(3600)  # Sleep for 1 hour
+        db = SessionLocal()
+        try:
+            db.query(PendingRegistration).filter(
+                PendingRegistration.otp_expires < datetime.utcnow()
+            ).delete()
+            db.commit()
+        except Exception:
+            pass  # Silent operation as requested
+        finally:
+            db.close()
+
 # Startup event - auto-train models if needed and start scheduler
 @app.on_event("startup")
 async def startup_event():
@@ -200,6 +218,10 @@ async def startup_event():
         print("   - Data source: Live database (no synthetic data)")
         asyncio.create_task(start_scheduler())
         print("✅ Scheduler started successfully")
+        
+        # Start OTP cleanup background task
+        asyncio.create_task(cleanup_expired_otps_task())
+        
         print("="*60 + "\n")
 
     except Exception as e:

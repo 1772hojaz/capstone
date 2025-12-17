@@ -5,9 +5,103 @@ Provides human-readable explanations for recommendations without requiring SHAP/
 Implements lightweight explainability techniques aligned with research proposal objectives.
 """
 
-from typing import Dict, Any
+from typing import Dict, Any, List
 from models.models import User, GroupBuy, Transaction
 from sqlalchemy.orm import Session
+import random
+from datetime import datetime
+
+# =============================================================================
+# EXPLANATION TEMPLATES - Varied, product-specific phrasings
+# =============================================================================
+
+# Collaborative Filtering - Similar Users
+CF_TEMPLATES = [
+    "People who buy similar products as you buy {product_name}",
+    "Traders with your purchase pattern often choose {product_name}",
+    "Based on what similar traders bought, you might like {product_name}",
+    "{participant_count} traders like you already joined this {product_name} group",
+    "Your trading community frequently purchases {product_name}",
+]
+
+# Content-Based - Category Match
+CATEGORY_TEMPLATES = [
+    "You've bought {category} items before - {product_name} fits your style",
+    "Since you shop {category}, {product_name} is a natural fit",
+    "{product_name} matches your interest in {category} products",
+    "Based on your {category} purchases, you'll love {product_name}",
+    "Your {category} shopping history suggests {product_name} is right for you",
+]
+
+# Purchase History
+HISTORY_TEMPLATES = [
+    "You've purchased {product_name} {count} time(s) before - get it again at group pricing",
+    "Since you bought {product_name} previously, here's a chance to stock up",
+    "{product_name} is back - you've bought this {count} time(s) before",
+    "Restock on {product_name} - a product you know and trust",
+]
+
+# Savings-Based
+SAVINGS_TEMPLATES = [
+    "Save ${amount:.2f} on {product_name} - that's {pct:.0f}% off retail",
+    "{product_name} is ${amount:.2f} cheaper than buying individually",
+    "Get {product_name} at group pricing - {pct:.0f}% below market",
+    "At ${price:.2f}, {product_name} is {pct:.0f}% less than the ${original:.2f} retail price",
+    "Group discount brings {product_name} down by ${amount:.2f}",
+]
+
+# Urgency/Deadline
+URGENCY_TEMPLATES = [
+    "{product_name} group closes {day_name} - {days} days left",
+    "Last chance for {product_name} - ends in {days} days",
+    "Only {days} days to join the {product_name} group",
+    "Hurry! {product_name} deal ends {day_name}",
+    "Don't miss out - {product_name} group closing {day_name}",
+]
+
+# Progress-Based
+PROGRESS_TEMPLATES = [
+    "{participants} traders already joined {product_name} - almost at target!",
+    "{product_name} is {progress:.0f}% to target - help complete the group",
+    "Just {remaining} more units needed for {product_name} group to succeed",
+    "The {product_name} group is {progress:.0f}% funded - join now",
+    "{product_name} group nearly there at {progress:.0f}% - be part of it",
+]
+
+# Popularity
+POPULARITY_TEMPLATES = [
+    "{product_name} is trending - high demand in your area",
+    "{product_name} is a hot item among traders right now",
+    "High demand for {product_name} - many traders are buying",
+    "{product_name} is popular this week",
+    "Traders are snapping up {product_name} - don't miss out",
+]
+
+# Cluster Similarity
+CLUSTER_TEMPLATES = [
+    "Popular with traders in your trading group",
+    "Other traders with similar buying habits love {product_name}",
+    "Traders in your cluster frequently buy {product_name}",
+    "{product_name} is a favorite among traders like you",
+]
+
+
+def _get_day_name(days: int) -> str:
+    """Get the day name for a deadline."""
+    target_date = datetime.utcnow().date()
+    from datetime import timedelta
+    target_date = target_date + timedelta(days=days)
+    return target_date.strftime("%A")
+
+
+def _pick_template(templates: List[str], **kwargs) -> str:
+    """Pick a random template and format it with the given kwargs."""
+    template = random.choice(templates)
+    try:
+        return template.format(**kwargs)
+    except KeyError:
+        # If some kwargs are missing, return the first template with available kwargs
+        return templates[0].format(**{k: v for k, v in kwargs.items() if k in templates[0]})
 
 
 def explain_recommendation(
@@ -31,10 +125,12 @@ def explain_recommendation(
     Returns:
         Structured explanation with factors, contributions, and natural language
     """
+    product_name = group_buy.product.name
+    category = group_buy.product.category or "general"
     
     explanation = {
         "recommendation_id": group_buy.id,
-        "product_name": group_buy.product.name,
+        "product_name": product_name,
         "overall_score": ml_scores.get("hybrid", 0.0),
         "explanation_type": "hybrid_ml_explanation",
         "component_contributions": {},
@@ -57,19 +153,24 @@ def explain_recommendation(
             "raw_score": round(cf_score, 3),
             "weight": ALPHA,
             "contribution": round(cf_score * ALPHA, 3),
-            "description": "Based on traders with similar purchase patterns"
+            "description": _pick_template(CF_TEMPLATES, 
+                product_name=product_name, 
+                participant_count=group_buy.participants_count or 0)
         },
         "content_based_filtering": {
             "raw_score": round(cbf_score, 3),
             "weight": BETA,
             "contribution": round(cbf_score * BETA, 3),
-            "description": f"Matches your interests in {group_buy.product.category or 'this category'}"
+            "description": _pick_template(CATEGORY_TEMPLATES, 
+                product_name=product_name, 
+                category=category)
         },
         "popularity_boost": {
             "raw_score": round(pop_score, 3),
             "weight": GAMMA,
             "contribution": round(pop_score * GAMMA, 3),
-            "description": "High demand product across all traders"
+            "description": _pick_template(POPULARITY_TEMPLATES, 
+                product_name=product_name)
         }
     }
     
@@ -86,7 +187,9 @@ def explain_recommendation(
         factors.append({
             "factor": "purchase_history",
             "importance": 0.8,
-            "description": f"You've purchased {group_buy.product.name} {user_transactions} time(s) before",
+            "description": _pick_template(HISTORY_TEMPLATES, 
+                product_name=product_name, 
+                count=user_transactions),
             "impact": "high"
         })
     
@@ -95,7 +198,8 @@ def explain_recommendation(
         factors.append({
             "factor": "cluster_similarity",
             "importance": 0.7,
-            "description": f"Popular with traders in your cluster (Cluster {user.cluster_id})",
+            "description": _pick_template(CLUSTER_TEMPLATES, 
+                product_name=product_name),
             "impact": "high"
         })
     
@@ -104,7 +208,9 @@ def explain_recommendation(
         factors.append({
             "factor": "category_match",
             "importance": 0.6,
-            "description": f"Matches your preference for {group_buy.product.category or 'similar products'}",
+            "description": _pick_template(CATEGORY_TEMPLATES, 
+                product_name=product_name, 
+                category=category),
             "impact": "medium"
         })
     
@@ -113,65 +219,97 @@ def explain_recommendation(
         factors.append({
             "factor": "market_popularity",
             "importance": 0.5,
-            "description": "High demand product in the market",
+            "description": _pick_template(POPULARITY_TEMPLATES, 
+                product_name=product_name),
             "impact": "medium"
         })
     
     # Check MOQ progress
     moq_progress = group_buy.moq_progress
-    if moq_progress >= 75:
+    remaining_units = max(0, group_buy.product.moq - group_buy.participants_count) if group_buy.product.moq else 0
+    if moq_progress >= 50:
         factors.append({
             "factor": "group_progress",
             "importance": 0.4,
-            "description": f"Group is {moq_progress:.0f}% toward target quantity",
-            "impact": "low"
+            "description": _pick_template(PROGRESS_TEMPLATES,
+                product_name=product_name,
+                progress=moq_progress,
+                participants=group_buy.participants_count or 0,
+                remaining=remaining_units),
+            "impact": "low" if moq_progress < 75 else "medium"
         })
     
     # Check savings
     savings_pct = group_buy.product.savings_factor * 100
-    if savings_pct >= 20:
+    unit_price = group_buy.product.unit_price or 0
+    bulk_price = group_buy.product.bulk_price or 0
+    savings_amount = unit_price - bulk_price
+    
+    if savings_pct >= 10:
         factors.append({
             "factor": "cost_savings",
             "importance": 0.6,
-            "description": f"{savings_pct:.0f}% savings compared to retail price",
-            "impact": "medium"
+            "description": _pick_template(SAVINGS_TEMPLATES,
+                product_name=product_name,
+                pct=savings_pct,
+                amount=savings_amount,
+                price=bulk_price,
+                original=unit_price),
+            "impact": "high" if savings_pct >= 20 else "medium"
         })
     
     # Check deadline urgency
-    from datetime import datetime
     days_remaining = (group_buy.deadline - datetime.utcnow()).days
-    if days_remaining <= 3:
+    if days_remaining <= 7:
+        day_name = _get_day_name(days_remaining)
         factors.append({
             "factor": "deadline_urgency",
-            "importance": 0.3,
-            "description": f"Ending in {days_remaining} day(s)",
-            "impact": "low"
+            "importance": 0.5 if days_remaining <= 3 else 0.3,
+            "description": _pick_template(URGENCY_TEMPLATES,
+                product_name=product_name,
+                days=days_remaining,
+                day_name=day_name),
+            "impact": "high" if days_remaining <= 3 else "low"
         })
     
     explanation["factors"] = sorted(factors, key=lambda x: x["importance"], reverse=True)
     
-    # 3. Natural Language Explanation
+    # 3. Natural Language Explanation - Unique per product
     primary_reason = ""
     if cf_score > cbf_score and cf_score > pop_score:
-        primary_reason = f"traders with similar purchase patterns to yours frequently buy {group_buy.product.name}"
+        primary_reason = _pick_template(CF_TEMPLATES, 
+            product_name=product_name,
+            participant_count=group_buy.participants_count or 0)
     elif cbf_score > cf_score and cbf_score > pop_score:
-        primary_reason = f"this product matches your interest in {group_buy.product.category or 'similar items'}"
+        primary_reason = _pick_template(CATEGORY_TEMPLATES, 
+            product_name=product_name, 
+            category=category)
     elif pop_score > 0.5:
-        primary_reason = f"{group_buy.product.name} is a high-demand product among all traders"
+        primary_reason = _pick_template(POPULARITY_TEMPLATES, 
+            product_name=product_name)
     else:
-        primary_reason = f"this is a good opportunity for {group_buy.product.name}"
+        # Fallback - use savings or progress
+        if savings_pct >= 10:
+            primary_reason = _pick_template(SAVINGS_TEMPLATES,
+                product_name=product_name,
+                pct=savings_pct,
+                amount=savings_amount,
+                price=bulk_price,
+                original=unit_price)
+        else:
+            primary_reason = f"{product_name} is available at group pricing"
     
     secondary_reasons = []
     if moq_progress >= 75:
-        secondary_reasons.append("the group is almost at target quantity")
+        secondary_reasons.append(f"the group is {moq_progress:.0f}% to target")
     if savings_pct >= 20:
-        secondary_reasons.append(f"you'll save {savings_pct:.0f}%")
+        secondary_reasons.append(f"you save ${savings_amount:.2f} ({savings_pct:.0f}% off)")
     if days_remaining <= 3:
-        secondary_reasons.append("it's ending soon")
+        secondary_reasons.append(f"it ends {_get_day_name(days_remaining)}")
     
-    nl_explanation = f"We recommend this group-buy because {primary_reason}"
+    nl_explanation = f"We recommend this because {primary_reason}"
     if secondary_reasons:
-        nl_explanation += ", and " + ", ".join(secondary_reasons)
+        nl_explanation += ". Also, " + " and ".join(secondary_reasons)
     nl_explanation += "."
     
     explanation["natural_language_explanation"] = nl_explanation
@@ -185,11 +323,10 @@ def explain_recommendation(
         explanation["confidence"] = "low"
     
     # 5. Transparency Score (0-1)
-    # Based on: number of factors, component diversity, explanation clarity
     transparency = 0.0
-    transparency += min(len(factors) / 5.0, 0.4)  # Up to 0.4 for factors
-    transparency += 0.3 if all([cf_score > 0, cbf_score > 0, pop_score > 0]) else 0.2  # Component diversity
-    transparency += 0.3  # Explanation clarity (constant, as we always provide clear explanations)
+    transparency += min(len(factors) / 5.0, 0.4)
+    transparency += 0.3 if all([cf_score > 0, cbf_score > 0, pop_score > 0]) else 0.2
+    transparency += 0.3
     
     explanation["transparency_score"] = round(transparency, 2)
     
