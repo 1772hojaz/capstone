@@ -796,7 +796,7 @@ async def get_all_groups(
     result = []
     
     # Get active AdminGroups
-    admin_groups = db.query(AdminGroup).filter(AdminGroup.is_active).all()
+    admin_groups = db.query(AdminGroup).filter(AdminGroup.is_active == True).all()
     for group in admin_groups:
         # Check if user has joined this admin group
         joined = db.query(AdminGroupJoin).filter(
@@ -847,7 +847,7 @@ async def get_all_groups(
             matchScore=85,  # Default match score
             reason="Admin-created group buy",
             adminCreated=True,
-            adminName=group.admin_name,
+            adminName=group.admin_name or "Admin",
             savings=group.savings,
             discountPercentage=group.discount_percentage,
             shippingInfo=group.shipping_info,
