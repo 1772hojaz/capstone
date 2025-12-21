@@ -155,7 +155,7 @@ class EmailService:
                     
                     <p>If you have any questions, please contact our support team.</p>
                     
-                    <a href="http://connectafrica.store/contact" class="button">Contact Support</a>
+                    <a href="https://connectafrica.store/contact" class="button">Contact Support</a>
                 </div>
                 <div class="footer">
                     <p>This is an automated message from ConnectAfrica.</p>
@@ -301,7 +301,7 @@ This is an automated message from ConnectAfrica.
                     </ul>
                     
                     <p style="text-align: center;">
-                        <a href="http://connectafrica.store" class="button">Start Exploring</a>
+                        <a href="https://connectafrica.store" class="button">Start Exploring</a>
                     </p>
                     
                     <p>If you have any questions, feel free to reach out to our support team.</p>
@@ -328,7 +328,7 @@ With ConnectAfrica, you can:
 - Discover products recommended just for you
 - Connect with other traders in your area
 
-Visit http://connectafrica.store to start exploring!
+Visit https://connectafrica.store to start exploring!
 
 Happy trading!
 The ConnectAfrica Team
