@@ -399,7 +399,7 @@ class ApiService {
 
   async getAllGroups(params = {}) {
     const queryString = new URLSearchParams(params).toString();
-    const endpoint = queryString ? `/api/groups?${queryString}` : '/api/groups';
+    const endpoint = queryString ? `/api/groups/?${queryString}` : '/api/groups/';
     return this.request(endpoint);
   }
 

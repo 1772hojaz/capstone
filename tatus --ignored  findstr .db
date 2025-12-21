@@ -1,0 +1,167 @@
+[1mdiff --git a/sys/Front-end/connectsphere/src/components/ui/Button.tsx b/sys/Front-end/connectsphere/src/components/ui/Button.tsx[m
+[1mindex dcfbe74..7bd4480 100644[m
+[1m--- a/sys/Front-end/connectsphere/src/components/ui/Button.tsx[m
+[1m+++ b/sys/Front-end/connectsphere/src/components/ui/Button.tsx[m
+[36m@@ -1,44 +1,128 @@[m
+[31m-import React from 'react';[m
+[32m+[m[32mimport * as React from "react"[m
+[32m+[m[32mimport { Slot } from "@radix-ui/react-slot"[m
+[32m+[m[32mimport { cva, type VariantProps } from "class-variance-authority"[m
+[32m+[m[32mimport { Loader2 } from "lucide-react"[m
+ [m
+[31m-interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {[m
+[31m-  variant?: 'primary' | 'secondary' | 'ghost';[m
+[31m-  size?: 'sm' | 'md' | 'lg';[m
+[31m-}[m
+[32m+[m[32mimport { cn } from "@/lib/utils"[m
+ [m
+[31m-const Button = React.forwardRef<HTMLButtonElement, ButtonProps>([m
+[31m-  ({ variant = 'primary', size = 'md', className = '', children, ...props }, ref) => {[m
+[31m-    const variants = {[m
+[31m-      primary: 'bg-primary-600 hover:bg-primary-700 text-white shadow-et-sm',[m
+[31m-      secondary: 'bg-secondary-600 hover:bg-secondary-700 text-white shadow-et-sm',[m
+[31m-      ghost: 'bg-transparent hover:bg-primary-50 text-primary-600 border border-primary-200'[m
+[31m-    };[m
+[32m+[m[32mconst buttonVariants = cva([m
+[32m+[m[32m  "inline-flex items-center justify-center gap-2.5 whitespace-nowrap font-medium ring-offset-background transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 active:scale-[0.98] select-none",[m
+[32m+[m[32m  {[m
+[32m+[m[32m    variants: {[m
+[32m+[m[32m      variant: {[m
+[32m+[m[32m        default:[m
+[32m+[m[32m          "bg-gradient-to-r from-primary-600 to-primary-700 text-white shadow-lg hover:shadow-xl hover:from-primary-700 hover:to-primary-800 hover:-translate-y-0.5",[m
+[32m+[m[32m        destructive:[m
+[32m+[m[32m          "bg-gradient-to-r from-red-500 to-red-600 text-white shadow-lg hover:shadow-xl hover:from-red-600 hover:to-red-700 hover:-translate-y-0.5",[m
+[32m+[m[32m        outline:[m
+[32m+[m[32m          "border-2 border-neutral-200 dark:border-neutral-700 bg-transparent hover:bg-neutral-50 dark:hover:bg-neutral-800 hover:border-neutral-300 dark:hover:border-neutral-600 hover:shadow-md",[m
+[32m+[m[32m        secondary:[m
+[32m+[m[32m          "bg-gradient-to-r from-secondary-500 to-secondary-600 text-white shadow-lg hover:shadow-xl hover:from-secondary-600 hover:to-secondary-700 hover:-translate-y-0.5",[m
+[32m+[m[32m        ghost:[m
+[32m+[m[32m          "hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-neutral-900 dark:hover:text-neutral-100",[m
+[32m+[m[32m        link:[m
+[32m+[m[32m          "text-primary-600 dark:text-primary-400 underline-offset-4 hover:underline hover:text-primary-700 dark:hover:text-primary-300",[m
+[32m+[m[32m        premium:[m
+[32m+[m[32m          "relative bg-gradient-to-r from-accent-500 via-primary-500 to-accent-600 text-white shadow-lg hover:shadow-glow hover:-translate-y-0.5 before:absolute before:inset-0 before:bg-gradient-to-r before:from-accent-600 before:via-primary-600 before:to-accent-700 before:opacity-0 hover:before:opacity-100 before:transition-opacity before:duration-300 before:rounded-[inherit] overflow-hidden [&>*]:relative [&>*]:z-10",[m
+[32m+[m[32m        success:[m
+[32m+[m[32m          "bg-gradient-to-r from-green-500 to-green-600 text-white shadow-lg hover:shadow-xl hover:from-green-600 hover:to-green-700 hover:-translate-y-0.5",[m
+[32m+[m[32m        warning:[m
+[32m+[m[32m          "bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-lg hover:shadow-xl hover:from-amber-600 hover:to-amber-700 hover:-translate-y-0.5",[m
+[32m+[m[32m        info:[m
+[32m+[m[32m          "bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg hover:shadow-xl hover:from-blue-600 hover:to-blue-700 hover:-translate-y-0.5",[m
+[32m+[m[32m      },[m
+[32m+[m[32m      size: {[m
+[32m+[m[32m        default: "h-11 px-6 py-2.5 text-sm rounded-xl [&_svg]:size-4",[m
+[32m+[m[32m        sm: "h-9 px-4 py-2 text-xs rounded-lg [&_svg]:size-3.5",[m
+[32m+[m[32m        lg: "h-13 px-8 py-3 text-base rounded-xl [&_svg]:size-5",[m
+[32m+[m[32m        xl: "h-15 px-10 py-4 text-lg rounded-2xl [&_svg]:size-6",[m
+[32m+[m[32m        icon: "h-10 w-10 rounded-xl [&_svg]:size-4",[m
+[32m+[m[32m        "icon-sm": "h-8 w-8 rounded-lg [&_svg]:size-3.5",[m
+[32m+[m[32m        "icon-lg": "h-12 w-12 rounded-xl [&_svg]:size-5",[m
+[32m+[m[32m      },[m
+[32m+[m[32m      elevation: {[m
+[32m+[m[32m        none: "",[m
+[32m+[m[32m        sm: "shadow-sm hover:shadow-md",[m
+[32m+[m[32m        md: "shadow-md hover:shadow-lg",[m
+[32m+[m[32m        lg: "shadow-lg hover:shadow-xl",[m
+[32m+[m[32m        xl: "shadow-xl hover:shadow-2xl",[m
+[32m+[m[32m      },[m
+[32m+[m[32m      fullWidth: {[m
+[32m+[m[32m        true: "w-full",[m
+[32m+[m[32m        false: "",[m
+[32m+[m[32m      },[m
+[32m+[m[32m    },[m
+[32m+[m[32m    defaultVariants: {[m
+[32m+[m[32m      variant: "default",[m
+[32m+[m[32m      size: "default",[m
+[32m+[m[32m      elevation: "md",[m
+[32m+[m[32m      fullWidth: false,[m
+[32m+[m[32m    },[m
+[32m+[m[32m  }[m
+[32m+[m[32m)[m
+ [m
+[31m-    const sizes = {[m
+[31m-      sm: 'px-3 py-1.5 text-sm',[m
+[31m-      md: 'px-4 py-2 text-base',[m
+[31m-      lg: 'px-6 py-3 text-lg'[m
+[31m-    };[m
+[32m+[m[32mexport interface ButtonProps[m
+[32m+[m[32m  extends React.ButtonHTMLAttributes<HTMLButtonElement>,[m
+[32m+[m[32m    VariantProps<typeof buttonVariants> {[m
+[32m+[m[32m  asChild?: boolean[m
+[32m+[m[32m  loading?: boolean[m
+[32m+[m[32m  loadingText?: string[m
+[32m+[m[32m  leftIcon?: React.ReactNode[m
+[32m+[m[32m  rightIcon?: React.ReactNode[m
+[32m+[m[32m}[m
+ [m
+[32m+[m[32mconst Button = React.forwardRef<HTMLButtonElement, ButtonProps>([m
+[32m+[m[32m  ([m
+[32m+[m[32m    {[m
+[32m+[m[32m      className,[m
+[32m+[m[32m      variant,[m
+[32m+[m[32m      size,[m
+[32m+[m[32m      elevation,[m
+[32m+[m[32m      fullWidth,[m
+[32m+[m[32m      asChild = false,[m
+[32m+[m[32m      loading = false,[m
+[32m+[m[32m      loadingText,[m
+[32m+[m[32m      leftIcon,[m
+[32m+[m[32m      rightIcon,[m
+[32m+[m[32m      children,[m
+[32m+[m[32m      disabled,[m
+[32m+[m[32m      ...props[m
+[32m+[m[32m    },[m
+[32m+[m[32m    ref[m
+[32m+[m[32m  ) => {[m
+[32m+[m[32m    const Comp = asChild ? Slot : "button"[m
+[32m+[m[41m    [m
+[32m+[m[32m    const content = ([m
+[32m+[m[32m      <>[m
+[32m+[m[32m        {loading ? ([m
+[32m+[m[32m          <>[m
+[32m+[m[32m            <Loader2 className="animate-spin" />[m
+[32m+[m[32m            {loadingText || children}[m
+[32m+[m[32m          </>[m
+[32m+[m[32m        ) : ([m
+[32m+[m[32m          <>[m
+[32m+[m[32m            {leftIcon && <span className="inline-flex shrink-0">{leftIcon}</span>}[m
+[32m+[m[32m            {children}[m
+[32m+[m[32m            {rightIcon && <span className="inline-flex shrink-0">{rightIcon}</span>}[m
+[32m+[m[32m          </>[m
+[32m+[m[32m        )}[m
+[32m+[m[32m      </>[m
+[32m+[m[32m    )[m
+[32m+[m[41m    [m
+     return ([m
+[31m-      <button[m
+[32m+[m[32m      <Comp[m
+[32m+[m[32m        className={cn([m
+[32m+[m[32m          buttonVariants({ variant, size, elevation, fullWidth, className })[m
+[32m+[m[32m        )}[m
+         ref={ref}[m
+[31m-        className={`[m
+[31m-          rounded-lg font-display font-semibold[m
+[31m-          transition-all duration-300[m
+[31m-          hover:shadow-et-md hover:-translate-y-0.5[m
+[31m-          active:translate-y-0 active:shadow-et-sm[m
+[31m-          ${variants[variant]}[m
+[31m-          ${sizes[size]}[m
+[31m-          ${className}[m
+[31m-        `}[m
+[32m+[m[32m        disabled={disabled || loading}[m
+         {...props}[m
+       >[m
+[31m-        {children}[m
+[31m-      </button>[m
+[31m-    );[m
+[32m+[m[32m        {content}[m
+[32m+[m[32m      </Comp>[m
+[32m+[m[32m    )[m
+   }[m
+[31m-);[m
+[31m-[m
+[31m-Button.displayName = 'Button';[m
+[32m+[m[32m)[m
+[32m+[m[32mButton.displayName = "Button"[m
+ [m
+[31m-export default Button;[m
+[32m+[m[32mexport { Button, buttonVariants }[m
