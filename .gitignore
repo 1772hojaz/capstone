@@ -217,4 +217,5 @@ fix_brevo*.py
 # Temporary migration scripts
 add_*_column.py
 add_*_columns.py
-groupbuy.db 
+groupbuy.db
+*.db 
