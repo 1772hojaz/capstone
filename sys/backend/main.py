@@ -24,6 +24,7 @@ from models.settings import router as settings_router
 from models.supplier import router as supplier_router
 from models.models import PendingRegistration
 from payment.payment_router import router as payment_router
+from analytics.analytics_router import router as analytics_router
 from ml.ml_scheduler import scheduler, start_scheduler
 from websocket.websocket_manager import manager
 
@@ -295,6 +296,7 @@ app.include_router(admin_router, prefix="/api/admin", tags=["Admin"])
 app.include_router(settings_router, prefix="/api/settings", tags=["Settings"])
 app.include_router(supplier_router, prefix="/api/supplier", tags=["Supplier"])
 app.include_router(payment_router, prefix="/api/payment", tags=["Payment"])
+app.include_router(analytics_router, tags=["Analytics"])
 
 # Only used for development. Disabled in production.
 if __name__ == "__main__":

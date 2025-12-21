@@ -1246,7 +1246,7 @@ async def join_group(
                     email=user.email,
                     tx_ref=tx_ref,
                     currency="USD",
-                    redirect_url=f"{os.getenv('BACKEND_URL', 'http://localhost:8000')}/api/payment/callback?group_id={group_id}"
+                    redirect_url=f"{os.getenv('BACKEND_URL', 'https://connectafrica.store')}/api/payment/callback?group_id={group_id}"
                 )
                 
                 # Check if payment initialization was successful
@@ -1367,7 +1367,7 @@ async def join_group(
                     email=user.email,
                     tx_ref=tx_ref,
                     currency="USD",
-                    redirect_url=f"{os.getenv('BACKEND_URL', 'http://localhost:8000')}/api/payment/callback?group_id={group_id}"
+                    redirect_url=f"{os.getenv('BACKEND_URL', 'https://connectafrica.store')}/api/payment/callback?group_id={group_id}"
                 )
                 
                 payment_status = payment_result.get("status")

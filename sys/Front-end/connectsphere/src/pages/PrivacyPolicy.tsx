@@ -306,7 +306,7 @@ const PrivacyPolicy = () => {
                 <p><strong>Address:</strong> Stratford House, 20 Stirling Road, Mount Pleasant, Harare, Zimbabwe</p>
                 <p><strong>Phone:</strong> <a href="tel:+263242312888" className="text-blue-600 hover:text-blue-700">+263 242 312 888</a></p>
                 <p><strong>Email:</strong> <a href="mailto:info@potraz.gov.zw" className="text-blue-600 hover:text-blue-700">info@potraz.gov.zw</a></p>
-                <p><strong>Website:</strong> <a href="http://www.potraz.gov.zw" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-700">www.potraz.gov.zw</a></p>
+                <p><strong>Website:</strong> <a href="https://www.potraz.gov.zw" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-700">www.potraz.gov.zw</a></p>
               </div>
             </div>
           </div>
