@@ -790,7 +790,7 @@ async def get_past_groups_summary(
 )
 async def get_all_groups(
     db: Session = Depends(get_db),
-    current_user: User = Depends(verify_token)
+    current_user: Optional[User] = Depends(lambda: None)  # Optional authentication - allows public access
 ):
     """Get all active groups for browsing (both AdminGroups and GroupBuy groups)"""
     result = []
@@ -798,11 +798,13 @@ async def get_all_groups(
     # Get active AdminGroups
     admin_groups = db.query(AdminGroup).filter(AdminGroup.is_active == True).all()
     for group in admin_groups:
-        # Check if user has joined this admin group
-        joined = db.query(AdminGroupJoin).filter(
-            AdminGroupJoin.admin_group_id == group.id,
-            AdminGroupJoin.user_id == current_user.id
-        ).first() is not None
+        # Check if user has joined this admin group (only if authenticated)
+        joined = False
+        if current_user:
+            joined = db.query(AdminGroupJoin).filter(
+                AdminGroupJoin.admin_group_id == group.id,
+                AdminGroupJoin.user_id == current_user.id
+            ).first() is not None
         
         # Calculate money tracking for AdminGroups
         target_amount = group.price * group.max_participants
@@ -831,36 +833,41 @@ async def get_all_groups(
             group_status = "active"
             order_status = "Open for joining"
         
-        result.append(GroupResponse(
-            id=group.id,
-            name=group.name,
-            price=group.price,
-            image_url=group.image,
-            description=group.description,
-            participants=group.participants,
-            moq=group.max_participants,
-            category=group.category,
-            created=group.created.isoformat(),
-            maxParticipants=group.max_participants,
-            originalPrice=group.original_price,
-            endDate=group.end_date.isoformat() if group.end_date else None,
-            matchScore=85,  # Default match score
-            reason="Admin-created group buy",
-            adminCreated=True,
-            adminName=group.admin_name or "Admin",
-            savings=group.savings,
-            discountPercentage=group.discount_percentage,
-            shippingInfo=group.shipping_info,
-            estimatedDelivery=group.estimated_delivery,
-            features=json.loads(group.features) if isinstance(group.features, str) else (group.features or []),
-            requirements=json.loads(group.requirements) if isinstance(group.requirements, str) else (group.requirements or []),
-            longDescription=group.long_description,
-            status=group_status,
-            orderStatus=order_status,
-            joined=joined,
-            current_amount=current_amount,
-            target_amount=target_amount
-        ))
+        try:
+            result.append(GroupResponse(
+                id=group.id,
+                name=group.name or "Unnamed Group",
+                price=float(group.price) if group.price else 0.0,
+                image_url=group.image or "https://via.placeholder.com/300x200?text=Product",
+                description=group.description or "",
+                participants=group.participants or 0,
+                moq=group.max_participants or 50,
+                category=group.category or "General",
+                created=group.created.isoformat() if group.created else datetime.utcnow().isoformat(),
+                maxParticipants=group.max_participants or 50,
+                originalPrice=float(group.original_price) if group.original_price else 0.0,
+                endDate=group.end_date.isoformat() if group.end_date else None,
+                matchScore=85,  # Default match score
+                reason="Admin-created group buy",
+                adminCreated=True,
+                adminName=group.admin_name or "Admin",
+                savings=float(group.savings) if hasattr(group, 'savings') else 0.0,
+                discountPercentage=int(group.discount_percentage) if hasattr(group, 'discount_percentage') else 0,
+                shippingInfo=group.shipping_info or "Standard shipping",
+                estimatedDelivery=group.estimated_delivery or "2-3 weeks",
+                features=json.loads(group.features) if isinstance(group.features, str) else (group.features or []),
+                requirements=json.loads(group.requirements) if isinstance(group.requirements, str) else (group.requirements or []),
+                longDescription=group.long_description or group.description or "",
+                status=group_status,
+                orderStatus=order_status,
+                joined=joined,
+                current_amount=float(current_amount),
+                target_amount=float(target_amount)
+            ))
+        except Exception as e:
+            logger.error(f"Error processing AdminGroup {group.id}: {e}")
+            # Skip this group if it has data issues
+            continue
     
     # Get all GroupBuy groups (not just active ones - we'll filter by status dynamically)
     group_buy_groups = db.query(GroupBuy).join(GroupBuy.product).all()
@@ -871,11 +878,13 @@ async def get_all_groups(
             Contribution.group_buy_id == group.id
         ).count()
         
-        # Check if user has joined this group buy
-        joined = db.query(Contribution).filter(
-            Contribution.group_buy_id == group.id,
-            Contribution.user_id == current_user.id
-        ).first() is not None
+        # Check if user has joined this group buy (only if authenticated)
+        joined = False
+        if current_user:
+            joined = db.query(Contribution).filter(
+                Contribution.group_buy_id == group.id,
+                Contribution.user_id == current_user.id
+            ).first() is not None
         
         # Calculate dynamic status
         now = datetime.utcnow()
