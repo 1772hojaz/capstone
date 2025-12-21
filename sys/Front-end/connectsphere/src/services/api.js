@@ -1,6 +1,7 @@
 // src/services/api.js
-// Use empty string for dev (uses Vite proxy), full URL for production
-const API_BASE_URL = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_BASE_URL || 'https://connectafrica.store');
+// Use empty string for dev (uses Vite proxy), full URL for production - FORCE HTTPS
+const baseUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_BASE_URL || 'https://connectafrica.store');
+const API_BASE_URL = baseUrl ? baseUrl.replace(/^http:/, 'https:') : baseUrl;
 
 // Error types for better error handling
 export class ApiError extends Error {
