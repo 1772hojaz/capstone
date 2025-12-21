@@ -1,5 +1,5 @@
 // src/services/api.js
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://connectafrica.store';
+const API_BASE_URL = '';
 
 // Error types for better error handling
 export class ApiError extends Error {
