@@ -41,6 +41,11 @@ class ApiService {
     this.defaultRetryAttempts = 3;
     this.defaultRetryDelay = 1000; // 1 second
     this.requestTimeout = 30000; // 30 seconds
+    
+    // Debug log for production issues
+    if (typeof window !== 'undefined' && window.location.hostname === 'connectafrica.store') {
+      console.log('🔧 API Service initialized with baseURL:', this.baseURL);
+    }
   }
 
   // Helper method to get auth token
@@ -117,6 +122,12 @@ class ApiService {
     } = options;
 
     const url = `${this.baseURL}${endpoint}`;
+    
+    // Debug log for production issues - log constructed URL
+    if (typeof window !== 'undefined' && window.location.hostname === 'connectafrica.store' && endpoint.includes('groups')) {
+      console.log('🌐 Requesting:', url, '| baseURL:', this.baseURL, '| endpoint:', endpoint);
+    }
+    
     const token = this.getAuthToken();
 
     const config = {
