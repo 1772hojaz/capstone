@@ -7,7 +7,8 @@
  * NOTE: Backend automatically filters out events from admin and supplier users.
  * Only trader (regular user) events are stored in the analytics database.
  */
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://connectafrica.store';
+// Use empty string for dev (uses Vite proxy), full URL for production
+const API_BASE_URL = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_BASE_URL || 'https://connectafrica.store');
 
 // ✅ ENABLED - Event tracking is active
 const ANALYTICS_ENABLED = true;
