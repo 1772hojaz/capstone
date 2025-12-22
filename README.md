@@ -1207,4 +1207,4 @@ Watch the platform in action:
 
 ## Live Deployment
 
-Access the deployed front-end part of  application: [ConnectSphere on Render](https://connectsphere-p5t9.onrender.com/)
+Access the deployed front-end part of  application: [Deployed on a VPS](https://connectafrica.store/)
